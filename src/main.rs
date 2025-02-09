@@ -20,7 +20,9 @@ pub enum Type {
     U64,
     S64,
     F32,
-    F64
+    F64,
+    Ptr,
+    Flags
 }
 
 #[derive(Debug)]
