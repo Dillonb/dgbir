@@ -22,7 +22,7 @@ pub enum Type {
     F32,
     F64,
     Ptr,
-    Flags
+    Flags,
 }
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub enum Lhs {
     Value(String),
     NamedValue(String, String),
     TypedValue(Type, String),
-    TypedNamedValue(Type, String, String)
+    TypedNamedValue(Type, String, String),
 }
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ pub enum Rhs {
 pub enum Statement {
     Label(String),
     RhsOnly(Rhs),
-    Assignment(Vec<Lhs>, Rhs)
+    Assignment(Vec<Lhs>, Rhs),
 }
 
 fn whitespace(i: &str) -> IResult<&str, &str> {
@@ -96,27 +96,29 @@ fn ir_type(i: &str) -> IResult<&str, Type> {
         value(Type::S32, tag("s32")),
         value(Type::U64, tag("u64")),
         value(Type::S64, tag("s64")),
-    )).parse(i)
+    ))
+    .parse(i)
 }
 
 fn lhs(i: &str) -> IResult<&str, Vec<Lhs>> {
     // TODO: reduce duplication?
     let lhs_identifier = map(identifier, |x| Lhs::Value(x.to_string()));
 
-    let typed_lhs_identifier = map(separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type), |(id, tp)| Lhs::TypedValue(tp, id.to_string()));
+    let typed_lhs_identifier = map(
+        separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type),
+        |(id, tp)| Lhs::TypedValue(tp, id.to_string()),
+    );
 
     let named_lhs_identifier = map(
         preceded(
             char('.'),
             (
                 terminated(identifier, whitespace),
-                delimited(
-                    char('('),
-                    identifier,
-                    char(')')
-                )
-            )
-        ), |(name, id)| Lhs::NamedValue(name.to_string(), id.to_string()));
+                delimited(char('('), identifier, char(')')),
+            ),
+        ),
+        |(name, id)| Lhs::NamedValue(name.to_string(), id.to_string()),
+    );
 
     let named_typed_lhs_identifier = map(
         preceded(
@@ -126,28 +128,35 @@ fn lhs(i: &str) -> IResult<&str, Vec<Lhs>> {
                 delimited(
                     char('('),
                     separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type),
-                    char(')')
-                )
-            )
-        ), |(name, (id, tp))| Lhs::TypedNamedValue(tp, name.to_string(), id.to_string()));
+                    char(')'),
+                ),
+            ),
+        ),
+        |(name, (id, tp))| Lhs::TypedNamedValue(tp, name.to_string(), id.to_string()),
+    );
 
     separated_list1(
         (whitespace, char(','), whitespace),
         alt((
-                named_typed_lhs_identifier,
-                named_lhs_identifier,
-                typed_lhs_identifier,
-                lhs_identifier,
-        ))
-    ).parse(i)
+            named_typed_lhs_identifier,
+            named_lhs_identifier,
+            typed_lhs_identifier,
+            lhs_identifier,
+        )),
+    )
+    .parse(i)
 }
 
 fn statement(i: &str) -> IResult<&str, Statement> {
     alt((
-        map((lhs, (whitespace, char('='), whitespace), rhs), |(l, _, r)| Statement::Assignment(l, r)),
+        map(
+            (lhs, (whitespace, char('='), whitespace), rhs),
+            |(l, _, r)| Statement::Assignment(l, r),
+        ),
         label,
         map(rhs, Statement::RhsOnly),
-    )).parse(i)
+    ))
+    .parse(i)
 }
 
 fn main() {
@@ -166,7 +175,7 @@ fn main() {
         "result:u8 = do_something()",
         ".output(result) = do_something()",
         ".output(result:u8), .output2(result2: u16) = do_something()",
-        ".output(result:u8) = do_something(do_somethingelse(v100))"
+        ".output(result:u8) = do_something(do_somethingelse(v100))",
     ];
     for data in samples {
         match statement(data) {
