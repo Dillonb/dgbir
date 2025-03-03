@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 nom = "8.0.0"
 nom-language = "0.1.0"
+maplit = "1.0.2"
