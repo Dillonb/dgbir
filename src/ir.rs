@@ -50,11 +50,11 @@ pub enum InputSlot {
 }
 
 pub struct InputSlotSchema {
-    name: String
+    name: String,
 }
 
 pub struct InstructionSchema {
-    inputs : Vec<InputSlotSchema>
+    inputs: Vec<InputSlotSchema>,
 }
 
 #[derive(Debug)]
@@ -62,13 +62,13 @@ pub struct Instruction {
     /// The index of the instruction in the IR vec
     index: usize,
     instruction_type: InstructionType,
-    inputs: Vec<InputSlot>
+    inputs: Vec<InputSlot>,
 }
 
 #[derive(Debug)]
 pub struct IRContext {
     /// Memory addresses available to the IR
-    inputs: Vec<usize>
+    inputs: Vec<usize>,
 }
 
 pub struct IRBlock {
