@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 // #[macro_use] extern crate maplit;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum DataType {
     U8,
     S8,
@@ -17,7 +17,7 @@ pub enum DataType {
     Flags,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Constant {
     U8(u8),
     S8(i8),
@@ -36,9 +36,10 @@ pub enum Constant {
 pub enum InstructionType {
     Add,
     LoadPtr,
+    WritePtr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum InputSlot {
     /// References the output of another instruction.
     InstructionOutput {
@@ -49,29 +50,100 @@ pub enum InputSlot {
     DataType(DataType),
 }
 
-pub struct InputSlotSchema {
-    name: String,
-}
+// pub struct InputSlotSchema {
+//     name: String,
+// }
 
-pub struct InstructionSchema {
-    inputs: Vec<InputSlotSchema>,
-}
+// pub struct OutputSlotSchema {
+//     name: String
+// }
+
+// pub struct InstructionSchema {
+//     inputs: Vec<InputSlotSchema>,
+//     outputs: Vec<OutputSlotSchema>,
+// }
 
 #[derive(Debug)]
 pub struct Instruction {
+    pub tp: InstructionType,
+    pub inputs: Vec<InputSlot>,
+}
+
+pub struct InstructionOutput {
+    outputs: Vec<InputSlot>
+}
+impl InstructionOutput {
+    pub fn at(&self, index: usize) -> InputSlot {
+        self.outputs[index]
+    }
+}
+
+#[derive(Debug)]
+pub struct IndexedInstruction {
     /// The index of the instruction in the IR vec
-    index: usize,
-    instruction_type: InstructionType,
-    inputs: Vec<InputSlot>,
+    pub index: usize,
+    pub instruction: Instruction,
 }
 
 #[derive(Debug)]
 pub struct IRContext {
     /// Memory addresses available to the IR
-    inputs: Vec<usize>,
+    pub inputs: Vec<usize>,
 }
 
+impl IRContext {
+    pub fn new() -> RefCell<Self> {
+        Into::into(IRContext { inputs: Vec::new() })
+    }
+}
+
+#[derive(Debug)]
 pub struct IRBlock {
-    context: RefCell<IRContext>,
-    instructions: Vec<Instruction>,
+    pub context: RefCell<IRContext>,
+    pub instructions: Vec<IndexedInstruction>,
+}
+
+impl IRBlock {
+    pub fn new(context: RefCell<IRContext>) -> Self {
+        IRBlock {
+            context,
+            instructions: Vec::new(),
+        }
+    }
+
+    pub fn append_obj(&mut self, instruction: Instruction) -> usize {
+        let index = self.instructions.len();
+        self.instructions
+            .push(IndexedInstruction { index, instruction });
+        return index;
+    }
+
+    pub fn append(&mut self, tp: InstructionType, inputs: Vec<InputSlot>) -> usize {
+        return self.append_obj(Instruction { tp, inputs });
+    }
+
+    pub fn const_u32(value: u32) -> InputSlot {
+        InputSlot::Constant(Constant::U32(value))
+    }
+
+    pub fn const_ptr(value: usize) -> InputSlot {
+        InputSlot::Constant(Constant::Ptr(value))
+    }
+
+    pub fn add(&mut self, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
+        let index = self.append(InstructionType::Add, vec![arg1, arg2]);
+        return InstructionOutput {
+            outputs: vec![InputSlot::InstructionOutput {
+                instruction_index: index,
+                output_index: 0,
+            }],
+        };
+    }
+
+    pub fn write_ptr(&mut self, ptr: InputSlot, value: InputSlot) -> InstructionOutput {
+        self.append(InstructionType::WritePtr, vec![ptr, value]);
+        return InstructionOutput {
+            outputs: vec![],
+        };
+    }
 }
