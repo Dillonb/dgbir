@@ -3,6 +3,7 @@ use std::cell::RefCell;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DataType {
+    None,
     U8,
     S8,
     U16,
@@ -47,7 +48,7 @@ pub enum InputSlot {
         output_index: usize,
     },
     Constant(Constant),
-    DataType(DataType),
+    // DataType(DataType),
 }
 
 // pub struct InputSlotSchema {
@@ -66,11 +67,12 @@ pub enum InputSlot {
 #[derive(Debug)]
 pub struct Instruction {
     pub tp: InstructionType,
+    pub result_tp: DataType,
     pub inputs: Vec<InputSlot>,
 }
 
 pub struct InstructionOutput {
-    outputs: Vec<InputSlot>
+    outputs: Vec<InputSlot>,
 }
 impl InstructionOutput {
     pub fn at(&self, index: usize) -> InputSlot {
@@ -118,8 +120,17 @@ impl IRBlock {
         return index;
     }
 
-    pub fn append(&mut self, tp: InstructionType, inputs: Vec<InputSlot>) -> usize {
-        return self.append_obj(Instruction { tp, inputs });
+    pub fn append(
+        &mut self,
+        tp: InstructionType,
+        result_tp: DataType,
+        inputs: Vec<InputSlot>,
+    ) -> usize {
+        return self.append_obj(Instruction {
+            tp,
+            result_tp,
+            inputs,
+        });
     }
 
     pub fn const_u32(value: u32) -> InputSlot {
@@ -130,8 +141,13 @@ impl IRBlock {
         InputSlot::Constant(Constant::Ptr(value))
     }
 
-    pub fn add(&mut self, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
-        let index = self.append(InstructionType::Add, vec![arg1, arg2]);
+    pub fn add(
+        &mut self,
+        result_tp: DataType,
+        arg1: InputSlot,
+        arg2: InputSlot,
+    ) -> InstructionOutput {
+        let index = self.append(InstructionType::Add, result_tp, vec![arg1, arg2]);
         return InstructionOutput {
             outputs: vec![InputSlot::InstructionOutput {
                 instruction_index: index,
@@ -141,9 +157,7 @@ impl IRBlock {
     }
 
     pub fn write_ptr(&mut self, ptr: InputSlot, value: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::WritePtr, vec![ptr, value]);
-        return InstructionOutput {
-            outputs: vec![],
-        };
+        self.append(InstructionType::WritePtr, DataType::None, vec![ptr, value]);
+        return InstructionOutput { outputs: vec![] };
     }
 }

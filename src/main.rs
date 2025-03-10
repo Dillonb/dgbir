@@ -31,17 +31,17 @@ fn main() {
     //     }
     // }
 
-    let r : u32 = 0;
+    let r: u32 = 0;
     let r_ptr: usize = &r as *const u32 as usize;
 
     let context = IRContext::new();
     let mut block = IRBlock::new(context);
-    let add_result = block.add(
-        IRBlock::const_u32(1),
-        IRBlock::const_u32(1),
-    );
+    let add_result = block.add(DataType::U32, IRBlock::const_u32(1), IRBlock::const_u32(1));
+    let add2_result = block.add(DataType::U32, add_result.at(0), IRBlock::const_u32(1));
 
-    block.write_ptr(IRBlock::const_ptr(r_ptr), add_result.at(0));
+    block.write_ptr(IRBlock::const_ptr(r_ptr), add2_result.at(0));
+
+    println!("r: {:?}", r);
 
     // compile(block);
     interpret_block(block);
