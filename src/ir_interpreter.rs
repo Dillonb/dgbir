@@ -13,7 +13,7 @@ fn get_zero(tp: DataType) -> Constant {
         DataType::F32 => Constant::F32(0.0),
         DataType::F64 => Constant::F64(0.0),
         DataType::Ptr => Constant::Ptr(0),
-        DataType::None => unimplemented!(),
+        // DataType::None => unimplemented!(),
         DataType::Flags => unimplemented!(),
     }
 }
@@ -60,8 +60,8 @@ fn evaluate_instr(
                 .map(|x| constant_to_u64(x))
                 .fold(0 as u64, |acc, input| acc.wrapping_add(input));
 
-            let result_const = match instruction.result_tp {
-                DataType::None => todo!(),
+            let result_const = match instruction.data_tp {
+                // DataType::None => todo!(),
                 DataType::U8 => Constant::U8(result as u8),
                 DataType::S8 => Constant::S8(result as i8),
                 DataType::U16 => Constant::U16(result as u16),
@@ -79,7 +79,34 @@ fn evaluate_instr(
             return vec![result_const];
         }
         crate::ir::InstructionType::LoadPtr => todo!("LoadPtr"),
-        crate::ir::InstructionType::WritePtr => todo!("WritePtr"),
+        crate::ir::InstructionType::WritePtr => {
+            assert_eq!(inputs.len(), 2);
+
+            let ptr = match inputs[0] {
+                Constant::Ptr(p) => p,
+                _ => panic!("Expected pointer as first input"),
+            };
+            let value = constant_to_u64(&inputs[1]);
+            let raw_ptr = ptr as *mut u8;
+            unsafe {
+                match instruction.data_tp {
+                    DataType::U8 => *(raw_ptr as *mut u8) = value as u8,
+                    DataType::S8 => *(raw_ptr as *mut i8) = value as i8,
+                    DataType::U16 => *(raw_ptr as *mut u16) = value as u16,
+                    DataType::S16 => *(raw_ptr as *mut i16) = value as i16,
+                    DataType::U32 => *(raw_ptr as *mut u32) = value as u32,
+                    DataType::S32 => *(raw_ptr as *mut i32) = value as i32,
+                    DataType::U64 => *(raw_ptr as *mut u64) = value,
+                    DataType::S64 => *(raw_ptr as *mut i64) = value as i64,
+                    DataType::F32 => todo!("F32 write"),
+                    DataType::F64 => todo!("F64 write"),
+                    DataType::Ptr => unimplemented!("Pointer write"),
+                    DataType::Flags => unimplemented!("Flags write"),
+                }
+            }
+
+            return vec![];
+        }
     }
 }
 
@@ -93,7 +120,10 @@ pub fn interpret_block(block: IRBlock) {
 
     block.instructions.iter().for_each(|instruction| {
         let result = evaluate_instr(&block, &mut results, &instruction.instruction);
-        println!("Done evaluating instruction: {:?} - Result {:?}", instruction, result);
+        println!(
+            "Done evaluating instruction: {:?} - Result {:?}",
+            instruction, result
+        );
         results.push(result);
     })
 }

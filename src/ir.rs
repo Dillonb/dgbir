@@ -3,7 +3,7 @@ use std::cell::RefCell;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DataType {
-    None,
+    // None,
     U8,
     S8,
     U16,
@@ -67,7 +67,7 @@ pub enum InputSlot {
 #[derive(Debug)]
 pub struct Instruction {
     pub tp: InstructionType,
-    pub result_tp: DataType,
+    pub data_tp: DataType,
     pub inputs: Vec<InputSlot>,
 }
 
@@ -75,8 +75,14 @@ pub struct InstructionOutput {
     outputs: Vec<InputSlot>,
 }
 impl InstructionOutput {
+    /// Gets a specific output
     pub fn at(&self, index: usize) -> InputSlot {
         self.outputs[index]
+    }
+
+    /// Convenience function to get the first output
+    pub fn val(&self) -> InputSlot {
+        self.outputs[0]
     }
 }
 
@@ -123,12 +129,12 @@ impl IRBlock {
     pub fn append(
         &mut self,
         tp: InstructionType,
-        result_tp: DataType,
+        data_tp: DataType,
         inputs: Vec<InputSlot>,
     ) -> usize {
         return self.append_obj(Instruction {
             tp,
-            result_tp,
+            data_tp,
             inputs,
         });
     }
@@ -156,8 +162,13 @@ impl IRBlock {
         };
     }
 
-    pub fn write_ptr(&mut self, ptr: InputSlot, value: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::WritePtr, DataType::None, vec![ptr, value]);
+    pub fn write_ptr(
+        &mut self,
+        tp: DataType,
+        ptr: InputSlot,
+        value: InputSlot,
+    ) -> InstructionOutput {
+        self.append(InstructionType::WritePtr, tp, vec![ptr, value]);
         return InstructionOutput { outputs: vec![] };
     }
 }
