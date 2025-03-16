@@ -1,4 +1,4 @@
-use dgbir::{compiler::compile, ir::*, ir_interpreter::interpret_block};
+use dgbir::{compiler::compile, ir::*, ir_interpreter::interpret_block, ir_tostring::block_tostring};
 
 fn main() {
     // let samples = [
@@ -38,13 +38,17 @@ fn main() {
 
     let add_result = block.add(DataType::U32, IRBlock::const_u32(1), IRBlock::const_u32(1));
     let add2_result = block.add(DataType::U32, add_result.val(), IRBlock::const_u32(1));
+    let add3_result = block.add(DataType::U32, add2_result.val(), add_result.val());
+
     block.write_ptr(
         DataType::U32,
         IRBlock::const_ptr(&r as *const u32 as usize),
-        add2_result.val(),
+        add3_result.val(),
     );
 
-    interpret_block(block);
+    println!("Block:");
+    println!("{}", block_tostring(&block));
+    interpret_block(&block);
     println!("Result: {:?}", r);
 }
 

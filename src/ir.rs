@@ -31,6 +31,7 @@ pub enum Constant {
     F32(f32),
     F64(f64),
     Ptr(usize),
+    DataType(DataType),
 }
 
 #[derive(Debug)]
@@ -45,10 +46,11 @@ pub enum InputSlot {
     /// References the output of another instruction.
     InstructionOutput {
         instruction_index: usize,
+        tp: DataType,
         output_index: usize,
     },
     Constant(Constant),
-    // DataType(DataType),
+    DataType(DataType),
 }
 
 // pub struct InputSlotSchema {
@@ -64,16 +66,24 @@ pub enum InputSlot {
 //     outputs: Vec<OutputSlotSchema>,
 // }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OutputSlot {
+    pub tp: DataType,
+}
+
 #[derive(Debug)]
 pub struct Instruction {
     pub tp: InstructionType,
-    pub data_tp: DataType,
     pub inputs: Vec<InputSlot>,
+    pub outputs: Vec<OutputSlot>,
 }
 
+
+#[derive(Debug)]
 pub struct InstructionOutput {
     outputs: Vec<InputSlot>,
 }
+
 impl InstructionOutput {
     /// Gets a specific output
     pub fn at(&self, index: usize) -> InputSlot {
@@ -129,14 +139,24 @@ impl IRBlock {
     pub fn append(
         &mut self,
         tp: InstructionType,
-        data_tp: DataType,
         inputs: Vec<InputSlot>,
-    ) -> usize {
-        return self.append_obj(Instruction {
+        outputs: Vec<OutputSlot>,
+    ) -> InstructionOutput {
+        let index = self.append_obj(Instruction {
             tp,
-            data_tp,
             inputs,
+            outputs: outputs.clone(),
         });
+
+        return InstructionOutput {
+            outputs: outputs.iter().enumerate().map(|(i, output)| {
+                InputSlot::InstructionOutput {
+                    instruction_index: index,
+                    tp: output.tp,
+                    output_index: i,
+                }
+            }).collect(),
+        };
     }
 
     pub fn const_u32(value: u32) -> InputSlot {
@@ -153,13 +173,11 @@ impl IRBlock {
         arg1: InputSlot,
         arg2: InputSlot,
     ) -> InstructionOutput {
-        let index = self.append(InstructionType::Add, result_tp, vec![arg1, arg2]);
-        return InstructionOutput {
-            outputs: vec![InputSlot::InstructionOutput {
-                instruction_index: index,
-                output_index: 0,
-            }],
-        };
+        self.append(
+            InstructionType::Add,
+            vec![arg1, arg2],
+            vec![ OutputSlot { tp: result_tp }, ],
+        )
     }
 
     pub fn write_ptr(
@@ -168,7 +186,7 @@ impl IRBlock {
         ptr: InputSlot,
         value: InputSlot,
     ) -> InstructionOutput {
-        self.append(InstructionType::WritePtr, tp, vec![ptr, value]);
+        self.append(InstructionType::WritePtr, vec![ptr, value, InputSlot::DataType(tp)], vec![]);
         return InstructionOutput { outputs: vec![] };
     }
 }

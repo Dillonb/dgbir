@@ -1,23 +1,5 @@
 use crate::ir::{Constant, DataType, IRBlock, InputSlot, Instruction};
 
-fn get_zero(tp: DataType) -> Constant {
-    match tp {
-        DataType::U8 => Constant::U8(0),
-        DataType::U16 => Constant::U16(0),
-        DataType::U32 => Constant::U32(0),
-        DataType::U64 => Constant::U64(0),
-        DataType::S8 => Constant::S8(0),
-        DataType::S16 => Constant::S16(0),
-        DataType::S32 => Constant::S32(0),
-        DataType::S64 => Constant::S64(0),
-        DataType::F32 => Constant::F32(0.0),
-        DataType::F64 => Constant::F64(0.0),
-        DataType::Ptr => Constant::Ptr(0),
-        // DataType::None => unimplemented!(),
-        DataType::Flags => unimplemented!(),
-    }
-}
-
 fn constant_to_u64(c: &Constant) -> u64 {
     match c {
         Constant::U8(v) => *v as u64,
@@ -31,6 +13,7 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::F32(_) => unimplemented!("Floats are not supported"),
         Constant::F64(_) => unimplemented!("Floats are not supported"),
         Constant::Ptr(v) => *v as u64,
+        Constant::DataType(_) => unimplemented!("DataType is not supported"),
     }
 }
 
@@ -39,8 +22,10 @@ fn get_constant_inputs(inputs: &Vec<InputSlot>, results: &Vec<Vec<Constant>>) ->
         .iter()
         .map(|input| match input {
             InputSlot::Constant(constant) => constant.clone(),
+            InputSlot::DataType(data_type) => Constant::DataType(data_type.clone()),
             InputSlot::InstructionOutput {
                 instruction_index,
+                tp: _,
                 output_index,
             } => results[*instruction_index][*output_index].clone(),
         })
@@ -60,8 +45,7 @@ fn evaluate_instr(
                 .map(|x| constant_to_u64(x))
                 .fold(0 as u64, |acc, input| acc.wrapping_add(input));
 
-            let result_const = match instruction.data_tp {
-                // DataType::None => todo!(),
+            let result_const = match instruction.outputs[0].tp {
                 DataType::U8 => Constant::U8(result as u8),
                 DataType::S8 => Constant::S8(result as i8),
                 DataType::U16 => Constant::U16(result as u16),
@@ -80,7 +64,7 @@ fn evaluate_instr(
         }
         crate::ir::InstructionType::LoadPtr => todo!("LoadPtr"),
         crate::ir::InstructionType::WritePtr => {
-            assert_eq!(inputs.len(), 2);
+            assert_eq!(inputs.len(), 3);
 
             let ptr = match inputs[0] {
                 Constant::Ptr(p) => p,
@@ -88,16 +72,20 @@ fn evaluate_instr(
             };
             let value = constant_to_u64(&inputs[1]);
             let raw_ptr = ptr as *mut u8;
+            let tp = match inputs[2] {
+                Constant::DataType(tp) => tp,
+                _ => panic!("Expected DataType as third input"),
+            };
             unsafe {
-                match instruction.data_tp {
-                    DataType::U8 => *(raw_ptr as *mut u8) = value as u8,
-                    DataType::S8 => *(raw_ptr as *mut i8) = value as i8,
-                    DataType::U16 => *(raw_ptr as *mut u16) = value as u16,
-                    DataType::S16 => *(raw_ptr as *mut i16) = value as i16,
-                    DataType::U32 => *(raw_ptr as *mut u32) = value as u32,
-                    DataType::S32 => *(raw_ptr as *mut i32) = value as i32,
-                    DataType::U64 => *(raw_ptr as *mut u64) = value,
-                    DataType::S64 => *(raw_ptr as *mut i64) = value as i64,
+                match tp {
+                    DataType::U8 => *raw_ptr.cast() = value as u8,
+                    DataType::S8 => *raw_ptr.cast() = value as i8,
+                    DataType::U16 => *raw_ptr.cast() = value as u16,
+                    DataType::S16 => *raw_ptr.cast() = value as i16,
+                    DataType::U32 => *raw_ptr.cast() = value as u32,
+                    DataType::S32 => *raw_ptr.cast() = value as i32,
+                    DataType::U64 => *raw_ptr.cast() = value,
+                    DataType::S64 => *raw_ptr.cast() = value as i64,
                     DataType::F32 => todo!("F32 write"),
                     DataType::F64 => todo!("F64 write"),
                     DataType::Ptr => unimplemented!("Pointer write"),
@@ -110,20 +98,11 @@ fn evaluate_instr(
     }
 }
 
-pub fn interpret_block(block: IRBlock) {
-    println!("Interpreting IRBlock");
-    block.instructions.iter().for_each(|instruction| {
-        println!("{} {:?}", instruction.index, instruction.instruction);
-    });
-
+pub fn interpret_block(block: &IRBlock) {
     let mut results: Vec<Vec<Constant>> = vec![];
 
     block.instructions.iter().for_each(|instruction| {
         let result = evaluate_instr(&block, &mut results, &instruction.instruction);
-        println!(
-            "Done evaluating instruction: {:?} - Result {:?}",
-            instruction, result
-        );
         results.push(result);
     })
 }
