@@ -78,7 +78,6 @@ pub struct Instruction {
     pub outputs: Vec<OutputSlot>,
 }
 
-
 #[derive(Debug)]
 pub struct InstructionOutput {
     outputs: Vec<InputSlot>,
@@ -149,13 +148,15 @@ impl IRBlock {
         });
 
         return InstructionOutput {
-            outputs: outputs.iter().enumerate().map(|(i, output)| {
-                InputSlot::InstructionOutput {
+            outputs: outputs
+                .iter()
+                .enumerate()
+                .map(|(i, output)| InputSlot::InstructionOutput {
                     instruction_index: index,
                     tp: output.tp,
                     output_index: i,
-                }
-            }).collect(),
+                })
+                .collect(),
         };
     }
 
@@ -176,7 +177,7 @@ impl IRBlock {
         self.append(
             InstructionType::Add,
             vec![arg1, arg2],
-            vec![ OutputSlot { tp: result_tp }, ],
+            vec![OutputSlot { tp: result_tp }],
         )
     }
 
@@ -186,7 +187,11 @@ impl IRBlock {
         ptr: InputSlot,
         value: InputSlot,
     ) -> InstructionOutput {
-        self.append(InstructionType::WritePtr, vec![ptr, value, InputSlot::DataType(tp)], vec![]);
+        self.append(
+            InstructionType::WritePtr,
+            vec![ptr, value, InputSlot::DataType(tp)],
+            vec![],
+        );
         return InstructionOutput { outputs: vec![] };
     }
 }
