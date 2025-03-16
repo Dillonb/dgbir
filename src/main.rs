@@ -1,5 +1,5 @@
 use dgbir::{
-    compiler::compile, ir::*, ir_interpreter::interpret_block, ir_tostring::block_tostring,
+    ir::*, ir_interpreter::interpret_block, ir_tostring::block_tostring,
 };
 
 fn main() {
