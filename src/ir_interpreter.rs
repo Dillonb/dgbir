@@ -10,8 +10,8 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::S16(v) => *v as u64,
         Constant::S32(v) => *v as u64,
         Constant::S64(v) => *v as u64,
-        Constant::F32(v) => unsafe { std::mem::transmute::<f32, u32>(*v) }.into(),
-        Constant::F64(v) => unsafe { std::mem::transmute::<f64, u64>(*v) },
+        Constant::F32(v) => v.to_bits() as u64,
+        Constant::F64(v) => v.to_bits(),
         Constant::Ptr(v) => *v as u64,
         Constant::DataType(_) => unimplemented!("DataType is not supported"),
     }
