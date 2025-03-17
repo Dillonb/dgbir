@@ -53,3 +53,31 @@ fn write_float_ptr() {
     interpret_block(&block);
     assert_eq!(r, 1.0);
 }
+
+#[test]
+fn add_write_float_ptr() {
+    let res_1: f32 = 0.0;
+    let res_2: u32 = 0;
+
+    let context = IRContext::new();
+    let mut block = IRBlock::new(context);
+
+    let add_result = block.add(DataType::F32, IRBlock::const_f32(1.0), IRBlock::const_u32(1));
+    let add_result_2 = block.add(DataType::U32, IRBlock::const_u32(1), IRBlock::const_f32(1.0));
+
+    block.write_ptr(
+        DataType::F32,
+        IRBlock::const_ptr(&res_1 as *const f32 as usize),
+        add_result.val(),
+    );
+
+    block.write_ptr(
+        DataType::U32,
+        IRBlock::const_ptr(&res_2 as *const u32 as usize),
+        add_result_2.val(),
+    );
+
+    interpret_block(&block);
+    assert_eq!(res_1, 2.0);
+    assert_eq!(res_2, 2);
+}
