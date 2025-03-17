@@ -164,6 +164,10 @@ impl IRBlock {
         InputSlot::Constant(Constant::U32(value))
     }
 
+    pub fn const_f32(value: f32) -> InputSlot {
+        InputSlot::Constant(Constant::F32(value))
+    }
+
     pub fn const_ptr(value: usize) -> InputSlot {
         InputSlot::Constant(Constant::Ptr(value))
     }

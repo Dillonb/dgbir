@@ -10,8 +10,8 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::S16(v) => *v as u64,
         Constant::S32(v) => *v as u64,
         Constant::S64(v) => *v as u64,
-        Constant::F32(_) => unimplemented!("Floats are not supported"),
-        Constant::F64(_) => unimplemented!("Floats are not supported"),
+        Constant::F32(v) => unsafe { std::mem::transmute::<f32, u32>(*v) }.into(),
+        Constant::F64(v) => unsafe { std::mem::transmute::<f64, u64>(*v) },
         Constant::Ptr(v) => *v as u64,
         Constant::DataType(_) => unimplemented!("DataType is not supported"),
     }
@@ -86,8 +86,12 @@ fn evaluate_instr(
                     DataType::S32 => *raw_ptr.cast() = value as i32,
                     DataType::U64 => *raw_ptr.cast() = value,
                     DataType::S64 => *raw_ptr.cast() = value as i64,
-                    DataType::F32 => *raw_ptr.cast() = value as f32,
-                    DataType::F64 => *raw_ptr.cast() = value as f64,
+
+                    // For floats, the constant_to_u64() above will extract the bits, we just need
+                    // to write the correct number of bytes here.
+                    DataType::F32 => *raw_ptr.cast() = value as u32,
+                    DataType::F64 => *raw_ptr.cast() = value as u64,
+
                     DataType::Ptr => *raw_ptr.cast() = value as usize,
                     DataType::Flags => unimplemented!("Flags write"),
                 }

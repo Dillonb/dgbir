@@ -19,3 +19,20 @@ fn add_write_ptr() {
     interpret_block(&block);
     assert_eq!(r, 5);
 }
+
+#[test]
+fn write_float_ptr() {
+    let r: f32 = 0.0;
+
+    let context = IRContext::new();
+    let mut block = IRBlock::new(context);
+
+    block.write_ptr(
+        DataType::F32,
+        IRBlock::const_ptr(&r as *const f32 as usize),
+        IRBlock::const_f32(1.0),
+    );
+
+    interpret_block(&block);
+    assert_eq!(r, 1.0);
+}
