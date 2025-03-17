@@ -1,6 +1,23 @@
 use dgbir::{ir::*, ir_interpreter::interpret_block};
 
 #[test]
+fn write_ptr() {
+    let r: u32 = 0;
+
+    let context = IRContext::new();
+    let mut block = IRBlock::new(context);
+
+    block.write_ptr(
+        DataType::U32,
+        IRBlock::const_ptr(&r as *const u32 as usize),
+        IRBlock::const_u32(1),
+    );
+
+    interpret_block(&block);
+    assert_eq!(r, 1);
+}
+
+#[test]
 fn add_write_ptr() {
     let r: u32 = 0;
 
