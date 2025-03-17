@@ -86,9 +86,9 @@ fn evaluate_instr(
                     DataType::S32 => *raw_ptr.cast() = value as i32,
                     DataType::U64 => *raw_ptr.cast() = value,
                     DataType::S64 => *raw_ptr.cast() = value as i64,
-                    DataType::F32 => todo!("F32 write"),
-                    DataType::F64 => todo!("F64 write"),
-                    DataType::Ptr => unimplemented!("Pointer write"),
+                    DataType::F32 => *raw_ptr.cast() = value as f32,
+                    DataType::F64 => *raw_ptr.cast() = value as f64,
+                    DataType::Ptr => *raw_ptr.cast() = value as usize,
                     DataType::Flags => unimplemented!("Flags write"),
                 }
             }
