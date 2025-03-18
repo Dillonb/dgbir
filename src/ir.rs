@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-// #[macro_use] extern crate maplit;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DataType {
