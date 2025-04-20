@@ -95,7 +95,6 @@ fn test_conditional_branch() {
     let context = IRContext::new();
     let mut block = IRBlock::new(context);
 
-
     let res: u32 = 0;
 
     /*
@@ -116,7 +115,11 @@ fn test_conditional_branch() {
     let compare = block.compare(running_sum.val(), max);
     block.conditional_branch(compare.val(), CompareType::LessThan, label);
 
-    block.write_ptr(DataType::U32, IRBlock::const_ptr(&res as *const u32 as usize), running_sum.val());
+    block.write_ptr(
+        DataType::U32,
+        IRBlock::const_ptr(&res as *const u32 as usize),
+        running_sum.val(),
+    );
 
     interpret_block(&block);
     assert_eq!(res, 10);

@@ -268,7 +268,9 @@ impl IRBlock {
         self.append(
             InstructionType::Compare,
             vec![x, y],
-            vec![OutputSlot { tp: DataType::Flags, }],
+            vec![OutputSlot {
+                tp: DataType::Flags,
+            }],
         )
     }
 
@@ -277,11 +279,16 @@ impl IRBlock {
         flags: InputSlot,
         compare_type: CompareType,
         label: Label,
-    ) -> () { // Should branches have an output?
+    ) -> () {
+        // Should branches have an output?
         self.append(
             InstructionType::ConditionalBranch,
-            vec![flags, InputSlot::Constant(Constant::CompareType(compare_type)), InputSlot::Constant(Constant::Label(label))],
-            vec![]
+            vec![
+                flags,
+                InputSlot::Constant(Constant::CompareType(compare_type)),
+                InputSlot::Constant(Constant::Label(label)),
+            ],
+            vec![],
         );
     }
 }
