@@ -91,7 +91,7 @@ fn add_write_float_ptr() {
 }
 
 #[test]
-fn test_conditional_branch() {
+fn test_conditional_branch_loop() {
     let context = IRContext::new();
     let mut block = IRBlock::new(context);
 
