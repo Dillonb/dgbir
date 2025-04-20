@@ -62,6 +62,8 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::F64(v) => v.to_bits(),
         Constant::Ptr(v) => *v as u64,
         Constant::DataType(_) => unimplemented!("DataType is not supported"),
+        Constant::CompareType(_) => unimplemented!("CompareType is not supported"),
+        Constant::Label(v) => v.index as u64,
     }
 }
 
@@ -70,7 +72,6 @@ fn get_constant_inputs(inputs: &Vec<InputSlot>, results: &Vec<Vec<Constant>>) ->
         .iter()
         .map(|input| match input {
             InputSlot::Constant(constant) => constant.clone(),
-            InputSlot::DataType(data_type) => Constant::DataType(data_type.clone()),
             InputSlot::InstructionOutput {
                 instruction_index,
                 tp: _,
@@ -88,94 +89,97 @@ fn evaluate_instr(
     let inputs = get_constant_inputs(&instruction.inputs, results);
     match instruction.tp {
         crate::ir::InstructionType::Add => {
-            let result = inputs
-                .into_iter()
-                .map(|val| constant_to_mini_constant(&val))
-                .reduce(|acc, val| match (acc, val) {
-                    // Pure integer addition
-                    (MiniConstant::U64(a), MiniConstant::U64(b)) => {
-                        MiniConstant::U64(a.wrapping_add(b))
-                    }
-                    (MiniConstant::U64(a), MiniConstant::S64(b)) => {
-                        MiniConstant::U64(a.wrapping_add_signed(b))
-                    }
-                    (MiniConstant::S64(a), MiniConstant::U64(b)) => {
-                        MiniConstant::S64(a.wrapping_add_unsigned(b))
-                    }
-                    (MiniConstant::S64(a), MiniConstant::S64(b)) => {
-                        MiniConstant::S64(a.wrapping_add(b))
-                    }
+                let result = inputs
+                    .into_iter()
+                    .map(|val| constant_to_mini_constant(&val))
+                    .reduce(|acc, val| match (acc, val) {
+                        // Pure integer addition
+                        (MiniConstant::U64(a), MiniConstant::U64(b)) => {
+                            MiniConstant::U64(a.wrapping_add(b))
+                        }
+                        (MiniConstant::U64(a), MiniConstant::S64(b)) => {
+                            MiniConstant::U64(a.wrapping_add_signed(b))
+                        }
+                        (MiniConstant::S64(a), MiniConstant::U64(b)) => {
+                            MiniConstant::S64(a.wrapping_add_unsigned(b))
+                        }
+                        (MiniConstant::S64(a), MiniConstant::S64(b)) => {
+                            MiniConstant::S64(a.wrapping_add(b))
+                        }
 
-                    // Mixed integers and floats: int result
-                    (MiniConstant::U64(a), MiniConstant::F32(b)) => {
-                        MiniConstant::U64(a.wrapping_add_signed(b as i64))
-                    }
-                    (MiniConstant::U64(a), MiniConstant::F64(b)) => {
-                        MiniConstant::U64(a.wrapping_add_signed(b as i64))
-                    }
-                    (MiniConstant::S64(a), MiniConstant::F32(b)) => {
-                        MiniConstant::S64(a.wrapping_add(b as i64))
-                    }
-                    (MiniConstant::S64(a), MiniConstant::F64(b)) => {
-                        MiniConstant::S64(a.wrapping_add(b as i64))
-                    }
+                        // Mixed integers and floats: int result
+                        (MiniConstant::U64(a), MiniConstant::F32(b)) => {
+                            MiniConstant::U64(a.wrapping_add_signed(b as i64))
+                        }
+                        (MiniConstant::U64(a), MiniConstant::F64(b)) => {
+                            MiniConstant::U64(a.wrapping_add_signed(b as i64))
+                        }
+                        (MiniConstant::S64(a), MiniConstant::F32(b)) => {
+                            MiniConstant::S64(a.wrapping_add(b as i64))
+                        }
+                        (MiniConstant::S64(a), MiniConstant::F64(b)) => {
+                            MiniConstant::S64(a.wrapping_add(b as i64))
+                        }
 
-                    // Mixed integers and floats: float result
-                    (MiniConstant::F32(a), MiniConstant::U64(b)) => MiniConstant::F32(a + b as f32),
-                    (MiniConstant::F32(a), MiniConstant::S64(b)) => MiniConstant::F32(a + b as f32),
-                    (MiniConstant::F64(a), MiniConstant::U64(b)) => MiniConstant::F64(a + b as f64),
-                    (MiniConstant::F64(a), MiniConstant::S64(b)) => MiniConstant::F64(a + b as f64),
+                        // Mixed integers and floats: float result
+                        (MiniConstant::F32(a), MiniConstant::U64(b)) => MiniConstant::F32(a + b as f32),
+                        (MiniConstant::F32(a), MiniConstant::S64(b)) => MiniConstant::F32(a + b as f32),
+                        (MiniConstant::F64(a), MiniConstant::U64(b)) => MiniConstant::F64(a + b as f64),
+                        (MiniConstant::F64(a), MiniConstant::S64(b)) => MiniConstant::F64(a + b as f64),
 
-                    // Pure float addition
-                    (MiniConstant::F32(a), MiniConstant::F32(b)) => MiniConstant::F32(a + b),
-                    (MiniConstant::F32(a), MiniConstant::F64(b)) => MiniConstant::F32(a + b as f32),
-                    (MiniConstant::F64(a), MiniConstant::F32(b)) => MiniConstant::F64(a + b as f64),
-                    (MiniConstant::F64(a), MiniConstant::F64(b)) => MiniConstant::F64(a + b),
-                })
-                .unwrap();
+                        // Pure float addition
+                        (MiniConstant::F32(a), MiniConstant::F32(b)) => MiniConstant::F32(a + b),
+                        (MiniConstant::F32(a), MiniConstant::F64(b)) => MiniConstant::F32(a + b as f32),
+                        (MiniConstant::F64(a), MiniConstant::F32(b)) => MiniConstant::F64(a + b as f64),
+                        (MiniConstant::F64(a), MiniConstant::F64(b)) => MiniConstant::F64(a + b),
+                    })
+                    .unwrap();
 
-            return vec![mini_constant_to_constant(
-                &result,
-                instruction.outputs[0].tp,
-            )];
-        }
+                return vec![mini_constant_to_constant(
+                    &result,
+                    instruction.outputs[0].tp,
+                )];
+            }
         crate::ir::InstructionType::LoadPtr => todo!("LoadPtr"),
         crate::ir::InstructionType::WritePtr => {
-            assert_eq!(inputs.len(), 3);
+                assert_eq!(inputs.len(), 3);
 
-            let ptr = match inputs[0] {
-                Constant::Ptr(p) => p,
-                _ => panic!("Expected pointer as first input"),
-            };
-            let value = constant_to_u64(&inputs[1]);
-            let raw_ptr = ptr as *mut u8;
-            let tp = match inputs[2] {
-                Constant::DataType(tp) => tp,
-                _ => panic!("Expected DataType as third input"),
-            };
-            unsafe {
-                match tp {
-                    DataType::U8 => *raw_ptr.cast() = value as u8,
-                    DataType::S8 => *raw_ptr.cast() = value as i8,
-                    DataType::U16 => *raw_ptr.cast() = value as u16,
-                    DataType::S16 => *raw_ptr.cast() = value as i16,
-                    DataType::U32 => *raw_ptr.cast() = value as u32,
-                    DataType::S32 => *raw_ptr.cast() = value as i32,
-                    DataType::U64 => *raw_ptr.cast() = value,
-                    DataType::S64 => *raw_ptr.cast() = value as i64,
+                let ptr = match inputs[0] {
+                    Constant::Ptr(p) => p,
+                    _ => panic!("Expected pointer as first input"),
+                };
+                let value = constant_to_u64(&inputs[1]);
+                let raw_ptr = ptr as *mut u8;
+                let tp = match inputs[2] {
+                    Constant::DataType(tp) => tp,
+                    _ => panic!("Expected DataType as third input"),
+                };
+                unsafe {
+                    match tp {
+                        DataType::U8 => *raw_ptr.cast() = value as u8,
+                        DataType::S8 => *raw_ptr.cast() = value as i8,
+                        DataType::U16 => *raw_ptr.cast() = value as u16,
+                        DataType::S16 => *raw_ptr.cast() = value as i16,
+                        DataType::U32 => *raw_ptr.cast() = value as u32,
+                        DataType::S32 => *raw_ptr.cast() = value as i32,
+                        DataType::U64 => *raw_ptr.cast() = value,
+                        DataType::S64 => *raw_ptr.cast() = value as i64,
 
-                    // For floats, the constant_to_u64() above will extract the bits, we just need
-                    // to write the correct number of bytes here.
-                    DataType::F32 => *raw_ptr.cast() = value as u32,
-                    DataType::F64 => *raw_ptr.cast() = value as u64,
+                        // For floats, the constant_to_u64() above will extract the bits, we just need
+                        // to write the correct number of bytes here.
+                        DataType::F32 => *raw_ptr.cast() = value as u32,
+                        DataType::F64 => *raw_ptr.cast() = value as u64,
 
-                    DataType::Ptr => *raw_ptr.cast() = value as usize,
-                    DataType::Flags => unimplemented!("Flags write"),
+                        DataType::Ptr => *raw_ptr.cast() = value as usize,
+                        DataType::Flags => unimplemented!("Flags write"),
+                    }
                 }
-            }
 
-            return vec![];
-        }
+                return vec![];
+            }
+        crate::ir::InstructionType::ConditionalBranch => todo!(),
+        crate::ir::InstructionType::Compare => todo!(),
+        crate::ir::InstructionType::Phi => todo!(),
     }
 }
 

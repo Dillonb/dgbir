@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, collections::BTreeSet};
 
 #[derive(Debug, Clone, Copy)]
 pub enum DataType {
@@ -31,12 +31,27 @@ pub enum Constant {
     F64(f64),
     Ptr(usize),
     DataType(DataType),
+    CompareType(CompareType),
+    Label(Label),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CompareType {
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 #[derive(Debug)]
 pub enum InstructionType {
     Add,
+    ConditionalBranch,
+    Compare,
     LoadPtr,
+    Phi,
     WritePtr,
 }
 
@@ -49,7 +64,6 @@ pub enum InputSlot {
         output_index: usize,
     },
     Constant(Constant),
-    DataType(DataType),
 }
 
 // pub struct InputSlotSchema {
@@ -94,6 +108,45 @@ impl InstructionOutput {
     }
 }
 
+pub struct PhiNode {
+    pub inputs: Vec<InputSlot>,
+}
+
+impl PhiNode {
+    pub fn add_input(&mut self, input: InputSlot) {
+        self.inputs.push(input);
+    }
+
+    pub fn val(&self) -> InputSlot {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Label {
+    pub index: usize,
+}
+
+impl PartialEq for Label {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl Eq for Label {}
+
+impl PartialOrd for Label {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Label {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index.cmp(&other.index)
+    }
+}
+
 #[derive(Debug)]
 pub struct IndexedInstruction {
     /// The index of the instruction in the IR vec
@@ -117,6 +170,7 @@ impl IRContext {
 pub struct IRBlock {
     pub context: RefCell<IRContext>,
     pub instructions: Vec<IndexedInstruction>,
+    pub labels: BTreeSet<Label>,
 }
 
 impl IRBlock {
@@ -124,6 +178,7 @@ impl IRBlock {
         IRBlock {
             context,
             instructions: Vec::new(),
+            labels: BTreeSet::new(),
         }
     }
 
@@ -192,9 +247,41 @@ impl IRBlock {
     ) -> InstructionOutput {
         self.append(
             InstructionType::WritePtr,
-            vec![ptr, value, InputSlot::DataType(tp)],
+            vec![ptr, value, InputSlot::Constant(Constant::DataType(tp))],
             vec![],
         );
         return InstructionOutput { outputs: vec![] };
+    }
+
+    pub fn label(&mut self) -> Label {
+        let index = self.instructions.len();
+        let label = Label { index };
+        self.labels.insert(label.clone());
+        return label;
+    }
+
+    pub fn phi(&mut self, _tp: DataType, _inputs: Vec<InputSlot>) -> PhiNode {
+        todo!("phi nodes");
+    }
+
+    pub fn compare(&mut self, x: InputSlot, y: InputSlot) -> InstructionOutput {
+        self.append(
+            InstructionType::Compare,
+            vec![x, y],
+            vec![OutputSlot { tp: DataType::Flags, }],
+        )
+    }
+
+    pub fn conditional_branch(
+        &mut self,
+        flags: InputSlot,
+        compare_type: CompareType,
+        label: Label,
+    ) -> () { // Should branches have an output?
+        self.append(
+            InstructionType::ConditionalBranch,
+            vec![flags, InputSlot::Constant(Constant::CompareType(compare_type)), InputSlot::Constant(Constant::Label(label))],
+            vec![]
+        );
     }
 }

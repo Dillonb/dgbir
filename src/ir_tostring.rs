@@ -22,9 +22,6 @@ fn inputs_tostring(inputs: &Vec<InputSlot>) -> String {
             InputSlot::Constant(constant) => {
                 return format!("{:?}", constant);
             }
-            InputSlot::DataType(data_type) => {
-                return format!("{:?}", data_type);
-            }
             InputSlot::InstructionOutput {
                 instruction_index,
                 tp: _,

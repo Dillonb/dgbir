@@ -62,8 +62,16 @@ fn add_write_float_ptr() {
     let context = IRContext::new();
     let mut block = IRBlock::new(context);
 
-    let add_result = block.add(DataType::F32, IRBlock::const_f32(1.0), IRBlock::const_u32(1));
-    let add_result_2 = block.add(DataType::U32, IRBlock::const_u32(1), IRBlock::const_f32(1.0));
+    let add_result = block.add(
+        DataType::F32,
+        IRBlock::const_f32(1.0),
+        IRBlock::const_u32(1),
+    );
+    let add_result_2 = block.add(
+        DataType::U32,
+        IRBlock::const_u32(1),
+        IRBlock::const_f32(1.0),
+    );
 
     block.write_ptr(
         DataType::F32,
@@ -80,4 +88,36 @@ fn add_write_float_ptr() {
     interpret_block(&block);
     assert_eq!(res_1, 2.0);
     assert_eq!(res_2, 2);
+}
+
+#[test]
+fn test_conditional_branch() {
+    let context = IRContext::new();
+    let mut block = IRBlock::new(context);
+
+
+    let res: u32 = 0;
+
+    /*
+     * int i = 0;
+     * while (i < 10) {
+     *   i++;
+     * }
+     */
+
+    let base = IRBlock::const_u32(0);
+    let max = IRBlock::const_u32(10);
+
+    let label = block.label();
+    let mut running_sum = block.phi(DataType::U32, vec![base]);
+    let sum = block.add(DataType::U32, running_sum.val(), IRBlock::const_u32(1));
+    running_sum.add_input(sum.val());
+
+    let compare = block.compare(running_sum.val(), max);
+    block.conditional_branch(compare.val(), CompareType::LessThan, label);
+
+    block.write_ptr(DataType::U32, IRBlock::const_ptr(&res as *const u32 as usize), running_sum.val());
+
+    interpret_block(&block);
+    assert_eq!(res, 10);
 }
