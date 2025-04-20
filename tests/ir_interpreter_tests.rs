@@ -1,4 +1,4 @@
-use dgbir::{ir::*, ir_interpreter::interpret_block};
+use dgbir::{ir::*, ir_interpreter::interpret_block, ir_tostring::block_tostring};
 
 #[test]
 fn write_ptr() {
@@ -108,9 +108,10 @@ fn test_conditional_branch() {
     let max = IRBlock::const_u32(10);
 
     let label = block.label();
-    let mut running_sum = block.phi(DataType::U32, vec![base]);
+    let running_sum = block.phi(DataType::U32, vec![base]);
     let sum = block.add(DataType::U32, running_sum.val(), IRBlock::const_u32(1));
-    running_sum.add_input(sum.val());
+
+    block.add_phi_input(&running_sum, sum.val());
 
     let compare = block.compare(running_sum.val(), max);
     block.conditional_branch(compare.val(), CompareType::LessThan, label);
@@ -121,6 +122,7 @@ fn test_conditional_branch() {
         running_sum.val(),
     );
 
+    println!("{}", block_tostring(&block));
     interpret_block(&block);
     assert_eq!(res, 10);
 }

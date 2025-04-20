@@ -108,20 +108,6 @@ impl InstructionOutput {
     }
 }
 
-pub struct PhiNode {
-    pub inputs: Vec<InputSlot>,
-}
-
-impl PhiNode {
-    pub fn add_input(&mut self, input: InputSlot) {
-        self.inputs.push(input);
-    }
-
-    pub fn val(&self) -> InputSlot {
-        todo!()
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Label {
     pub index: usize,
@@ -260,8 +246,8 @@ impl IRBlock {
         return label;
     }
 
-    pub fn phi(&mut self, _tp: DataType, _inputs: Vec<InputSlot>) -> PhiNode {
-        todo!("phi nodes");
+    pub fn phi(&mut self, tp: DataType, inputs: Vec<InputSlot>) -> InstructionOutput {
+        self.append(InstructionType::Phi, inputs, vec![OutputSlot { tp }])
     }
 
     pub fn compare(&mut self, x: InputSlot, y: InputSlot) -> InstructionOutput {
@@ -290,5 +276,31 @@ impl IRBlock {
             ],
             vec![],
         );
+    }
+
+    pub fn add_phi_input(&mut self, phi_node: &InstructionOutput, val: InputSlot) {
+        let InputSlot::InstructionOutput {
+            instruction_index, ..
+        } = phi_node.val()
+        else {
+            panic!("This is not a phi node: not an InstructionOutput");
+        };
+
+        let instruction = &mut self.instructions[instruction_index];
+
+        let IndexedInstruction {
+            instruction:
+                Instruction {
+                    tp: InstructionType::Phi,
+                    inputs,
+                    ..
+                },
+            ..
+        } = instruction
+        else {
+            panic!("This is not a phi node: not a Phi instruction");
+        };
+
+        inputs.push(val);
     }
 }
