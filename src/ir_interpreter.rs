@@ -1,4 +1,4 @@
-use crate::ir::{Constant, DataType, IRBlock, InputSlot, Instruction, InstructionType};
+use crate::ir::{CompareType, Constant, DataType, IRBlock, InputSlot, Instruction, InstructionType};
 
 /// Used to simplify code around integer math when width is not as important.
 enum MiniConstant {
@@ -61,6 +61,7 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::F32(v) => v.to_bits() as u64,
         Constant::F64(v) => v.to_bits(),
         Constant::Ptr(v) => *v as u64,
+        Constant::Bool(v) => *v as u64,
         Constant::DataType(_) => unimplemented!("DataType is not supported"),
         Constant::CompareType(_) => unimplemented!("CompareType is not supported"),
         Constant::Label(v) => v.index as u64,
@@ -83,6 +84,7 @@ fn get_constant_inputs(inputs: &Vec<InputSlot>, results: &Vec<Vec<Constant>>) ->
 
 fn evaluate_instr(
     _block: &IRBlock,
+    pc: &mut usize,
     instruction_last_executed: &Vec<i32>,
     results: &mut Vec<Vec<Constant>>,
     instruction: &Instruction,
@@ -92,7 +94,7 @@ fn evaluate_instr(
         _ => get_constant_inputs(&instruction.inputs, results),
     };
     match instruction.tp {
-        crate::ir::InstructionType::Add => {
+        InstructionType::Add => {
             let result = inputs
                 .into_iter()
                 .map(|val| constant_to_mini_constant(&val))
@@ -144,8 +146,8 @@ fn evaluate_instr(
                 instruction.outputs[0].tp,
             )];
         }
-        crate::ir::InstructionType::LoadPtr => todo!("LoadPtr"),
-        crate::ir::InstructionType::WritePtr => {
+        InstructionType::LoadPtr => todo!("LoadPtr"),
+        InstructionType::WritePtr => {
             assert_eq!(inputs.len(), 3);
 
             let ptr = match inputs[0] {
@@ -181,13 +183,46 @@ fn evaluate_instr(
 
             return vec![];
         }
-        crate::ir::InstructionType::ConditionalBranch => {
-            todo!("Evaluate conditional branch instruction in IR interpreter")
+        InstructionType::ConditionalBranch => {
+            let condition = constant_to_u64(&inputs[0]) != 0;
+            let label = match inputs[1] {
+                Constant::Label(l) => l,
+                _ => panic!("Expected Label as second input"),
+            };
+
+            if condition {
+                *pc = label.index;
+            }
+
+            vec![]
         }
-        crate::ir::InstructionType::Compare => {
-            todo!("Evaluate compare instruction in IR interpreter")
+        InstructionType::Compare => {
+            assert_eq!(inputs.len(), 3);
+            let a = constant_to_u64(&inputs[0]);
+            let c = match inputs[1] {
+                Constant::CompareType(c) => c,
+                _ => panic!("Expected CompareType as second input"),
+            };
+            let b = constant_to_u64(&inputs[2]);
+
+            let result = match c {
+                CompareType::Equal => a == b,
+                CompareType::NotEqual => a != b,
+
+                CompareType::LessThanSigned => todo!("LessThanSigned"),
+                CompareType::GreaterThanSigned => todo!("GreaterThanSigned"),
+                CompareType::LessThanOrEqualSigned => todo!("LessThanOrEqualSigned"),
+                CompareType::GreaterThanOrEqualSigned => todo!("GreaterThanOrEqualSigned"),
+
+                CompareType::LessThanUnsigned => a < b,
+                CompareType::GreaterThanUnsigned => a > b,
+                CompareType::LessThanOrEqualUnsigned => a <= b,
+                CompareType::GreaterThanOrEqualUnsigned => a >= b,
+            };
+
+            return vec![Constant::Bool(result)];
         }
-        crate::ir::InstructionType::Phi => {
+        InstructionType::Phi => {
             // Try to find the last executed instruction
             let last_executed = instruction
                 .inputs
@@ -231,6 +266,7 @@ pub fn interpret_block(block: &IRBlock) {
         pc += 1;
         results[instruction_index] = evaluate_instr(
             block,
+            &mut pc,
             &instruction_last_executed,
             &mut results,
             &instruction.instruction,

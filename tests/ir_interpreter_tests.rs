@@ -113,8 +113,8 @@ fn test_conditional_branch() {
 
     block.add_phi_input(&running_sum, sum.val());
 
-    let compare = block.compare(running_sum.val(), max);
-    block.conditional_branch(compare.val(), CompareType::LessThan, label);
+    let compare = block.compare(running_sum.val(), CompareType::LessThanUnsigned, max);
+    block.conditional_branch(compare.val(), label);
 
     block.write_ptr(
         DataType::U32,

@@ -30,6 +30,7 @@ pub enum Constant {
     F32(f32),
     F64(f64),
     Ptr(usize),
+    Bool(bool),
     DataType(DataType),
     CompareType(CompareType),
     Label(Label),
@@ -39,10 +40,14 @@ pub enum Constant {
 pub enum CompareType {
     Equal,
     NotEqual,
-    LessThan,
-    GreaterThan,
-    LessThanOrEqual,
-    GreaterThanOrEqual,
+    LessThanSigned,
+    GreaterThanSigned,
+    LessThanOrEqualSigned,
+    GreaterThanOrEqualSigned,
+    LessThanUnsigned,
+    GreaterThanUnsigned,
+    LessThanOrEqualUnsigned,
+    GreaterThanOrEqualUnsigned,
 }
 
 #[derive(Debug)]
@@ -250,10 +255,10 @@ impl IRBlock {
         self.append(InstructionType::Phi, inputs, vec![OutputSlot { tp }])
     }
 
-    pub fn compare(&mut self, x: InputSlot, y: InputSlot) -> InstructionOutput {
+    pub fn compare(&mut self, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::Compare,
-            vec![x, y],
+            vec![x, InputSlot::Constant(Constant::CompareType(tp)), y],
             vec![OutputSlot {
                 tp: DataType::Flags,
             }],
@@ -262,16 +267,14 @@ impl IRBlock {
 
     pub fn conditional_branch(
         &mut self,
-        flags: InputSlot,
-        compare_type: CompareType,
+        cond: InputSlot,
         label: Label,
     ) -> () {
         // Should branches have an output?
         self.append(
             InstructionType::ConditionalBranch,
             vec![
-                flags,
-                InputSlot::Constant(Constant::CompareType(compare_type)),
+                cond,
                 InputSlot::Constant(Constant::Label(label)),
             ],
             vec![],
