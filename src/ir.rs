@@ -265,18 +265,11 @@ impl IRBlock {
         )
     }
 
-    pub fn conditional_branch(
-        &mut self,
-        cond: InputSlot,
-        label: Label,
-    ) -> () {
+    pub fn conditional_branch(&mut self, cond: InputSlot, label: Label) -> () {
         // Should branches have an output?
         self.append(
             InstructionType::ConditionalBranch,
-            vec![
-                cond,
-                InputSlot::Constant(Constant::Label(label)),
-            ],
+            vec![cond, InputSlot::Constant(Constant::Label(label))],
             vec![],
         );
     }

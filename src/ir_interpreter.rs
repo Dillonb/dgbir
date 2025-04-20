@@ -1,4 +1,6 @@
-use crate::ir::{CompareType, Constant, DataType, IRBlock, InputSlot, Instruction, InstructionType};
+use crate::ir::{
+    CompareType, Constant, DataType, IRBlock, InputSlot, Instruction, InstructionType,
+};
 
 /// Used to simplify code around integer math when width is not as important.
 enum MiniConstant {
