@@ -1,4 +1,4 @@
-use crate::ir::{IRBlock, IndexedInstruction, InputSlot, Instruction, OutputSlot};
+use crate::ir::{Constant, IRBlock, IndexedInstruction, InputSlot, Instruction, Label, OutputSlot};
 
 fn outputs_tostring(instr_index: usize, inputs: &Vec<OutputSlot>) -> String {
     inputs
@@ -20,7 +20,11 @@ fn inputs_tostring(inputs: &Vec<InputSlot>) -> String {
         .iter()
         .map(|slot| match slot {
             InputSlot::Constant(constant) => {
-                return format!("{:?}", constant);
+                match constant {
+                    Constant::Label(label) => return format!("label_{}", label.index),
+                    Constant::CompareType(tp) => return format!("{:?}", tp),
+                    _ => return format!("{:?}", constant),
+                }
             }
             InputSlot::InstructionOutput {
                 instruction_index,
@@ -56,7 +60,16 @@ pub fn block_tostring(block: &IRBlock) -> String {
     return block
         .instructions
         .iter()
-        .map(|instruction| instruction_tostring(instruction))
+        .map(|instruction| {
+            let has_label = block.labels.contains(&Label { index: instruction.index });
+            let instruction_str = instruction_tostring(instruction);
+
+            if has_label {
+                return format!("label_{}:\n{}", instruction.index, instruction_str);
+            } else {
+                return instruction_str;
+            }
+        })
         .collect::<Vec<String>>()
         .join("\n");
 }

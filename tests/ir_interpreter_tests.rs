@@ -122,6 +122,7 @@ fn test_conditional_branch_loop() {
         running_sum.val(),
     );
 
+    println!("{}", block_tostring(&block));
     interpret_block(&block);
     assert_eq!(res, 10);
 }
