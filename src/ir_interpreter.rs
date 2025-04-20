@@ -1,4 +1,4 @@
-use crate::ir::{Constant, DataType, IRBlock, InputSlot, Instruction};
+use crate::ir::{Constant, DataType, IRBlock, InputSlot, Instruction, InstructionType};
 
 /// Used to simplify code around integer math when width is not as important.
 enum MiniConstant {
@@ -86,7 +86,10 @@ fn evaluate_instr(
     results: &mut Vec<Vec<Constant>>,
     instruction: &Instruction,
 ) -> Vec<Constant> {
-    let inputs = get_constant_inputs(&instruction.inputs, results);
+    let inputs = match instruction.tp {
+        InstructionType::Phi => vec![], // Don't evaluate for phi nodes
+        _ => get_constant_inputs(&instruction.inputs, results),
+    };
     match instruction.tp {
         crate::ir::InstructionType::Add => {
             let result = inputs
@@ -177,9 +180,9 @@ fn evaluate_instr(
 
             return vec![];
         }
-        crate::ir::InstructionType::ConditionalBranch => todo!(),
-        crate::ir::InstructionType::Compare => todo!(),
-        crate::ir::InstructionType::Phi => todo!(),
+        crate::ir::InstructionType::ConditionalBranch => todo!("Evaluate conditional branch instruction in IR interpreter"),
+        crate::ir::InstructionType::Compare => todo!("Evaluate compare instruction in IR interpreter"),
+        crate::ir::InstructionType::Phi => todo!("Evaluate phi node in IR interpreter"),
     }
 }
 
