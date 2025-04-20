@@ -83,6 +83,7 @@ fn get_constant_inputs(inputs: &Vec<InputSlot>, results: &Vec<Vec<Constant>>) ->
 
 fn evaluate_instr(
     _block: &IRBlock,
+    instruction_last_executed: &Vec<i32>,
     results: &mut Vec<Vec<Constant>>,
     instruction: &Instruction,
 ) -> Vec<Constant> {
@@ -182,15 +183,47 @@ fn evaluate_instr(
         }
         crate::ir::InstructionType::ConditionalBranch => todo!("Evaluate conditional branch instruction in IR interpreter"),
         crate::ir::InstructionType::Compare => todo!("Evaluate compare instruction in IR interpreter"),
-        crate::ir::InstructionType::Phi => todo!("Evaluate phi node in IR interpreter"),
+        crate::ir::InstructionType::Phi => {
+            // Try to find the last executed instruction
+            let last_executed = instruction.inputs.iter().filter(|input| {
+                match input {
+                    InputSlot::Constant(_) => false,
+                    InputSlot::InstructionOutput { instruction_index, .. } => {
+                        instruction_last_executed[*instruction_index] > 0
+                    }
+                }
+            }).last()
+            // If no instructions were executed, look for a constant
+            .unwrap_or_else(|| {
+                instruction.inputs.iter().filter(|input| {
+                    match input {
+                        InputSlot::Constant(_) => true,
+                        InputSlot::InstructionOutput { .. } => false,
+                    }
+                }).last().unwrap()
+            });
+
+            return get_constant_inputs(&vec![*last_executed], results);
+        }
     }
 }
 
 pub fn interpret_block(block: &IRBlock) {
-    let mut results: Vec<Vec<Constant>> = vec![];
+    let mut results: Vec<Vec<Constant>> = vec![vec![]; block.instructions.len()];
+    let mut pc = 0;
 
-    block.instructions.iter().for_each(|instruction| {
-        let result = evaluate_instr(&block, &mut results, &instruction.instruction);
-        results.push(result);
-    })
+    // Data for phi nodes
+    let mut instructions_executed = 0;
+    let mut instruction_last_executed: Vec<i32> = vec![0; block.instructions.len()];
+
+    while pc < block.instructions.len() {
+        let instruction = &block.instructions[pc];
+        let instruction_index = pc;
+        pc += 1;
+        results[instruction_index] = evaluate_instr(block, &instruction_last_executed, &mut results, &instruction.instruction);
+
+        // Data for phi nodes
+        instructions_executed += 1;
+        instruction_last_executed[instruction_index] = instructions_executed;
+    }
 }
