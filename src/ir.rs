@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::BTreeSet};
+use std::cell::RefCell;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DataType {
@@ -13,8 +13,8 @@ pub enum DataType {
     S64,
     F32,
     F64,
+    Bool,
     Ptr,
-    Flags,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,7 +33,6 @@ pub enum Constant {
     Bool(bool),
     DataType(DataType),
     CompareType(CompareType),
-    Label(Label),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,10 +52,8 @@ pub enum CompareType {
 #[derive(Debug)]
 pub enum InstructionType {
     Add,
-    ConditionalBranch,
     Compare,
     LoadPtr,
-    Phi,
     WritePtr,
 }
 
@@ -64,36 +61,49 @@ pub enum InstructionType {
 pub enum InputSlot {
     /// References the output of another instruction.
     InstructionOutput {
+        block_index: usize,
         instruction_index: usize,
         tp: DataType,
         output_index: usize,
     },
+    /// References an input to the block.
+    BlockInput {
+        block_index: usize,
+        input_index: usize,
+        tp: DataType,
+    },
     Constant(Constant),
 }
-
-// pub struct InputSlotSchema {
-//     name: String,
-// }
-
-// pub struct OutputSlotSchema {
-//     name: String
-// }
-
-// pub struct InstructionSchema {
-//     inputs: Vec<InputSlotSchema>,
-//     outputs: Vec<OutputSlotSchema>,
-// }
 
 #[derive(Debug, Clone, Copy)]
 pub struct OutputSlot {
     pub tp: DataType,
 }
 
+#[derive(Debug, Clone)]
+pub struct BlockReference {
+    pub block_index: usize,
+    pub arguments: Vec<InputSlot>,
+}
+
 #[derive(Debug)]
-pub struct Instruction {
-    pub tp: InstructionType,
-    pub inputs: Vec<InputSlot>,
-    pub outputs: Vec<OutputSlot>,
+pub enum Instruction {
+    Instruction {
+        tp: InstructionType,
+        inputs: Vec<InputSlot>,
+        outputs: Vec<OutputSlot>,
+    },
+    Branch {
+        cond: InputSlot,
+        if_true: BlockReference,
+        if_false: BlockReference,
+    },
+    Jump {
+        target: BlockReference,
+    },
+    Return {
+        value: InputSlot,
+    }
 }
 
 #[derive(Debug)]
@@ -113,33 +123,23 @@ impl InstructionOutput {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Label {
-    pub index: usize,
+pub fn const_u32(value: u32) -> InputSlot {
+    InputSlot::Constant(Constant::U32(value))
 }
 
-impl PartialEq for Label {
-    fn eq(&self, other: &Self) -> bool {
-        self.index == other.index
-    }
+pub fn const_f32(value: f32) -> InputSlot {
+    InputSlot::Constant(Constant::F32(value))
 }
 
-impl Eq for Label {}
-
-impl PartialOrd for Label {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
+pub fn const_ptr(value: usize) -> InputSlot {
+    InputSlot::Constant(Constant::Ptr(value))
 }
 
-impl Ord for Label {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.index.cmp(&other.index)
-    }
-}
 
 #[derive(Debug)]
 pub struct IndexedInstruction {
+    /// Which block this instruction belongs to
+    pub block_index: usize,
     /// The index of the instruction in the IR vec
     pub index: usize,
     pub instruction: Instruction,
@@ -151,32 +151,69 @@ pub struct IRContext {
     pub inputs: Vec<usize>,
 }
 
+#[derive(Debug)]
+pub struct IRFunction {
+    pub blocks: Vec<IRBasicBlock>,
+}
+
+#[derive(Debug)]
+pub struct IRBasicBlock {
+    pub is_closed: bool,
+    pub index: usize,
+    pub inputs: Vec<DataType>,
+    pub instructions: Vec<IndexedInstruction>,
+}
+
 impl IRContext {
     pub fn new() -> RefCell<Self> {
         Into::into(IRContext { inputs: Vec::new() })
     }
 }
 
-#[derive(Debug)]
-pub struct IRBlock {
-    pub context: RefCell<IRContext>,
-    pub instructions: Vec<IndexedInstruction>,
-    pub labels: BTreeSet<Label>,
+impl IRFunction {
+    pub fn new(_context: RefCell<IRContext>) -> Self {
+        IRFunction { blocks: Vec::new() }
+    }
 }
 
-impl IRBlock {
-    pub fn new(context: RefCell<IRContext>) -> Self {
-        IRBlock {
-            context,
+impl IRBasicBlock {
+    pub fn new(function: &mut IRFunction, inputs: Vec<DataType>) -> &mut Self {
+        let index = function.blocks.len();
+        function.blocks.push(IRBasicBlock {
+            is_closed: false,
+            index,
+            inputs,
             instructions: Vec::new(),
-            labels: BTreeSet::new(),
-        }
+        });
+        return &mut function.blocks[index];
     }
 
     pub fn append_obj(&mut self, instruction: Instruction) -> usize {
+        if self.is_closed {
+            panic!("Cannot append to a closed block");
+        }
+
         let index = self.instructions.len();
-        self.instructions
-            .push(IndexedInstruction { index, instruction });
+
+        // Close the block if necessary
+        match instruction {
+            Instruction::Branch { .. } => {
+                self.is_closed = true;
+            },
+            Instruction::Jump { .. } => {
+                self.is_closed = true;
+            },
+            Instruction::Return { .. } => {
+                self.is_closed = true;
+            },
+            Instruction::Instruction { .. } => {}
+        }
+
+        self.instructions.push(IndexedInstruction {
+            block_index: self.index,
+            index,
+            instruction,
+        });
         return index;
     }
 
@@ -186,7 +223,7 @@ impl IRBlock {
         inputs: Vec<InputSlot>,
         outputs: Vec<OutputSlot>,
     ) -> InstructionOutput {
-        let index = self.append_obj(Instruction {
+        let index = self.append_obj(Instruction::Instruction {
             tp,
             inputs,
             outputs: outputs.clone(),
@@ -197,24 +234,13 @@ impl IRBlock {
                 .iter()
                 .enumerate()
                 .map(|(i, output)| InputSlot::InstructionOutput {
+                    block_index: self.index,
                     instruction_index: index,
                     tp: output.tp,
                     output_index: i,
                 })
                 .collect(),
         };
-    }
-
-    pub fn const_u32(value: u32) -> InputSlot {
-        InputSlot::Constant(Constant::U32(value))
-    }
-
-    pub fn const_f32(value: f32) -> InputSlot {
-        InputSlot::Constant(Constant::F32(value))
-    }
-
-    pub fn const_ptr(value: usize) -> InputSlot {
-        InputSlot::Constant(Constant::Ptr(value))
     }
 
     pub fn add(
@@ -244,59 +270,45 @@ impl IRBlock {
         return InstructionOutput { outputs: vec![] };
     }
 
-    pub fn label(&mut self) -> Label {
-        let index = self.instructions.len();
-        let label = Label { index };
-        self.labels.insert(label.clone());
-        return label;
-    }
-
-    pub fn phi(&mut self, tp: DataType, inputs: Vec<InputSlot>) -> InstructionOutput {
-        self.append(InstructionType::Phi, inputs, vec![OutputSlot { tp }])
-    }
-
     pub fn compare(&mut self, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::Compare,
             vec![x, InputSlot::Constant(Constant::CompareType(tp)), y],
             vec![OutputSlot {
-                tp: DataType::Flags,
+                tp: DataType::Bool,
             }],
         )
     }
 
-    pub fn conditional_branch(&mut self, cond: InputSlot, label: Label) -> () {
-        // Should branches have an output?
-        self.append(
-            InstructionType::ConditionalBranch,
-            vec![cond, InputSlot::Constant(Constant::Label(label))],
-            vec![],
-        );
+    pub fn branch(&mut self, cond: InputSlot, if_true: BlockReference, if_false: BlockReference) {
+        self.append_obj(Instruction::Branch {
+            cond,
+            if_true,
+            if_false,
+        });
     }
 
-    pub fn add_phi_input(&mut self, phi_node: &InstructionOutput, val: InputSlot) {
-        let InputSlot::InstructionOutput {
-            instruction_index, ..
-        } = phi_node.val()
-        else {
-            panic!("This is not a phi node: not an InstructionOutput");
-        };
+    pub fn jump(&mut self, target: BlockReference) {
+        self.append_obj(Instruction::Jump { target });
+    }
 
-        let instruction = &mut self.instructions[instruction_index];
+    /// Gets an input from a block to be used in another instruction
+    pub fn input(&self, i: usize) -> InputSlot {
+        InputSlot::BlockInput {
+            block_index: self.index,
+            input_index: i,
+            tp: self.inputs[i],
+        }
+    }
 
-        let IndexedInstruction {
-            instruction:
-                Instruction {
-                    tp: InstructionType::Phi,
-                    inputs,
-                    ..
-                },
-            ..
-        } = instruction
-        else {
-            panic!("This is not a phi node: not a Phi instruction");
-        };
+    pub fn call(&self, vec: Vec<InputSlot>) -> BlockReference {
+        BlockReference {
+            block_index: self.index,
+            arguments: vec,
+        }
+    }
 
-        inputs.push(val);
+    pub fn ret(&mut self, input: InputSlot) {
+        self.append_obj(Instruction::Return { value: input });
     }
 }

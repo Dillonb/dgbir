@@ -1,5 +1,5 @@
-use crate::ir::IRBlock;
+use crate::ir::IRFunction;
 
-pub fn compile(block: IRBlock) {
-    println!("Compiling IRBlock: {:?}", block);
+pub fn compile(func: IRFunction) {
+    println!("Compiling IRFunction: {:?}", func);
 }

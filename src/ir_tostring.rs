@@ -1,4 +1,4 @@
-use crate::ir::{Constant, IRBlock, IndexedInstruction, InputSlot, Instruction, Label, OutputSlot};
+use crate::ir::{Constant, IRBasicBlock, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
 
 fn outputs_tostring(instr_index: usize, inputs: &Vec<OutputSlot>) -> String {
     inputs
@@ -19,56 +19,57 @@ fn inputs_tostring(inputs: &Vec<InputSlot>) -> String {
     inputs
         .iter()
         .map(|slot| match slot {
-            InputSlot::Constant(constant) => {
-                match constant {
-                    Constant::Label(label) => return format!("label_{}", label.index),
-                    Constant::CompareType(tp) => return format!("{:?}", tp),
-                    _ => return format!("{:?}", constant),
-                }
-            }
+            InputSlot::Constant(constant) => match constant {
+                        Constant::CompareType(tp) => return format!("{:?}", tp),
+                        _ => return format!("{:?}", constant),
+                    },
             InputSlot::InstructionOutput {
-                instruction_index,
-                tp: _,
-                output_index,
-            } => {
-                if *output_index == 0 {
-                    return format!("v{}", instruction_index);
-                } else {
-                    return format!("v{}_{}", instruction_index, output_index);
-                }
+                        block_index,
+                        instruction_index,
+                        tp: _,
+                        output_index,
+                    } => {
+                        if *output_index == 0 {
+                            return format!("b{}v{}", block_index, instruction_index);
+                        } else {
+                            return format!("b{}v{}_{}", block_index, instruction_index, output_index);
+                        }
+                    }
+            InputSlot::BlockInput { block_index, input_index, .. } => {
+                return format!("b{}v{}", block_index, input_index);
             }
         })
         .collect::<Vec<String>>()
         .join(", ")
 }
 
-fn unindexed_instruction_tostring(instr: &Instruction) -> String {
-    format!("{:?}({})", instr.tp, inputs_tostring(&instr.inputs))
+fn unindexed_instruction_tostring(tp: &InstructionType, inputs: &Vec<InputSlot> ) -> String {
+    format!("{:?}({})", tp, inputs_tostring(&inputs))
 }
 
 pub fn instruction_tostring(instr: &IndexedInstruction) -> String {
-    let outputs = outputs_tostring(instr.index, &instr.instruction.outputs);
-    let instr_string = unindexed_instruction_tostring(&instr.instruction);
-    if outputs.is_empty() {
-        return instr_string;
-    } else {
-        return format!("{} = {}", outputs, instr_string);
+    match &instr.instruction {
+        Instruction::Instruction { tp, inputs, outputs } => {
+            let instr_string = unindexed_instruction_tostring(tp, inputs);
+            let outputs_string = outputs_tostring(instr.index, &outputs);
+            if outputs_string.is_empty() {
+                return instr_string;
+            } else {
+                return format!("{} = {}", outputs_string, instr_string);
+            }
+        }
+        Instruction::Branch { .. } => "Branch(TODO)".to_string(),
+        Instruction::Jump { .. } => "Jump(TODO)".to_string(),
+        Instruction::Return { .. } => "Return(TODO)".to_string(),
     }
 }
 
-pub fn block_tostring(block: &IRBlock) -> String {
+pub fn block_tostring(block: &IRBasicBlock) -> String {
     return block
         .instructions
         .iter()
         .map(|instruction| {
-            let has_label = block.labels.contains(&Label { index: instruction.index });
-            let instruction_str = instruction_tostring(instruction);
-
-            if has_label {
-                return format!("label_{}:\n{}", instruction.index, instruction_str);
-            } else {
-                return instruction_str;
-            }
+            instruction_tostring(instruction)
         })
         .collect::<Vec<String>>()
         .join("\n");
