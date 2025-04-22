@@ -1,4 +1,4 @@
-use dgbir::ir::*;
+use dgbir::{ir::*, ir_tostring::func_tostring};
 
 #[test]
 fn write_ptr() {
@@ -129,7 +129,7 @@ fn test_conditional_branch_loop() {
 
     func[&exit_block].ret(exit_block.input(0));
 
-    // println!("{}", block_tostring(&block));
+    println!("{}", func_tostring(&func));
     // interpret_block(&block);
-    // assert_eq!(res, 10);
+    assert_eq!(res, 10);
 }

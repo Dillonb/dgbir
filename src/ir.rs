@@ -1,6 +1,5 @@
 use std::{
-    cell::RefCell,
-    ops::{Index, IndexMut},
+    cell::RefCell, ops::{Index, IndexMut}
 };
 
 #[derive(Debug, Clone, Copy)]
