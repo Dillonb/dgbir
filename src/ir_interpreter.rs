@@ -244,7 +244,7 @@ fn evaluate_instr(
     }
 }
 
-pub fn interpret_func(func: &IRFunction) -> Constant {
+pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
     func.validate();
     let mut block_index: usize = 0;
     let mut pc: usize = 0;
@@ -314,11 +314,11 @@ pub fn interpret_func(func: &IRFunction) -> Constant {
                 &mut results,
             ),
             Instruction::Return { value } => {
-                return_value = Some(resolve_inputslot(value, &block_inputs, &results));
+                return_value = value.map(|v| resolve_inputslot(&v, &block_inputs, &results));
                 returned = true;
             }
         }
     }
 
-    return return_value.unwrap();
+    return return_value;
 }

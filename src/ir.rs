@@ -105,7 +105,7 @@ pub enum Instruction {
         target: BlockReference,
     },
     Return {
-        value: InputSlot,
+        value: Option<InputSlot>,
     },
 }
 
@@ -336,7 +336,7 @@ impl IRBasicBlock {
         self.append_obj(Instruction::Jump { target });
     }
 
-    pub fn ret(&mut self, input: InputSlot) {
+    pub fn ret(&mut self, input: Option<InputSlot>) {
         self.append_obj(Instruction::Return { value: input });
     }
 }
