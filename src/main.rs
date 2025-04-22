@@ -1,4 +1,4 @@
-use dgbir::ir::*;
+use dgbir::{ir::*, ir_interpreter::interpret_func, ir_tostring::func_tostring};
 
 fn main() {
     // let samples = [
@@ -47,9 +47,11 @@ fn main() {
         add3_result.val(),
     );
 
+    func[&block].ret(None);
+
     println!("Block:");
-    // println!("{}", block_tostring(&block));
-    // interpret_block(&block);
+    println!("{}", func_tostring(&func));
+    interpret_func(&func);
     println!("Result: {:?}", r);
 }
 
