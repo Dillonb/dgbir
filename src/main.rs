@@ -1,4 +1,4 @@
-use dgbir::{ir::*, ir_interpreter::interpret_block, ir_tostring::block_tostring};
+use dgbir::ir::*;
 
 fn main() {
     // let samples = [
@@ -37,17 +37,11 @@ fn main() {
     let mut func = IRFunction::new(context);
     let block = func.new_block(vec![]);
 
-    let add_result = block.add(&mut func, DataType::U32, const_u32(1), const_u32(1));
-    let add2_result = block.add(&mut func, DataType::U32, add_result.val(), const_u32(1));
-    let add3_result = block.add(
-        &mut func,
-        DataType::U32,
-        add2_result.val(),
-        add_result.val(),
-    );
+    let add_result = func[&block].add(DataType::U32, const_u32(1), const_u32(1));
+    let add2_result = func[&block].add(DataType::U32, add_result.val(), const_u32(1));
+    let add3_result = func[&block].add(DataType::U32, add2_result.val(), add_result.val());
 
-    block.write_ptr(
-        &mut func,
+    func[&block].write_ptr(
         DataType::U32,
         const_ptr(&r as *const u32 as usize),
         add3_result.val(),
