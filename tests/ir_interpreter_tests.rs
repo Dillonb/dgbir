@@ -1,4 +1,4 @@
-use dgbir::{ir::*, ir_tostring::func_tostring};
+use dgbir::{ir::*, ir_interpreter::interpret_func, ir_tostring::func_tostring};
 
 #[test]
 fn write_ptr() {
@@ -15,7 +15,9 @@ fn write_ptr() {
         const_u32(1),
     );
 
-    // interpret_block(&block);
+    func[&block].ret(const_u32(1));
+
+    interpret_func(&func);
     assert_eq!(r, 1);
 }
 
@@ -36,7 +38,8 @@ fn add_write_ptr() {
         const_ptr(&r as *const u32 as usize),
         add3_result.val(),
     );
-    // interpret_block(&block);
+    func[&block].ret(const_u32(1));
+    interpret_func(&func);
     assert_eq!(r, 5);
 }
 
@@ -53,8 +56,9 @@ fn write_float_ptr() {
         const_ptr(&r as *const f32 as usize),
         const_f32(1.0),
     );
+    func[&block].ret(const_u32(1));
 
-    // interpret_block(&block);
+    interpret_func(&func);
     assert_eq!(r, 1.0);
 }
 
@@ -81,8 +85,9 @@ fn add_write_float_ptr() {
         const_ptr(&res_2 as *const u32 as usize),
         add_result_2.val(),
     );
+    func[&block].ret(const_u32(1));
 
-    // interpret_block(&block);
+    interpret_func(&func);
     assert_eq!(res_1, 2.0);
     assert_eq!(res_2, 2);
 }
@@ -130,6 +135,6 @@ fn test_conditional_branch_loop() {
     func[&exit_block].ret(exit_block.input(0));
 
     println!("{}", func_tostring(&func));
-    // interpret_block(&block);
+    interpret_func(&func);
     assert_eq!(res, 10);
 }

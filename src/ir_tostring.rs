@@ -1,5 +1,6 @@
 use crate::ir::{
-    Constant, IRBasicBlock, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot
+    Constant, IRBasicBlock, IRFunction, IndexedInstruction, InputSlot, Instruction,
+    InstructionType, OutputSlot,
 };
 
 fn outputs_tostring(block_index: usize, instr_index: usize, inputs: &Vec<OutputSlot>) -> String {
@@ -10,7 +11,10 @@ fn outputs_tostring(block_index: usize, instr_index: usize, inputs: &Vec<OutputS
             if output_index == 0 {
                 return format!("b{}v{} : {:?}", block_index, instr_index, slot.tp);
             } else {
-                return format!("b{}v{}_{} : {:?}", block_index, instr_index, output_index, slot.tp);
+                return format!(
+                    "b{}v{}_{} : {:?}",
+                    block_index, instr_index, output_index, slot.tp
+                );
             }
         })
         .collect::<Vec<String>>()

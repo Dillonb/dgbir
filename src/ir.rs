@@ -1,5 +1,6 @@
 use std::{
-    cell::RefCell, ops::{Index, IndexMut}
+    cell::RefCell,
+    ops::{Index, IndexMut},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -208,6 +209,14 @@ impl IRFunction {
             instructions: Vec::new(),
         });
         return IRBlockHandle { index, inputs };
+    }
+
+    pub fn validate(&self) {
+        for block in &self.blocks {
+            if !block.is_closed {
+                panic!("Unclosed block: block_{}", block.index);
+            }
+        }
     }
 }
 
