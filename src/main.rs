@@ -39,7 +39,12 @@ fn main() {
 
     let add_result = block.add(&mut func, DataType::U32, const_u32(1), const_u32(1));
     let add2_result = block.add(&mut func, DataType::U32, add_result.val(), const_u32(1));
-    let add3_result = block.add(&mut func, DataType::U32, add2_result.val(), add_result.val());
+    let add3_result = block.add(
+        &mut func,
+        DataType::U32,
+        add2_result.val(),
+        add_result.val(),
+    );
 
     block.write_ptr(
         &mut func,

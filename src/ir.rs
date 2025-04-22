@@ -103,7 +103,7 @@ pub enum Instruction {
     },
     Return {
         value: InputSlot,
-    }
+    },
 }
 
 #[derive(Debug)]
@@ -134,7 +134,6 @@ pub fn const_f32(value: f32) -> InputSlot {
 pub fn const_ptr(value: usize) -> InputSlot {
     InputSlot::Constant(Constant::Ptr(value))
 }
-
 
 #[derive(Debug)]
 pub struct IndexedInstruction {
@@ -205,7 +204,6 @@ impl IRBlockHandle {
         };
     }
 
-
     pub fn add(
         &self,
         func: &mut IRFunction,
@@ -237,18 +235,28 @@ impl IRBlockHandle {
         return InstructionOutput { outputs: vec![] };
     }
 
-    pub fn compare(&self, func: &mut IRFunction, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
+    pub fn compare(
+        &self,
+        func: &mut IRFunction,
+        x: InputSlot,
+        tp: CompareType,
+        y: InputSlot,
+    ) -> InstructionOutput {
         self.append(
             func,
             InstructionType::Compare,
             vec![x, InputSlot::Constant(Constant::CompareType(tp)), y],
-            vec![OutputSlot {
-                tp: DataType::Bool,
-            }],
+            vec![OutputSlot { tp: DataType::Bool }],
         )
     }
 
-    pub fn branch(&self, func: &mut IRFunction, cond: InputSlot, if_true: BlockReference, if_false: BlockReference) {
+    pub fn branch(
+        &self,
+        func: &mut IRFunction,
+        cond: InputSlot,
+        if_true: BlockReference,
+        if_false: BlockReference,
+    ) {
         let block = &mut func.blocks[self.index];
         block.append_obj(Instruction::Branch {
             cond,
@@ -275,7 +283,6 @@ impl IRBlockHandle {
         let block = &mut func.blocks[self.index];
         block.append_obj(Instruction::Return { value: input });
     }
-
 }
 
 impl IRContext {
@@ -297,10 +304,7 @@ impl IRFunction {
             inputs: inputs.clone(),
             instructions: Vec::new(),
         });
-        return IRBlockHandle {
-            index,
-            inputs,
-        };
+        return IRBlockHandle { index, inputs };
     }
 
     // pub fn append_to_block(
@@ -319,7 +323,6 @@ impl IRFunction {
 
     //     callback(block);
     // }
-
 }
 
 impl IRBasicBlock {
@@ -334,13 +337,13 @@ impl IRBasicBlock {
         match instruction {
             Instruction::Branch { .. } => {
                 self.is_closed = true;
-            },
+            }
             Instruction::Jump { .. } => {
                 self.is_closed = true;
-            },
+            }
             Instruction::Return { .. } => {
                 self.is_closed = true;
-            },
+            }
             Instruction::Instruction { .. } => {}
         }
 
@@ -351,5 +354,4 @@ impl IRBasicBlock {
         });
         return index;
     }
-
 }

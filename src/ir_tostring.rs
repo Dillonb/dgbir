@@ -1,4 +1,6 @@
-use crate::ir::{Constant, IRBasicBlock, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
+use crate::ir::{
+    Constant, IRBasicBlock, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot,
+};
 
 fn outputs_tostring(instr_index: usize, inputs: &Vec<OutputSlot>) -> String {
     inputs
@@ -20,22 +22,26 @@ fn inputs_tostring(inputs: &Vec<InputSlot>) -> String {
         .iter()
         .map(|slot| match slot {
             InputSlot::Constant(constant) => match constant {
-                        Constant::CompareType(tp) => return format!("{:?}", tp),
-                        _ => return format!("{:?}", constant),
-                    },
+                Constant::CompareType(tp) => return format!("{:?}", tp),
+                _ => return format!("{:?}", constant),
+            },
             InputSlot::InstructionOutput {
-                        block_index,
-                        instruction_index,
-                        tp: _,
-                        output_index,
-                    } => {
-                        if *output_index == 0 {
-                            return format!("b{}v{}", block_index, instruction_index);
-                        } else {
-                            return format!("b{}v{}_{}", block_index, instruction_index, output_index);
-                        }
-                    }
-            InputSlot::BlockInput { block_index, input_index, .. } => {
+                block_index,
+                instruction_index,
+                tp: _,
+                output_index,
+            } => {
+                if *output_index == 0 {
+                    return format!("b{}v{}", block_index, instruction_index);
+                } else {
+                    return format!("b{}v{}_{}", block_index, instruction_index, output_index);
+                }
+            }
+            InputSlot::BlockInput {
+                block_index,
+                input_index,
+                ..
+            } => {
                 return format!("b{}v{}", block_index, input_index);
             }
         })
@@ -43,13 +49,17 @@ fn inputs_tostring(inputs: &Vec<InputSlot>) -> String {
         .join(", ")
 }
 
-fn unindexed_instruction_tostring(tp: &InstructionType, inputs: &Vec<InputSlot> ) -> String {
+fn unindexed_instruction_tostring(tp: &InstructionType, inputs: &Vec<InputSlot>) -> String {
     format!("{:?}({})", tp, inputs_tostring(&inputs))
 }
 
 pub fn instruction_tostring(instr: &IndexedInstruction) -> String {
     match &instr.instruction {
-        Instruction::Instruction { tp, inputs, outputs } => {
+        Instruction::Instruction {
+            tp,
+            inputs,
+            outputs,
+        } => {
             let instr_string = unindexed_instruction_tostring(tp, inputs);
             let outputs_string = outputs_tostring(instr.index, &outputs);
             if outputs_string.is_empty() {
@@ -68,9 +78,7 @@ pub fn block_tostring(block: &IRBasicBlock) -> String {
     return block
         .instructions
         .iter()
-        .map(|instruction| {
-            instruction_tostring(instruction)
-        })
+        .map(|instruction| instruction_tostring(instruction))
         .collect::<Vec<String>>()
         .join("\n");
 }

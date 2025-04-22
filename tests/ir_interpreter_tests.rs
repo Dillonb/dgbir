@@ -30,7 +30,12 @@ fn add_write_ptr() {
 
     let add_result = block.add(&mut func, DataType::U32, const_u32(1), const_u32(1));
     let add2_result = block.add(&mut func, DataType::U32, add_result.val(), const_u32(1));
-    let add3_result = block.add(&mut func, DataType::U32, add2_result.val(), add_result.val());
+    let add3_result = block.add(
+        &mut func,
+        DataType::U32,
+        add2_result.val(),
+        add_result.val(),
+    );
 
     block.write_ptr(
         &mut func,
@@ -70,18 +75,8 @@ fn add_write_float_ptr() {
     let mut func = IRFunction::new(context);
     let block = func.new_block(vec![]);
 
-    let add_result = block.add(
-        &mut func,
-        DataType::F32,
-        const_f32(1.0),
-        const_u32(1),
-    );
-    let add_result_2 = block.add(
-        &mut func,
-        DataType::U32,
-        const_u32(1),
-        const_f32(1.0),
-    );
+    let add_result = block.add(&mut func, DataType::F32, const_f32(1.0), const_u32(1));
+    let add_result_2 = block.add(&mut func, DataType::U32, const_u32(1), const_f32(1.0));
 
     block.write_ptr(
         &mut func,
@@ -124,10 +119,20 @@ fn test_conditional_branch_loop() {
     entry_block.jump(&mut func, loop_block.call(vec![const_u32(0)]));
 
     let running_sum = loop_block.add(&mut func, DataType::U32, loop_block.input(0), const_u32(1));
-    let compare = loop_block.compare(&mut func, running_sum.val(), CompareType::LessThanUnsigned, const_u32(10));
+    let compare = loop_block.compare(
+        &mut func,
+        running_sum.val(),
+        CompareType::LessThanUnsigned,
+        const_u32(10),
+    );
 
     let exit_block = func.new_block(vec![DataType::U32]);
-    loop_block.branch(&mut func, compare.val(), loop_block.call(vec![running_sum.val()]), exit_block.call(vec![running_sum.val()]));
+    loop_block.branch(
+        &mut func,
+        compare.val(),
+        loop_block.call(vec![running_sum.val()]),
+        exit_block.call(vec![running_sum.val()]),
+    );
 
     exit_block.write_ptr(
         &mut func,
