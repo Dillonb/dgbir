@@ -34,21 +34,23 @@ fn main() {
     let r: u32 = 0;
 
     let context = IRContext::new();
-    let mut block = IRBlock::new(context);
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![]);
 
-    let add_result = block.add(DataType::U32, IRBlock::const_u32(1), IRBlock::const_u32(1));
-    let add2_result = block.add(DataType::U32, add_result.val(), IRBlock::const_u32(1));
-    let add3_result = block.add(DataType::U32, add2_result.val(), add_result.val());
+    let add_result = block.add(&mut func, DataType::U32, const_u32(1), const_u32(1));
+    let add2_result = block.add(&mut func, DataType::U32, add_result.val(), const_u32(1));
+    let add3_result = block.add(&mut func, DataType::U32, add2_result.val(), add_result.val());
 
     block.write_ptr(
+        &mut func,
         DataType::U32,
-        IRBlock::const_ptr(&r as *const u32 as usize),
+        const_ptr(&r as *const u32 as usize),
         add3_result.val(),
     );
 
     println!("Block:");
-    println!("{}", block_tostring(&block));
-    interpret_block(&block);
+    // println!("{}", block_tostring(&block));
+    // interpret_block(&block);
     println!("Result: {:?}", r);
 }
 
