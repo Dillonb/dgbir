@@ -1,3 +1,4 @@
+use colored::Colorize;
 use std::{
     cell::RefCell,
     ops::{Index, IndexMut},
@@ -77,6 +78,34 @@ pub enum InputSlot {
     },
     Constant(Constant),
 }
+impl std::fmt::Display for InputSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InputSlot::InstructionOutput {
+                block_index,
+                instruction_index,
+                tp,
+                output_index,
+            } => writeln!(
+                f,
+                "block_{}_i{}: type: {:?}, out_indx:{}",
+                block_index, instruction_index, tp, output_index
+            )?,
+            InputSlot::BlockInput {
+                block_index,
+                input_index,
+                tp,
+            } => writeln!(
+                f,
+                "block_{}, input_index {}, type: {:?}",
+                block_index, input_index, tp
+            )?,
+            InputSlot::Constant(constant) => writeln!(f, "{:?}", constant)?,
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct OutputSlot {
@@ -107,6 +136,38 @@ pub enum Instruction {
     Return {
         value: Option<InputSlot>,
     },
+}
+
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Instruction::Instruction {
+                tp,
+                inputs,
+                outputs,
+            } => {
+                writeln!(f, "type: {:?}", tp)?;
+                writeln!(f, "inputs:")?;
+                for i in inputs {
+                    writeln!(f, "{i}")?;
+                }
+                writeln!(f, "outputs:")?;
+                for o in outputs {
+                    writeln!(f, "{:?}", o)?;
+                }
+            }
+            Instruction::Branch {
+                cond,
+                if_true,
+                if_false,
+            } => writeln!(f, "{:?},\n{:?},\n{:?}", cond, if_true, if_false)?,
+            Instruction::Jump { target } => writeln!(f, "{:?}", target)?,
+            Instruction::Return { value } => writeln!(f, "{:?}", value)?,
+            _ => panic!("you forgot to implement display branch arm for this instruction"),
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -146,6 +207,12 @@ pub struct IndexedInstruction {
     pub index: usize,
     pub instruction: Instruction,
 }
+impl std::fmt::Display for IndexedInstruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.instruction)?;
+        Ok(())
+    }
+}
 
 #[derive(Debug)]
 pub struct IRContext {
@@ -158,12 +225,53 @@ pub struct IRFunction {
     pub blocks: Vec<IRBasicBlock>,
 }
 
+impl std::fmt::Display for IRFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, b) in self.blocks.iter().enumerate() {
+            writeln!(
+                f,
+                "{}\n{}\n{}\n",
+                format!("═══════════block_{i}══════════").red().on_green(),
+                b,
+                format!("══════════════════════════════").red().on_green()
+            )?
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct IRBasicBlock {
     pub is_closed: bool,
     pub index: usize,
     pub inputs: Vec<DataType>,
     pub instructions: Vec<IndexedInstruction>,
+}
+
+impl std::fmt::Display for IRBasicBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_closed {
+            writeln!(f, "{}", format!("closed").red())?
+        } else {
+            writeln!(f, "{}", format!("open").green())?
+        }
+
+        writeln!(f, "{}", format!("block inputs: ").magenta())?;
+        for i in self.inputs.iter() {
+            writeln!(f, "┌──────────────────┐")?;
+            writeln!(f, "{:?},", i)?;
+            writeln!(f, "└──────────────────┘")?;
+        }
+
+        writeln!(f, "{}", format!("list of instructions:").magenta())?;
+        for i in self.instructions.iter() {
+            writeln!(f, "┌────────────────────────────┐")?;
+            writeln!(f, "{i}")?;
+            writeln!(f, "└────────────────────────────┘")?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct IRBlockHandle {
