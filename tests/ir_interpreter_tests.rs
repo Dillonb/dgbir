@@ -134,7 +134,7 @@ fn test_conditional_branch_loop() {
 
     func[&exit_block].ret(Some(exit_block.input(0)));
 
-    println!("{}", func_tostring(&func));
+    println!("{}", func);
     interpret_func(&func);
     assert_eq!(res, 10);
 }
