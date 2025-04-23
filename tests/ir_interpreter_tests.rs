@@ -1,4 +1,4 @@
-use dgbir::{ir::*, ir_interpreter::interpret_func, ir_tostring::func_tostring};
+use dgbir::{ir::*, ir_interpreter::interpret_func};
 
 #[test]
 fn write_ptr() {
