@@ -102,23 +102,7 @@ impl Display for IndexedInstruction {
 
 impl Display for IRBasicBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let block_name = format!("block_{}", self.index);
-        let inputs = self
-            .inputs
-            .iter()
-            .enumerate()
-            .map(|(i, tp)| format!("b{}i{}: {:?}", self.index, i, tp))
-            .collect::<Vec<String>>()
-            .join(", ");
-
-        let instructions = self
-            .instructions
-            .iter()
-            .map(|instruction| format!("  {instruction}"))
-            .collect::<Vec<String>>()
-            .join("\n");
-
-        write!(f, "{block_name}({inputs}):\n{instructions}")
+        write!(f, "block_{}()", self.index)
     }
 }
 
@@ -126,7 +110,26 @@ impl Display for IRFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.blocks
             .iter()
-            .map(|block| format!("{}", block))
+            .map(|block| {
+                let block_name = format!("block_{}", block.index);
+                let inputs = block
+                    .inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tp)| format!("b{}i{}: {:?}", block.index, i, tp))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                let instructions = block
+                    .instructions
+                    .iter()
+                    .map(|instruction_index| &self.instructions[*instruction_index])
+                    .map(|instruction| format!("  {instruction}"))
+                    .collect::<Vec<String>>()
+                    .join("\n");
+
+                format!("{block_name}({inputs}):\n{instructions}")
+            })
             .collect::<Vec<String>>()
             .join("\n\n")
             .fmt(f)

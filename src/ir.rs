@@ -155,6 +155,7 @@ pub struct IRContext {
 #[derive(Debug)]
 pub struct IRFunction {
     pub blocks: Vec<IRBasicBlock>,
+    pub instructions: Vec<IndexedInstruction>,
 }
 
 #[derive(Debug)]
@@ -162,7 +163,7 @@ pub struct IRBasicBlock {
     pub is_closed: bool,
     pub index: usize,
     pub inputs: Vec<DataType>,
-    pub instructions: Vec<IndexedInstruction>,
+    pub instructions: Vec<usize>,
 }
 
 pub struct IRBlockHandle {
@@ -196,7 +197,10 @@ impl IRContext {
 
 impl IRFunction {
     pub fn new(_context: RefCell<IRContext>) -> Self {
-        IRFunction { blocks: Vec::new() }
+        IRFunction {
+            blocks: Vec::new(),
+            instructions: Vec::new(),
+        }
     }
 
     pub fn new_block(&mut self, inputs: Vec<DataType>) -> IRBlockHandle {
@@ -224,7 +228,7 @@ impl IRFunction {
             panic!("Cannot append to a closed block");
         }
 
-        let index = block.instructions.len();
+        let index = self.instructions.len();
 
         // Close the block if necessary
         match instruction {
@@ -240,11 +244,14 @@ impl IRFunction {
             Instruction::Instruction { .. } => {}
         }
 
-        block.instructions.push(IndexedInstruction {
+        self.instructions.push(IndexedInstruction {
             block_index: block.index,
             index,
             instruction,
         });
+
+        block.instructions.push(index);
+
         return index;
     }
 

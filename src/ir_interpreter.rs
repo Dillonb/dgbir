@@ -75,16 +75,15 @@ fn constant_to_u64(c: &Constant) -> u64 {
 fn resolve_inputslot(
     input: &InputSlot,
     block_inputs: &HashMap<usize, Vec<Constant>>,
-    results: &HashMap<usize, HashMap<usize, Vec<Constant>>>,
+    results: &HashMap<usize, Vec<Constant>>,
 ) -> Constant {
     match input {
         InputSlot::InstructionOutput {
-            block_index,
             instruction_index,
             output_index,
             ..
         } => {
-            let res = results[block_index][instruction_index][*output_index].clone();
+            let res = results[instruction_index][*output_index].clone();
             res
         }
         InputSlot::BlockInput {
@@ -104,7 +103,7 @@ fn jump_to(
     block_index: &mut usize,
     pc: &mut usize,
     block_inputs: &mut HashMap<usize, Vec<Constant>>,
-    results: &mut HashMap<usize, HashMap<usize, Vec<Constant>>>,
+    results: &mut HashMap<usize, Vec<Constant>>,
 ) {
     *block_index = target.block_index;
     *pc = 0;
@@ -252,14 +251,14 @@ pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
 
     // block -> input
     let mut block_inputs: HashMap<usize, Vec<Constant>> = HashMap::new();
-    // block index -> instruction index -> output index
-    let mut results: HashMap<usize, HashMap<usize, Vec<Constant>>> = HashMap::new();
+    // instruction index -> output index
+    let mut results: HashMap<usize, Vec<Constant>> = HashMap::new();
 
     let mut return_value: Option<Constant> = None;
 
     while !returned {
         let block = &func.blocks[block_index];
-        let instruction = &block.instructions[pc];
+        let instruction = &func.instructions[block.instructions[pc]];
         match &instruction.instruction {
             Instruction::Instruction {
                 tp,
@@ -272,9 +271,7 @@ pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
                     .collect::<Vec<Constant>>();
 
                 results
-                    .entry(block_index)
-                    .or_insert_with(HashMap::new)
-                    .entry(pc)
+                    .entry(instruction.index)
                     .insert_entry(evaluate_instr(tp, &const_inputs, outputs));
 
                 pc += 1;
