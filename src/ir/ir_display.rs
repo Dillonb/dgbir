@@ -12,9 +12,9 @@ impl Display for InputSlot {
                 ..
             } => {
                 if *output_index > 0 {
-                    write!(f, "b{}v{}_{}", block_index, instruction_index, output_index)
+                    write!(f, "v{}_{}", instruction_index, output_index)
                 } else {
-                    write!(f, "b{}v{}", block_index, instruction_index)
+                    write!(f, "v{}", instruction_index)
                 }
             }
             InputSlot::BlockInput {
