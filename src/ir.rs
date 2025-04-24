@@ -1,7 +1,4 @@
-use std::{
-    cell::RefCell,
-    ops::{Index, IndexMut},
-};
+use std::cell::RefCell;
 
 mod ir_display;
 
@@ -220,45 +217,31 @@ impl IRFunction {
             }
         }
     }
-}
 
-impl Index<&IRBlockHandle> for IRFunction {
-    type Output = IRBasicBlock;
-    fn index(&self, index: &IRBlockHandle) -> &Self::Output {
-        &self.blocks[index.index]
-    }
-}
-
-impl IndexMut<&IRBlockHandle> for IRFunction {
-    fn index_mut(&mut self, index: &IRBlockHandle) -> &mut Self::Output {
-        &mut self.blocks[index.index]
-    }
-}
-
-impl IRBasicBlock {
-    pub fn append_obj(&mut self, instruction: Instruction) -> usize {
-        if self.is_closed {
+    pub fn append_obj(&mut self, block_handle: &IRBlockHandle, instruction: Instruction) -> usize {
+        let block = &mut self.blocks[block_handle.index];
+        if block.is_closed {
             panic!("Cannot append to a closed block");
         }
 
-        let index = self.instructions.len();
+        let index = block.instructions.len();
 
         // Close the block if necessary
         match instruction {
             Instruction::Branch { .. } => {
-                self.is_closed = true;
+                block.is_closed = true;
             }
             Instruction::Jump { .. } => {
-                self.is_closed = true;
+                block.is_closed = true;
             }
             Instruction::Return { .. } => {
-                self.is_closed = true;
+                block.is_closed = true;
             }
             Instruction::Instruction { .. } => {}
         }
 
-        self.instructions.push(IndexedInstruction {
-            block_index: self.index,
+        block.instructions.push(IndexedInstruction {
+            block_index: block.index,
             index,
             instruction,
         });
@@ -267,22 +250,28 @@ impl IRBasicBlock {
 
     pub fn append(
         &mut self,
+        block_handle: &IRBlockHandle,
         tp: InstructionType,
         inputs: Vec<InputSlot>,
         outputs: Vec<OutputSlot>,
     ) -> InstructionOutput {
-        let index = self.append_obj(Instruction::Instruction {
-            tp,
-            inputs,
-            outputs: outputs.clone(),
-        });
+        let index = self.append_obj(
+            block_handle,
+            Instruction::Instruction {
+                tp,
+                inputs,
+                outputs: outputs.clone(),
+            },
+        );
+
+        let block = &mut self.blocks[block_handle.index];
 
         return InstructionOutput {
             outputs: outputs
                 .iter()
                 .enumerate()
                 .map(|(i, output)| InputSlot::InstructionOutput {
-                    block_index: self.index,
+                    block_index: block.index,
                     instruction_index: index,
                     tp: output.tp,
                     output_index: i,
@@ -293,11 +282,13 @@ impl IRBasicBlock {
 
     pub fn add(
         &mut self,
+        block_handle: &IRBlockHandle,
         result_tp: DataType,
         arg1: InputSlot,
         arg2: InputSlot,
     ) -> InstructionOutput {
         self.append(
+            block_handle,
             InstructionType::Add,
             vec![arg1, arg2],
             vec![OutputSlot { tp: result_tp }],
@@ -306,11 +297,13 @@ impl IRBasicBlock {
 
     pub fn write_ptr(
         &mut self,
+        block_handle: &IRBlockHandle,
         tp: DataType,
         ptr: InputSlot,
         value: InputSlot,
     ) -> InstructionOutput {
         self.append(
+            block_handle,
             InstructionType::WritePtr,
             vec![ptr, value, InputSlot::Constant(Constant::DataType(tp))],
             vec![],
@@ -318,27 +311,43 @@ impl IRBasicBlock {
         return InstructionOutput { outputs: vec![] };
     }
 
-    pub fn compare(&mut self, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
+    pub fn compare(
+        &mut self,
+        block_handle: &IRBlockHandle,
+        x: InputSlot,
+        tp: CompareType,
+        y: InputSlot,
+    ) -> InstructionOutput {
         self.append(
+            block_handle,
             InstructionType::Compare,
             vec![x, InputSlot::Constant(Constant::CompareType(tp)), y],
             vec![OutputSlot { tp: DataType::Bool }],
         )
     }
 
-    pub fn branch(&mut self, cond: InputSlot, if_true: BlockReference, if_false: BlockReference) {
-        self.append_obj(Instruction::Branch {
-            cond,
-            if_true,
-            if_false,
-        });
+    pub fn branch(
+        &mut self,
+        block_handle: &IRBlockHandle,
+        cond: InputSlot,
+        if_true: BlockReference,
+        if_false: BlockReference,
+    ) {
+        self.append_obj(
+            block_handle,
+            Instruction::Branch {
+                cond,
+                if_true,
+                if_false,
+            },
+        );
     }
 
-    pub fn jump(&mut self, target: BlockReference) {
-        self.append_obj(Instruction::Jump { target });
+    pub fn jump(&mut self, block_handle: &IRBlockHandle, target: BlockReference) {
+        self.append_obj(block_handle, Instruction::Jump { target });
     }
 
-    pub fn ret(&mut self, input: Option<InputSlot>) {
-        self.append_obj(Instruction::Return { value: input });
+    pub fn ret(&mut self, block_handle: &IRBlockHandle, input: Option<InputSlot>) {
+        self.append_obj(block_handle, Instruction::Return { value: input });
     }
 }
