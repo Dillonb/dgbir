@@ -6,7 +6,6 @@ impl Display for InputSlot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InputSlot::InstructionOutput {
-                block_index,
                 instruction_index,
                 output_index,
                 ..
