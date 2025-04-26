@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+capstone = "0.13.0"
+# dynasmrt = "2.0.0"
+dynasmrt = { path = "../dynasm-rs/runtime" }
 nom = "8.0.0"
 nom-language = "0.1.0"

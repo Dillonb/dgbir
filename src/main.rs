@@ -1,4 +1,4 @@
-use dgbir::{ir::*, ir_interpreter::interpret_func};
+use dgbir::{compiler::compile, ir::*, ir_interpreter::interpret_func};
 
 fn main() {
     // let samples = [
@@ -50,11 +50,12 @@ fn main() {
 
     func.ret(&block, None);
 
-    println!("Block:");
-    // println!("{}", func_tostring(&func));
     println!("{}", func);
+    println!("Interpreting");
     interpret_func(&func);
     println!("Result: {:?}", r);
+
+    compile(func);
 }
 
 // COMPLEX INSTRUCTION SET COMPUTING
