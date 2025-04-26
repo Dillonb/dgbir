@@ -56,6 +56,7 @@ dependencies = [
 [[package]]
 name = "dynasm"
 version = "3.2.0"
+source = "git+https://github.com/Dillonb/dynasm-rs.git#4f8115952dd10430618c0c7a9f6195a9bee4d4b3"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -69,6 +70,7 @@ dependencies = [
 [[package]]
 name = "dynasmrt"
 version = "3.2.0"
+source = "git+https://github.com/Dillonb/dynasm-rs.git#4f8115952dd10430618c0c7a9f6195a9bee4d4b3"
 dependencies = [
  "byteorder",
  "dynasm",
