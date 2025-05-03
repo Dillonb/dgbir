@@ -1,9 +1,11 @@
 use std::mem;
 
-use crate::{disassembler::disassemble, ir::IRFunction};
+use crate::{disassembler::disassemble, ir::IRFunction, register_allocator::alloc_for};
 use dynasmrt::{dynasm, DynasmApi};
 
-pub fn compile(_func: IRFunction) {
+pub fn compile(func: IRFunction) {
+    let register_mappings = alloc_for(func);
+
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
 
     let add_one = ops.offset();
