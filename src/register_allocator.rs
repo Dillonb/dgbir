@@ -69,8 +69,20 @@ struct Lifetimes {
 
 impl Lifetimes {
     /// Is a value active at a given index?
-    fn is_active(&self, value: Value, block_index: usize, instruction_index: usize) -> bool {
-        true
+    fn is_active(&self, value: Value, at_block_index: usize, at_instruction_index: usize) -> bool {
+        let last_usage = &self.last_used[&value];
+        match value {
+            Value::InstructionOutput {
+                block_index,
+                instruction_index,
+                ..
+            } =>
+                // Is at or after declaration?
+                at_block_index >= block_index && at_instruction_index > instruction_index
+                // Is at or before last usage?
+                && at_block_index <= last_usage.block_index && at_instruction_index <= last_usage.instruction_index,
+            Value::BlockInput { block_index, .. } => at_block_index >= block_index && at_block_index <= last_usage.block_index,
+        }
     }
 }
 
