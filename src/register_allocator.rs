@@ -12,20 +12,27 @@ enum Value {
     BlockInput {
         block_index: usize,
         input_index: usize,
-    }
+    },
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::InstructionOutput { block_index, instruction_index, output_index } => {
+            Value::InstructionOutput {
+                block_index,
+                instruction_index,
+                output_index,
+            } => {
                 if *output_index == 0 {
                     write!(f, "b{}v{}", block_index, instruction_index)
                 } else {
                     write!(f, "b{}v{}o{}", block_index, instruction_index, output_index)
                 }
-            },
-            Value::BlockInput { block_index, input_index } => {
+            }
+            Value::BlockInput {
+                block_index,
+                input_index,
+            } => {
                 write!(f, "b{}i{}", block_index, input_index)
             }
         }
@@ -35,18 +42,25 @@ impl Display for Value {
 impl InputSlot {
     fn to_value(self) -> Option<Value> {
         match self {
-            InputSlot::InstructionOutput { block_index, instruction_index, output_index, .. } =>
-            Some(Value::InstructionOutput {
+            InputSlot::InstructionOutput {
+                block_index,
+                instruction_index,
+                output_index,
+                ..
+            } => Some(Value::InstructionOutput {
                 block_index,
                 instruction_index,
                 output_index,
             }),
-            InputSlot::BlockInput { block_index, input_index, .. } =>
-            Some(Value::BlockInput {
+            InputSlot::BlockInput {
+                block_index,
+                input_index,
+                ..
+            } => Some(Value::BlockInput {
                 block_index,
                 input_index,
             }),
-            InputSlot::Constant(_) => None
+            InputSlot::Constant(_) => None,
         }
     }
 }
@@ -59,7 +73,11 @@ struct Usage {
 
 impl Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Last used at block {} instruction index {}", self.block_index, self.instruction_index)
+        write!(
+            f,
+            "Last used at block {} instruction index {}",
+            self.block_index, self.instruction_index
+        )
     }
 }
 
@@ -76,12 +94,15 @@ impl Lifetimes {
                 block_index,
                 instruction_index,
                 ..
-            } =>
-                // Is at or after declaration?
-                at_block_index >= block_index && at_instruction_index > instruction_index
-                // Is at or before last usage?
-                && at_block_index <= last_usage.block_index && at_instruction_index <= last_usage.instruction_index,
-            Value::BlockInput { block_index, .. } => at_block_index >= block_index && at_block_index <= last_usage.block_index,
+            } => {
+                at_block_index >= block_index
+                    && at_instruction_index > instruction_index
+                    && at_block_index <= last_usage.block_index
+                    && at_instruction_index <= last_usage.instruction_index
+            }
+            Value::BlockInput { block_index, .. } => {
+                at_block_index >= block_index && at_block_index <= last_usage.block_index
+            }
         }
     }
 }
@@ -90,52 +111,64 @@ fn calculate_lifetimes(func: IRFunction) -> Lifetimes {
     println!("Calculating lifetimes");
     let mut last_used = HashMap::new();
 
-    func
-        .blocks
+    func.blocks
         .iter()
         .enumerate()
         .flat_map(|(block_index, block)| {
-            block.instructions.iter().enumerate().map(move |(instruction_index_in_block, instruction_index)| {
-                (block_index, instruction_index_in_block, instruction_index)
-            })
-        }).for_each(|(block_index, instruction_index_in_block, instruction_index)| {
-            match &func.instructions[*instruction_index].instruction {
-                crate::ir::Instruction::Instruction { inputs, .. } => {
-                    inputs.iter().map(|input| input.to_value()).for_each(|input| {
-                        if let Some(value) = input {
-                            last_used.insert(value, Usage {
-                                block_index,
-                                instruction_index: instruction_index_in_block,
-                            });
-                        };
-                    });
+            block.instructions.iter().enumerate().map(
+                move |(instruction_index_in_block, instruction_index)| {
+                    (block_index, instruction_index_in_block, instruction_index)
                 },
+            )
+        })
+        .for_each(
+            |(block_index, instruction_index_in_block, instruction_index)| match &func.instructions
+                [*instruction_index]
+                .instruction
+            {
+                crate::ir::Instruction::Instruction { inputs, .. } => {
+                    inputs
+                        .iter()
+                        .map(|input| input.to_value())
+                        .for_each(|input| {
+                            if let Some(value) = input {
+                                last_used.insert(
+                                    value,
+                                    Usage {
+                                        block_index,
+                                        instruction_index: instruction_index_in_block,
+                                    },
+                                );
+                            };
+                        });
+                }
                 crate::ir::Instruction::Branch { cond, .. } => {
                     if let Some(value) = cond.to_value() {
-                        last_used.insert(value, Usage {
-                            block_index,
-                            instruction_index: instruction_index_in_block,
-                        });
+                        last_used.insert(
+                            value,
+                            Usage {
+                                block_index,
+                                instruction_index: instruction_index_in_block,
+                            },
+                        );
                     };
                 }
                 crate::ir::Instruction::Jump { .. } => {}
-                crate::ir::Instruction::Return { value } => {
-                    value.into_iter().for_each(|input| {
-                        if let Some(input) = input.to_value() {
-                            last_used.insert(input, Usage {
+                crate::ir::Instruction::Return { value } => value.into_iter().for_each(|input| {
+                    if let Some(input) = input.to_value() {
+                        last_used.insert(
+                            input,
+                            Usage {
                                 block_index,
                                 instruction_index: instruction_index_in_block,
-                            });
-                        }
-                    })
-                }
-            }
-        });
+                            },
+                        );
+                    }
+                }),
+            },
+        );
 
-
-    Lifetimes {
-        last_used
-    }
+    Lifetimes { last_used }
 }
 
 // fn calculate_interference() {
@@ -147,5 +180,4 @@ pub fn alloc_for(func: IRFunction) {
     for (value, usage) in lifetimes.last_used.iter() {
         println!("{}: {}", value, usage);
     }
-
 }
