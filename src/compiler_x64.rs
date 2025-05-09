@@ -4,12 +4,13 @@ use crate::{disassembler::disassemble, ir::IRFunction};
 use dynasmrt::{dynasm, DynasmApi};
 
 pub fn compile(_func: IRFunction) {
-    let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
+    let mut ops = dynasmrt::x64::Assembler::new().unwrap();
 
     let add_one = ops.offset();
     dynasm!(ops
-        ; .arch aarch64
-        ; add x0, x0, 1
+        ; .arch x64
+        ; mov rax, rdi
+        ; add rax, 1
         ; ret
     );
 
