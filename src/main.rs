@@ -40,12 +40,13 @@ fn main() {
     let add_result = func.add(&block, DataType::U32, const_u32(1), const_u32(1));
     let add2_result = func.add(&block, DataType::U32, add_result.val(), const_u32(1));
     let add3_result = func.add(&block, DataType::U32, add2_result.val(), add_result.val());
+    let add4_result = func.add(&block, DataType::U32, add3_result.val(), const_u32(1));
 
     func.write_ptr(
         &block,
         DataType::U32,
         const_ptr(&r as *const u32 as usize),
-        add3_result.val(),
+        add4_result.val(),
     );
 
     func.ret(&block, None);

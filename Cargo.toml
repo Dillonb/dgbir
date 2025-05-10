@@ -6,5 +6,6 @@ edition = "2021"
 [dependencies]
 capstone = "0.13.0"
 dynasmrt = { git = "https://github.com/Dillonb/dynasm-rs.git" }
+itertools = "0.14.0"
 nom = "8.0.0"
 nom-language = "0.1.0"
