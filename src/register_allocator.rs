@@ -4,7 +4,7 @@ use std::{
     fmt::Display,
 };
 
-use crate::ir::{const_ptr, const_u32, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
+use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
 
 use itertools::Itertools;
 
@@ -32,7 +32,7 @@ enum Value {
 
 impl Value {
     /// Get the "first usage" of this value
-    fn into_usage(&self) -> Usage {
+    fn into_usage(&self, func: &IRFunction) -> Usage {
         match self {
             Value::InstructionOutput {
                 block_index,
@@ -41,17 +41,19 @@ impl Value {
             } => Usage {
                 block_index: *block_index,
                 instruction_index: *instruction_index,
+                instruction_index_in_block: func.get_index_in_block(*block_index, *instruction_index).unwrap(),
             },
             Value::BlockInput { block_index, .. } => Usage {
                 block_index: *block_index,
                 instruction_index: 0,
+                instruction_index_in_block: 0,
             },
         }
     }
 
     fn into_inputslot(&self) -> InputSlot {
         match self {
-            Value::InstructionOutput { block_index, instruction_index, output_index, data_type } => {
+            Value::InstructionOutput { instruction_index, output_index, data_type, .. } => {
                 InputSlot::InstructionOutput {
                     instruction_index: *instruction_index,
                     output_index: *output_index,
@@ -75,6 +77,56 @@ impl Value {
         }
     }
 }
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Value::InstructionOutput { block_index, instruction_index, output_index, .. }, Value::InstructionOutput { block_index: other_block_index, instruction_index: other_instruction_index, output_index: other_output_index, ..  }) => {
+                if block_index == other_block_index {
+                    if instruction_index == other_instruction_index {
+                        return output_index.cmp(other_output_index);
+                    } else {
+                        return instruction_index.cmp(other_instruction_index);
+                    }
+                } else {
+                    return block_index.cmp(other_block_index);
+                }
+            },
+            (Value::InstructionOutput { block_index, .. }, Value::BlockInput { block_index: other_block_index, .. }) => {
+                if block_index == other_block_index {
+                    // When both are in the same block, instruction outputs are always greater than
+                    // block inputs
+                    return std::cmp::Ordering::Greater;
+                } else {
+                    return block_index.cmp(other_block_index);
+                }
+            },
+            (Value::BlockInput { block_index, .. }, Value::InstructionOutput { block_index: other_block_index, .. }) => {
+                if block_index == other_block_index {
+                    // When both are in the same block, instruction outputs are always greater than
+                    // block inputs
+                    return std::cmp::Ordering::Less;
+                } else {
+                    return block_index.cmp(other_block_index);
+                }
+            },
+            (Value::BlockInput { block_index, input_index, .. }, Value::BlockInput { block_index: other_block_index, input_index: other_input_index, .. }) => {
+                if block_index == other_block_index {
+                    return input_index.cmp(other_input_index);
+                } else {
+                    return block_index.cmp(other_block_index);
+                }
+            },
+        }
+    }
+}
+
 
 impl InputSlot {
     fn references_value(&self, value: &Value) -> bool {
@@ -250,13 +302,24 @@ impl InputSlot {
 struct Usage {
     block_index: usize,
     instruction_index: usize,
+    instruction_index_in_block : usize
+}
+
+impl Usage {
+    fn recalculate_index_in_block(&self, func: &IRFunction) -> Self {
+        Usage {
+            block_index: self.block_index,
+            instruction_index: self.instruction_index,
+            instruction_index_in_block: func.get_index_in_block(self.block_index, self.instruction_index).unwrap(),
+        }
+    }
 }
 
 impl PartialOrd for Usage {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.block_index == other.block_index {
             // If the values are in the same block, compare the instruction index
-            Some(self.instruction_index.cmp(&other.instruction_index))
+            Some(self.instruction_index_in_block.cmp(&other.instruction_index_in_block))
         } else {
             // Otherwise, compare the block index
             Some(self.block_index.cmp(&other.block_index))
@@ -268,7 +331,7 @@ impl Ord for Usage {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.block_index == other.block_index {
             // If the values are in the same block, compare the instruction index
-            self.instruction_index.cmp(&other.instruction_index)
+            self.instruction_index_in_block.cmp(&other.instruction_index_in_block)
         } else {
             // Otherwise, compare the block index
             self.block_index.cmp(&other.block_index)
@@ -280,8 +343,8 @@ impl Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "used at block {} instruction index {}",
-            self.block_index, self.instruction_index
+            "used at block {} instruction index {} (v{})",
+            self.block_index, self.instruction_index_in_block, self.instruction_index
         )
     }
 }
@@ -323,6 +386,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                                 let u = Usage {
                                     block_index,
                                     instruction_index: *instruction_index,
+                                    instruction_index_in_block,
                                 };
                                 println!("{} {}", value, u);
                                 last_used.insert(value, u);
@@ -338,6 +402,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                         let u = Usage {
                             block_index,
                             instruction_index: *instruction_index,
+                            instruction_index_in_block,
                         };
                         println!("{} {}", value, u);
                         last_used.insert(
@@ -356,6 +421,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                         let u = Usage {
                             block_index,
                             instruction_index: *instruction_index,
+                            instruction_index_in_block,
                         };
                         println!("{} {}", value, u);
                         last_used.insert(
@@ -375,18 +441,18 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
         let a = x[0];
         let b = x[1];
 
-        let a_first = a.into_usage();
-        let b_first = b.into_usage();
+        let a_first = a.into_usage(func);
+        let b_first = b.into_usage(func);
 
         let a_last = &last_used[a];
         let b_last = &last_used[b];
 
         // If the live ranges of the two values overlap, add them to the interference graph
         let overlap = max(a_first, b_first) <= *min(a_last, b_last);
-        println!("Checking interference between {} and {}", a, b);
+        // println!("Checking interference between {} and {}", a, b);
 
         if overlap {
-            println!("\t{} and {} interfere", a, b);
+            // println!("\t{} and {} interfere", a, b);
             interference.entry(*a).or_insert_with(Vec::new).push(*b);
             interference.entry(*b).or_insert_with(Vec::new).push(*a);
         }
@@ -416,7 +482,8 @@ fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     // vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-    vec![19, 20, 21, 22, 23] // Removed a bunch to test register spilling
+    // vec![19, 20, 21, 22, 23] // Removed a bunch to test register spilling
+    vec![19, 20, 21] // Removed a bunch to test register spilling
         .into_iter()
         .map(|r| Register::GPR(r))
         .collect()
@@ -432,12 +499,12 @@ impl IRFunction {
         return self.stack_bytes_used - bytes_needed;
     }
 
-    fn get_index_in_block(&self, usage: &Usage) -> Option<usize> {
-        self.blocks[usage.block_index]
+    fn get_index_in_block(&self, block_index: usize, instruction_index: usize) -> Option<usize> {
+        self.blocks[block_index]
             .instructions
             .iter()
             .position(|i| {
-                *i == usage.instruction_index
+                *i == instruction_index
             })
     }
 
@@ -446,7 +513,7 @@ impl IRFunction {
         println!("Final usage of {} before spill: {}", to_spill, final_usage_pre_spill);
         println!("Usages after spill: {}", usages_post_spill.iter().map(|u| u.to_string()).join(", "));
 
-        let final_usage_index_in_block = self.get_index_in_block(final_usage_pre_spill).unwrap();
+        // let final_usage_index_in_block = self.get_index_in_block(final_usage_pre_spill).unwrap();
 
         let stack_location = self.new_stack_location(to_spill.data_type());
 
@@ -463,7 +530,7 @@ impl IRFunction {
         self.instructions.push(spill_instr);
 
         {
-            let i = final_usage_index_in_block + 1; // Insert immediately after the last usage pre-spill
+            let i = final_usage_pre_spill.instruction_index_in_block + 1; // Insert immediately after the last usage pre-spill
             self.blocks[final_usage_pre_spill.block_index].instructions.splice(i..i, [
                 spill_instr_index
             ]);
@@ -471,8 +538,8 @@ impl IRFunction {
 
         // Now, insert a reload instruction before the first usage after the spill
 
-        let first_usage_post_spill = usages_post_spill[0];
-        let first_usage_index_in_block = self.get_index_in_block(first_usage_post_spill).unwrap();
+        let first_usage_post_spill = usages_post_spill[0].recalculate_index_in_block(self);
+        // let first_usage_index_in_block = self.get_index_in_block(first_usage_post_spill).unwrap();
 
         let reload_instr_index = self.instructions.len();
         let reload_instr = IndexedInstruction {
@@ -487,7 +554,7 @@ impl IRFunction {
         self.instructions.push(reload_instr);
 
         {
-            let i = first_usage_index_in_block; // Insert immediately before the first usage post-spill
+            let i = first_usage_post_spill.instruction_index_in_block; // Insert immediately before the first usage post-spill
             self.blocks[first_usage_post_spill.block_index].instructions.splice(i..i, [
                 reload_instr_index
             ]);
@@ -513,16 +580,23 @@ impl IRFunction {
                             inputs[i] = reloaded_inputslot;
                     }
                 },
-                Instruction::Branch { cond, if_true, if_false } => todo!(),
-                Instruction::Jump { target } => todo!(),
-                Instruction::Return { value } => todo!(),
+                Instruction::Branch { cond, .. } => {
+                    if cond.references_value(to_spill) {
+                        *cond = reloaded_inputslot;
+                    }
+                },
+                Instruction::Jump { .. } => {},
+                Instruction::Return { value } => {
+                    if let Some(v) = value {
+                        if v.references_value(to_spill) {
+                            *v = reloaded_inputslot;
+                        }
+                    }
+                },
             }
         }
 
         println!("{}", self);
-
-        panic!("Spilling value {}", to_spill);
-        return
     }
 }
 
@@ -565,7 +639,7 @@ pub fn alloc_for(func: &mut IRFunction) {
                     .iter()
                     .filter(|iv| allocations.get(iv).is_some())
                     .flat_map(|iv| {
-                        lifetimes.all_usages[iv].iter().find(|u| u >= &&value.into_usage()).map(|u| {
+                        lifetimes.all_usages[iv].iter().find(|u| u >= &&value.into_usage(func)).map(|u| {
                             (*u, *iv) // This does a copy so we don't have to deal with lifetimes
                         })
                     })
@@ -577,7 +651,7 @@ pub fn alloc_for(func: &mut IRFunction) {
                     panic!("Couldn't find a value to spill!");
                 }
                 let (to_spill_next_used, to_spill) = to_spill.unwrap();
-                if to_spill_next_used == value.into_usage() {
+                if to_spill_next_used == value.into_usage(func) {
                     panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
                 }
                 println!("Spilling value {} to stack - next {}", to_spill, to_spill_next_used);
@@ -589,7 +663,7 @@ pub fn alloc_for(func: &mut IRFunction) {
             done = true;
         } else {
             let (to_spill_next_used, to_spill) = to_spill.unwrap();
-            let to_spill_first_usage = to_spill.into_usage();
+            let to_spill_first_usage = to_spill.into_usage(func);
 
             let final_usage_pre_spill = lifetimes.all_usages[&to_spill]
                 .iter()
@@ -605,4 +679,7 @@ pub fn alloc_for(func: &mut IRFunction) {
             func.spill(&to_spill, final_usage_pre_spill, usages_post_spill);
         }
     }
+
+    println!("Allocations:\n{}", allocations.iter().sorted_by_key(|v| v.0).map(|(v, r)| format!("\t{} -> {}", v, r)).join("\n"));
+    println!("{}", func);
 }

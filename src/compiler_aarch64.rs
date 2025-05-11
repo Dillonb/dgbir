@@ -4,7 +4,7 @@ use crate::{disassembler::disassemble, ir::IRFunction, register_allocator::alloc
 use dynasmrt::{dynasm, DynasmApi};
 
 pub fn compile(func: &mut IRFunction) {
-    let register_mappings = alloc_for(func);
+    alloc_for(func); // TODO: this will eventually return some data
 
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
 
