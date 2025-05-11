@@ -9,6 +9,53 @@ use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, I
 use itertools::Itertools;
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
+pub enum Register {
+    GPR(usize),
+}
+
+fn get_registers() -> Vec<Register> {
+    // Callee-saved registers
+    #[cfg(target_arch = "aarch64")]
+    // vec![19, 20, 21] // Removed a bunch to test register spilling
+    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+        .into_iter()
+        .map(|r| Register::GPR(r))
+        .collect()
+}
+
+fn get_scratch_registers() -> Vec<Register> {
+    #[cfg(target_arch = "aarch64")]
+    vec![9, 10, 11, 12, 13, 14, 15]
+        .into_iter()
+        .map(|r| Register::GPR(r))
+        .collect()
+}
+
+impl Register {
+    pub fn is_volatile(&self) -> bool {
+        match self {
+            Register::GPR(r) => {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    *r < 19 || *r > 28
+                }
+            }
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Register::GPR(_) => {
+                #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+                return 8;
+            },
+        }
+    }
+}
+
+
+
+#[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Value {
     InstructionOutput {
         /// Which block this value is in
@@ -348,6 +395,7 @@ impl Display for Usage {
 }
 
 struct Lifetimes {
+    #[allow(dead_code)] // Maybe I'll need this later
     last_used: HashMap<Value, Usage>,
     interference: HashMap<Value, Vec<Value>>,
     /// A list of all usages of a value. Guaranteed to be sorted.
@@ -457,11 +505,6 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
-pub enum Register {
-    GPR(usize),
-}
-
 impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -470,25 +513,15 @@ impl Display for Register {
     }
 }
 
-fn get_registers() -> Vec<Register> {
-    // Callee-saved registers
-    #[cfg(target_arch = "aarch64")]
-    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-    // // vec![19, 20, 21, 22, 23] // Removed a bunch to test register spilling
-    // vec![19, 20, 21] // Removed a bunch to test register spilling
-        .into_iter()
-        .map(|r| Register::GPR(r))
-        .collect()
-}
-
 impl IRFunction {
-    fn new_stack_location(&mut self, tp: DataType) -> usize {
-        let bytes_needed = tp.size();
-
+    pub fn new_sized_stack_location(&mut self, bytes_needed: usize) -> usize {
         // Align the stack to this data type
         self.stack_bytes_used += bytes_needed - (self.stack_bytes_used % bytes_needed);
 
         return self.stack_bytes_used - bytes_needed;
+    }
+    pub fn new_stack_location(&mut self, tp: DataType) -> usize {
+        return self.new_sized_stack_location(tp.size());
     }
 
     pub fn get_stack_offset_for_location(&self, location: u64, tp: DataType) -> u32 {
@@ -628,7 +661,7 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
                 if to_spill.is_none() {
                     panic!("Couldn't find a value to spill!");
                 }
-                let (to_spill_next_used, to_spill) = to_spill.unwrap();
+                let (to_spill_next_used, _to_spill) = to_spill.unwrap();
                 if to_spill_next_used == value.into_usage(func) {
                     panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
                 }

@@ -2,6 +2,7 @@ use std::{collections::HashMap, mem};
 
 use crate::{disassembler::disassemble, ir::{Constant, DataType, IRFunction, InputSlot, OutputSlot}, register_allocator::{alloc_for, Register, Value}};
 use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
+use itertools::Itertools;
 
 #[derive(Debug, Clone, Copy)]
 enum ConstOrReg {
@@ -181,10 +182,55 @@ fn compile_load_from_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunc
     }
 }
 
+fn calculate_callee_saved_regs(func: &mut IRFunction, allocations: &HashMap<Value, Register>) -> Vec<(Register, usize)> {
+    allocations
+        .iter()
+        .map(|(_, reg)| reg)
+        .unique()
+        .flat_map(|reg| {
+            if !reg.is_volatile() {
+                Some((*reg, func.new_sized_stack_location(reg.size())))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
+fn save_callee_regs_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, callee_saved: &Vec<(Register, usize)>) {
+    for (reg, stack_location) in callee_saved {
+        match *reg {
+            Register::GPR(r) => {
+                assert_eq!(reg.size(), 8);
+                dynasm!(ops
+                    ; str X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                )
+            },
+        }
+    }
+}
+
+fn pop_callee_regs_from_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, callee_saved: &Vec<(Register, usize)>) {
+    for (reg, stack_location) in callee_saved {
+        match *reg {
+            Register::GPR(r) => {
+                assert_eq!(reg.size(), 8);
+                dynasm!(ops
+                    ; ldr X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                )
+            },
+        }
+    }
+}
+
 pub fn compile(func: &mut IRFunction) {
     let allocations = alloc_for(func); // TODO: this will eventually return some data
 
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
+
+    let callee_saved = calculate_callee_saved_regs(func, &allocations);
+    save_callee_regs_to_stack(&mut ops, func, &callee_saved);
+
 
     // Stack bytes used: aligned to 16 bytes
     let misalignment = func.stack_bytes_used % 16;
@@ -254,20 +300,21 @@ pub fn compile(func: &mut IRFunction) {
                         );
                     }
                 },
-                crate::ir::Instruction::Return { .. } => println!("return"),
+                crate::ir::Instruction::Return { .. } => {
+                    pop_callee_regs_from_stack(&mut ops, func, &callee_saved);
+                    // Fix sp
+                    if stack_bytes_used > 0 {
+                        dynasm!(ops
+                            ; add sp, sp, stack_bytes_used.try_into().unwrap()
+                        );
+                    }
+                    dynasm!(ops
+                        ; ret
+                    );
+                },
             }
         }
     }
-
-    // Fix stack and return
-    if stack_bytes_used > 0 {
-        dynasm!(ops
-            ; add sp, sp, stack_bytes_used.try_into().unwrap()
-        );
-    }
-    dynasm!(ops
-        ; ret
-    );
 
 
     let code = ops.finalize().unwrap();
