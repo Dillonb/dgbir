@@ -3,7 +3,7 @@ use std::cell::RefCell;
 mod ir_display;
 mod ir_emitters;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DataType {
     // None,
     U8,
@@ -18,6 +18,26 @@ pub enum DataType {
     F64,
     Bool,
     Ptr,
+}
+
+impl DataType {
+    pub fn size(&self) -> usize {
+        match self {
+            DataType::U8 => 1,
+            DataType::S8 => 1,
+            DataType::U16 => 2,
+            DataType::S16 => 2,
+            DataType::U32 => 4,
+            DataType::S32 => 4,
+            DataType::U64 => 8,
+            DataType::S64 => 8,
+            DataType::F32 => 4,
+            DataType::F64 => 8,
+            DataType::Bool => 1,
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            DataType::Ptr => 8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -58,13 +78,15 @@ pub enum InstructionType {
     Compare,
     LoadPtr,
     WritePtr,
+    SpillToStack,
+    LoadFromStack,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum InputSlot {
     /// References the output of another instruction.
     InstructionOutput {
-        block_index: usize,
+        /// The index of the instruction in the FUNCTION
         instruction_index: usize,
         tp: DataType,
         output_index: usize,
@@ -155,6 +177,7 @@ pub struct IRContext {
 
 #[derive(Debug)]
 pub struct IRFunction {
+    pub stack_bytes_used: usize,
     pub blocks: Vec<IRBasicBlock>,
     pub instructions: Vec<IndexedInstruction>,
 }
@@ -201,6 +224,7 @@ impl IRFunction {
         IRFunction {
             blocks: Vec::new(),
             instructions: Vec::new(),
+            stack_bytes_used: 0,
         }
     }
 
@@ -233,13 +257,7 @@ impl IRFunction {
 
         // Close the block if necessary
         match instruction {
-            Instruction::Branch { .. } => {
-                block.is_closed = true;
-            }
-            Instruction::Jump { .. } => {
-                block.is_closed = true;
-            }
-            Instruction::Return { .. } => {
+            Instruction::Branch { .. }| Instruction::Jump { .. }| Instruction::Return { .. } => {
                 block.is_closed = true;
             }
             Instruction::Instruction { .. } => {}
@@ -272,14 +290,11 @@ impl IRFunction {
             },
         );
 
-        let block = &mut self.blocks[block_handle.index];
-
         return InstructionOutput {
             outputs: outputs
                 .iter()
                 .enumerate()
                 .map(|(i, output)| InputSlot::InstructionOutput {
-                    block_index: block.index,
                     instruction_index: index,
                     tp: output.tp,
                     output_index: i,

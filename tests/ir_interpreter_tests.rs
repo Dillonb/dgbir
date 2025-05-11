@@ -17,7 +17,7 @@ fn write_ptr() {
     );
 
     func.ret(&block, None);
-
+    println!("{}", func);
     interpret_func(&func);
     assert_eq!(r, 1);
 }
@@ -41,6 +41,7 @@ fn add_write_ptr() {
         add3_result.val(),
     );
     func.ret(&block, None);
+    println!("{}", func);
     interpret_func(&func);
     assert_eq!(r, 5);
 }
@@ -60,6 +61,8 @@ fn write_float_ptr() {
         const_f32(1.0),
     );
     func.ret(&block, None);
+
+    println!("{}", func);
 
     interpret_func(&func);
     assert_eq!(r, 1.0);
@@ -91,6 +94,8 @@ fn add_write_float_ptr() {
         add_result_2.val(),
     );
     func.ret(&block, None);
+
+    println!("{}", func);
 
     interpret_func(&func);
     assert_eq!(res_1, 2.0);

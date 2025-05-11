@@ -2,6 +2,12 @@ use std::fmt::Display;
 
 use super::*;
 
+impl Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl Display for InputSlot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -56,11 +62,11 @@ impl Display for IndexedInstruction {
                         .map(|(i, output)| {
                             if i > 0 {
                                 format!(
-                                    "b{}v{}_{} : {:?}",
-                                    self.block_index, self.index, i, output.tp
+                                    "v{}_{} : {:?}",
+                                    self.index, i, output.tp
                                 )
                             } else {
-                                format!("b{}v{} : {:?}", self.block_index, self.index, output.tp)
+                                format!("v{} : {:?}", self.index, output.tp)
                             }
                         })
                         .collect::<Vec<String>>()
