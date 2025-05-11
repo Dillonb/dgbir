@@ -150,6 +150,36 @@ impl InputSlot {
             InputSlot::Constant(..) => false,
         }
     }
+
+    fn to_value(self, func: &IRFunction) -> Option<Value> {
+        match self {
+            InputSlot::InstructionOutput {
+                instruction_index,
+                output_index,
+                tp,
+                ..
+            } => {
+                let block_index = func.instructions[instruction_index].block_index;
+                Some(Value::InstructionOutput {
+                    block_index,
+                    instruction_index,
+                    output_index,
+                    data_type: tp,
+                })
+            },
+            InputSlot::BlockInput {
+                block_index,
+                input_index,
+                tp,
+                ..
+            } => Some(Value::BlockInput {
+                block_index,
+                input_index,
+                data_type: tp,
+            }),
+            InputSlot::Constant(_) => None,
+        }
+    }
 }
 
 struct IRFunctionValueIterator<'a> {
@@ -262,38 +292,6 @@ impl Display for Value {
             } => {
                 write!(f, "b{}i{}:{}", block_index, input_index, data_type)
             }
-        }
-    }
-}
-
-impl InputSlot {
-    fn to_value(self, func: &IRFunction) -> Option<Value> {
-        match self {
-            InputSlot::InstructionOutput {
-                instruction_index,
-                output_index,
-                tp,
-                ..
-            } => {
-                let block_index = func.instructions[instruction_index].block_index;
-                Some(Value::InstructionOutput {
-                    block_index,
-                    instruction_index,
-                    output_index,
-                    data_type: tp,
-                })
-            },
-            InputSlot::BlockInput {
-                block_index,
-                input_index,
-                tp,
-                ..
-            } => Some(Value::BlockInput {
-                block_index,
-                input_index,
-                data_type: tp,
-            }),
-            InputSlot::Constant(_) => None,
         }
     }
 }
