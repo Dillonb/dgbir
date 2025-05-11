@@ -513,8 +513,6 @@ impl IRFunction {
         println!("Final usage of {} before spill: {}", to_spill, final_usage_pre_spill);
         println!("Usages after spill: {}", usages_post_spill.iter().map(|u| u.to_string()).join(", "));
 
-        // let final_usage_index_in_block = self.get_index_in_block(final_usage_pre_spill).unwrap();
-
         let stack_location = self.new_stack_location(to_spill.data_type());
 
         let spill_instr_index = self.instructions.len();
@@ -539,7 +537,6 @@ impl IRFunction {
         // Now, insert a reload instruction before the first usage after the spill
 
         let first_usage_post_spill = usages_post_spill[0].recalculate_index_in_block(self);
-        // let first_usage_index_in_block = self.get_index_in_block(first_usage_post_spill).unwrap();
 
         let reload_instr_index = self.instructions.len();
         let reload_instr = IndexedInstruction {
