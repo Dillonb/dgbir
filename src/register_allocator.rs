@@ -355,7 +355,6 @@ struct Lifetimes {
 }
 
 fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
-    println!("Calculating lifetimes");
     let mut last_used = HashMap::new();
     let mut all_usages : HashMap<Value, Vec<Usage>> = HashMap::new();
     let mut interference = HashMap::new();
@@ -386,7 +385,6 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                                     instruction_index: *instruction_index,
                                     instruction_index_in_block,
                                 };
-                                println!("{} {}", value, u);
                                 last_used.insert(value, u);
                                 all_usages
                                     .entry(value)
@@ -402,7 +400,6 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                             instruction_index: *instruction_index,
                             instruction_index_in_block,
                         };
-                        println!("{} {}", value, u);
                         last_used.insert(
                             value,
                             u,
@@ -421,7 +418,6 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                             instruction_index: *instruction_index,
                             instruction_index_in_block,
                         };
-                        println!("{} {}", value, u);
                         last_used.insert(
                             value,
                             u,
@@ -447,10 +443,8 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
 
         // If the live ranges of the two values overlap, add them to the interference graph
         let overlap = max(a_first, b_first) <= *min(a_last, b_last);
-        // println!("Checking interference between {} and {}", a, b);
 
         if overlap {
-            // println!("\t{} and {} interfere", a, b);
             interference.entry(*a).or_insert_with(Vec::new).push(*b);
             interference.entry(*b).or_insert_with(Vec::new).push(*a);
         }
@@ -512,8 +506,6 @@ impl IRFunction {
 
     fn spill(&mut self, to_spill: &Value, final_usage_pre_spill: &Usage, usages_post_spill: Vec<&Usage>) {
         let to_spill_inputslot = to_spill.into_inputslot();
-        println!("Final usage of {} before spill: {}", to_spill, final_usage_pre_spill);
-        println!("Usages after spill: {}", usages_post_spill.iter().map(|u| u.to_string()).join(", "));
 
         let stack_location = self.new_stack_location(to_spill.data_type());
 
@@ -595,7 +587,6 @@ impl IRFunction {
             }
         }
 
-        println!("{}", self);
     }
 }
 
@@ -606,26 +597,15 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
         allocations.clear();
         let mut to_spill = None;
         let lifetimes = calculate_lifetimes(&func);
-        for (value, usage) in lifetimes.last_used.iter() {
-            println!("{}: last {}", value, usage);
-        }
-
-
-        println!("Iterating through all values:");
 
         for value in func.value_iter() {
-            println!("{} {}", value, lifetimes.last_used[&value]);
             let interference = &lifetimes.interference[&value];
-            println!("\tInterference: {}", interference.iter().join(", "));
 
             let mut found_reg = false;
             for reg in get_registers() {
                 // Check if the register is already allocated to an interfering value
                 let already_allocated = interference.iter().flat_map(|iv| allocations.get(iv)).any(|r| *r == reg);
-                if already_allocated {
-                    println!("\t\tRegister {} is already allocated to an interfering value", reg);
-                } else {
-                    println!("\t\tRegister {} is available", reg);
+                if !already_allocated {
                     allocations.insert(value, reg);
                     found_reg = true;
                     break;
@@ -633,7 +613,6 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
             }
 
             if !found_reg {
-                println!("Interfering values with allocated registers (active values):");
                 to_spill = interference
                     .iter()
                     .filter(|iv| allocations.get(iv).is_some())
@@ -653,7 +632,6 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
                 if to_spill_next_used == value.into_usage(func) {
                     panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
                 }
-                println!("Spilling value {} to stack - next {}", to_spill, to_spill_next_used);
                 break;
             }
         }
@@ -679,6 +657,5 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
         }
     }
 
-    println!("Allocations:\n{}", allocations.iter().sorted_by_key(|v| v.0).map(|(v, r)| format!("\t{} -> {}", v, r)).join("\n"));
     allocations
 }
