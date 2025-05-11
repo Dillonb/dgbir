@@ -9,7 +9,7 @@ use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, I
 use itertools::Itertools;
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
-enum Value {
+pub enum Value {
     InstructionOutput {
         /// Which block this value is in
         block_index: usize,
@@ -464,7 +464,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
 }
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
-enum Register {
+pub enum Register {
     GPR(usize),
 }
 
@@ -595,7 +595,7 @@ impl IRFunction {
     }
 }
 
-pub fn alloc_for(func: &mut IRFunction) {
+pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
     let mut done = false;
     let mut allocations = HashMap::new();
     while !done {
@@ -676,5 +676,5 @@ pub fn alloc_for(func: &mut IRFunction) {
     }
 
     println!("Allocations:\n{}", allocations.iter().sorted_by_key(|v| v.0).map(|(v, r)| format!("\t{} -> {}", v, r)).join("\n"));
-    println!("{}", func);
+    allocations
 }
