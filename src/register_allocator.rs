@@ -151,7 +151,7 @@ impl InputSlot {
         }
     }
 
-    fn to_value(self, func: &IRFunction) -> Option<Value> {
+    pub fn to_value(self, func: &IRFunction) -> Option<Value> {
         match self {
             InputSlot::InstructionOutput {
                 instruction_index,
@@ -479,9 +479,9 @@ impl Display for Register {
 fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
-    // vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-    // vec![19, 20, 21, 22, 23] // Removed a bunch to test register spilling
-    vec![19, 20, 21] // Removed a bunch to test register spilling
+    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+    // // vec![19, 20, 21, 22, 23] // Removed a bunch to test register spilling
+    // vec![19, 20, 21] // Removed a bunch to test register spilling
         .into_iter()
         .map(|r| Register::GPR(r))
         .collect()
@@ -495,6 +495,10 @@ impl IRFunction {
         self.stack_bytes_used += bytes_needed - (self.stack_bytes_used % bytes_needed);
 
         return self.stack_bytes_used - bytes_needed;
+    }
+
+    pub fn get_stack_offset_for_location(&self, location: u64, tp: DataType) -> u32 {
+        (self.stack_bytes_used - location as usize - tp.size()) as u32
     }
 
     fn get_index_in_block(&self, block_index: usize, instruction_index: usize) -> Option<usize> {
@@ -519,7 +523,7 @@ impl IRFunction {
             index: spill_instr_index,
             instruction: Instruction::Instruction {
                 tp: InstructionType::SpillToStack,
-                inputs: vec![to_spill_inputslot, const_ptr(stack_location)],
+                inputs: vec![to_spill_inputslot, const_ptr(stack_location), InputSlot::Constant(Constant::DataType(to_spill.data_type()))],
                 outputs: vec![]
             },
         };

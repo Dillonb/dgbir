@@ -31,7 +31,7 @@ fn main() {
     //     }
     // }
 
-    let r: u32 = 0;
+    let mut r: u32 = 0;
 
     let context = IRContext::new();
     let mut func = IRFunction::new(context);
@@ -73,7 +73,10 @@ fn main() {
     interpret_func(&func);
     println!("Result: {:?}", r);
 
+    println!("Compiling and running:");
+    r = 0;
     compile(&mut func);
+    println!("Result: {:?}", r);
 }
 
 // COMPLEX INSTRUCTION SET COMPUTING
