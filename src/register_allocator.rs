@@ -340,18 +340,6 @@ impl Iterator for IRFunctionValueIterator<'_> {
     }
 }
 
-impl IRFunction {
-    fn value_iter(&self) -> IRFunctionValueIterator {
-        IRFunctionValueIterator {
-            function: self,
-            block_index: 0,
-            block_input_index: 0,
-            instruction_index: 0,
-            output_index: 0,
-        }
-    }
-}
-
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -637,6 +625,16 @@ impl IRFunction {
                     }
                 }
             }
+        }
+    }
+
+    fn value_iter(&self) -> IRFunctionValueIterator {
+        IRFunctionValueIterator {
+            function: self,
+            block_index: 0,
+            block_input_index: 0,
+            instruction_index: 0,
+            output_index: 0,
         }
     }
 }
