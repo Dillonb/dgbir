@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ir::{
-    BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction,
-    InstructionType, OutputSlot,
-};
+use crate::ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction, InstructionType, OutputSlot};
 
 /// Used to simplify code around integer math when width is not as important.
 enum MiniConstant {
@@ -72,11 +69,7 @@ fn constant_to_u64(c: &Constant) -> u64 {
     }
 }
 
-fn resolve_inputslot(
-    input: &InputSlot,
-    block_inputs: &HashMap<usize, Vec<Constant>>,
-    results: &HashMap<usize, Vec<Constant>>,
-) -> Constant {
+fn resolve_inputslot(input: &InputSlot, block_inputs: &HashMap<usize, Vec<Constant>>, results: &HashMap<usize, Vec<Constant>>) -> Constant {
     match input {
         InputSlot::InstructionOutput {
             instruction_index,
@@ -86,11 +79,7 @@ fn resolve_inputslot(
             let res = results[instruction_index][*output_index].clone();
             res
         }
-        InputSlot::BlockInput {
-            block_index,
-            input_index,
-            ..
-        } => {
+        InputSlot::BlockInput { block_index, input_index, .. } => {
             let res = block_inputs[block_index][*input_index].clone();
             res
         }
@@ -121,27 +110,15 @@ fn evaluate_add(inputs: &Vec<Constant>, outputs: &Vec<OutputSlot>) -> Constant {
         .reduce(|acc, val| match (acc, val) {
             // Pure integer addition
             (MiniConstant::U64(a), MiniConstant::U64(b)) => MiniConstant::U64(a.wrapping_add(b)),
-            (MiniConstant::U64(a), MiniConstant::S64(b)) => {
-                MiniConstant::U64(a.wrapping_add_signed(b))
-            }
-            (MiniConstant::S64(a), MiniConstant::U64(b)) => {
-                MiniConstant::S64(a.wrapping_add_unsigned(b))
-            }
+            (MiniConstant::U64(a), MiniConstant::S64(b)) => MiniConstant::U64(a.wrapping_add_signed(b)),
+            (MiniConstant::S64(a), MiniConstant::U64(b)) => MiniConstant::S64(a.wrapping_add_unsigned(b)),
             (MiniConstant::S64(a), MiniConstant::S64(b)) => MiniConstant::S64(a.wrapping_add(b)),
 
             // Mixed integers and floats: int result
-            (MiniConstant::U64(a), MiniConstant::F32(b)) => {
-                MiniConstant::U64(a.wrapping_add_signed(b as i64))
-            }
-            (MiniConstant::U64(a), MiniConstant::F64(b)) => {
-                MiniConstant::U64(a.wrapping_add_signed(b as i64))
-            }
-            (MiniConstant::S64(a), MiniConstant::F32(b)) => {
-                MiniConstant::S64(a.wrapping_add(b as i64))
-            }
-            (MiniConstant::S64(a), MiniConstant::F64(b)) => {
-                MiniConstant::S64(a.wrapping_add(b as i64))
-            }
+            (MiniConstant::U64(a), MiniConstant::F32(b)) => MiniConstant::U64(a.wrapping_add_signed(b as i64)),
+            (MiniConstant::U64(a), MiniConstant::F64(b)) => MiniConstant::U64(a.wrapping_add_signed(b as i64)),
+            (MiniConstant::S64(a), MiniConstant::F32(b)) => MiniConstant::S64(a.wrapping_add(b as i64)),
+            (MiniConstant::S64(a), MiniConstant::F64(b)) => MiniConstant::S64(a.wrapping_add(b as i64)),
 
             // Mixed integers and floats: float result
             (MiniConstant::F32(a), MiniConstant::U64(b)) => MiniConstant::F32(a + b as f32),
@@ -227,11 +204,7 @@ fn evaluate_compare(inputs: &Vec<Constant>, _outputs: &Vec<OutputSlot>) -> Const
     return Constant::Bool(result);
 }
 
-fn evaluate_instr(
-    tp: &InstructionType,
-    inputs: &Vec<Constant>,
-    outputs: &Vec<OutputSlot>,
-) -> Vec<Constant> {
+fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<OutputSlot>) -> Vec<Constant> {
     match tp {
         InstructionType::Add => vec![evaluate_add(inputs, outputs)],
         InstructionType::LoadPtr => vec![evaluate_load_ptr(inputs, outputs)],
@@ -262,56 +235,28 @@ pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
         let block = &func.blocks[block_index];
         let instruction = &func.instructions[block.instructions[pc]];
         match &instruction.instruction {
-            Instruction::Instruction {
-                tp,
-                inputs,
-                outputs,
-            } => {
+            Instruction::Instruction { tp, inputs, outputs } => {
                 let const_inputs = inputs
                     .iter()
                     .map(|input| resolve_inputslot(input, &block_inputs, &results))
                     .collect::<Vec<Constant>>();
 
-                results
-                    .entry(instruction.index)
-                    .insert_entry(evaluate_instr(tp, &const_inputs, outputs));
+                results.entry(instruction.index).insert_entry(evaluate_instr(tp, &const_inputs, outputs));
 
                 pc += 1;
             }
-            Instruction::Branch {
-                cond,
-                if_true,
-                if_false,
-            } => {
+            Instruction::Branch { cond, if_true, if_false } => {
                 if let Constant::Bool(cond) = resolve_inputslot(cond, &block_inputs, &results) {
                     if cond {
-                        jump_to(
-                            if_true,
-                            &mut block_index,
-                            &mut pc,
-                            &mut block_inputs,
-                            &mut results,
-                        );
+                        jump_to(if_true, &mut block_index, &mut pc, &mut block_inputs, &mut results);
                     } else {
-                        jump_to(
-                            if_false,
-                            &mut block_index,
-                            &mut pc,
-                            &mut block_inputs,
-                            &mut results,
-                        );
+                        jump_to(if_false, &mut block_index, &mut pc, &mut block_inputs, &mut results);
                     }
                 } else {
                     panic!("Expected boolean condition");
                 }
             }
-            Instruction::Jump { target } => jump_to(
-                target,
-                &mut block_index,
-                &mut pc,
-                &mut block_inputs,
-                &mut results,
-            ),
+            Instruction::Jump { target } => jump_to(target, &mut block_index, &mut pc, &mut block_inputs, &mut results),
             Instruction::Return { value } => {
                 return_value = value.map(|v| resolve_inputslot(&v, &block_inputs, &results));
                 returned = true;

@@ -1,5 +1,8 @@
 use std::{
-    cmp::{max, min}, collections::HashMap, fmt::Display, iter
+    cmp::{max, min},
+    collections::HashMap,
+    fmt::Display,
+    iter,
 };
 
 use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
@@ -15,18 +18,12 @@ fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     // vec![19, 20, 21] // Removed a bunch to test register spilling
-    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-        .into_iter()
-        .map(|r| Register::GPR(r))
-        .collect()
+    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28].into_iter().map(|r| Register::GPR(r)).collect()
 }
 
 pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
-    vec![9, 10, 11, 12, 13, 14, 15]
-        .into_iter()
-        .map(|r| Register::GPR(r))
-        .collect()
+    vec![9, 10, 11, 12, 13, 14, 15].into_iter().map(|r| Register::GPR(r)).collect()
 }
 
 impl Register {
@@ -46,13 +43,13 @@ impl Register {
             Register::GPR(_) => {
                 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
                 return 8;
-            },
+            }
         }
     }
 
-     pub fn index(&self) -> usize {
+    pub fn index(&self) -> usize {
         match self {
-            Register::GPR(r) => *r
+            Register::GPR(r) => *r,
         }
     }
 }
@@ -102,20 +99,25 @@ impl Value {
 
     fn into_inputslot(&self) -> InputSlot {
         match self {
-            Value::InstructionOutput { instruction_index, output_index, data_type, .. } => {
-                InputSlot::InstructionOutput {
-                    instruction_index: *instruction_index,
-                    output_index: *output_index,
-                    tp: *data_type,
-                }
+            Value::InstructionOutput {
+                instruction_index,
+                output_index,
+                data_type,
+                ..
+            } => InputSlot::InstructionOutput {
+                instruction_index: *instruction_index,
+                output_index: *output_index,
+                tp: *data_type,
             },
-            Value::BlockInput { block_index, input_index, data_type } => {
-                InputSlot::BlockInput {
-                    block_index: *block_index,
-                    input_index: *input_index,
-                    tp: *data_type,
-                }
-            }
+            Value::BlockInput {
+                block_index,
+                input_index,
+                data_type,
+            } => InputSlot::BlockInput {
+                block_index: *block_index,
+                input_index: *input_index,
+                tp: *data_type,
+            },
         }
     }
 
@@ -136,7 +138,20 @@ impl PartialOrd for Value {
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Value::InstructionOutput { block_index, instruction_index, output_index, .. }, Value::InstructionOutput { block_index: other_block_index, instruction_index: other_instruction_index, output_index: other_output_index, ..  }) => {
+            (
+                Value::InstructionOutput {
+                    block_index,
+                    instruction_index,
+                    output_index,
+                    ..
+                },
+                Value::InstructionOutput {
+                    block_index: other_block_index,
+                    instruction_index: other_instruction_index,
+                    output_index: other_output_index,
+                    ..
+                },
+            ) => {
                 if block_index == other_block_index {
                     if instruction_index == other_instruction_index {
                         return output_index.cmp(other_output_index);
@@ -146,8 +161,14 @@ impl Ord for Value {
                 } else {
                     return block_index.cmp(other_block_index);
                 }
-            },
-            (Value::InstructionOutput { block_index, .. }, Value::BlockInput { block_index: other_block_index, .. }) => {
+            }
+            (
+                Value::InstructionOutput { block_index, .. },
+                Value::BlockInput {
+                    block_index: other_block_index,
+                    ..
+                },
+            ) => {
                 if block_index == other_block_index {
                     // When both are in the same block, instruction outputs are always greater than
                     // block inputs
@@ -155,8 +176,14 @@ impl Ord for Value {
                 } else {
                     return block_index.cmp(other_block_index);
                 }
-            },
-            (Value::BlockInput { block_index, .. }, Value::InstructionOutput { block_index: other_block_index, .. }) => {
+            }
+            (
+                Value::BlockInput { block_index, .. },
+                Value::InstructionOutput {
+                    block_index: other_block_index,
+                    ..
+                },
+            ) => {
                 if block_index == other_block_index {
                     // When both are in the same block, instruction outputs are always greater than
                     // block inputs
@@ -164,37 +191,47 @@ impl Ord for Value {
                 } else {
                     return block_index.cmp(other_block_index);
                 }
-            },
-            (Value::BlockInput { block_index, input_index, .. }, Value::BlockInput { block_index: other_block_index, input_index: other_input_index, .. }) => {
+            }
+            (
+                Value::BlockInput { block_index, input_index, .. },
+                Value::BlockInput {
+                    block_index: other_block_index,
+                    input_index: other_input_index,
+                    ..
+                },
+            ) => {
                 if block_index == other_block_index {
                     return input_index.cmp(other_input_index);
                 } else {
                     return block_index.cmp(other_block_index);
                 }
-            },
+            }
         }
     }
 }
 
-
 impl InputSlot {
     fn references_value(&self, value: &Value) -> bool {
         match self {
-            InputSlot::InstructionOutput { instruction_index, output_index, .. } => {
-                match value {
-                    Value::InstructionOutput { instruction_index: v_instruction_index, output_index: v_output_index, .. } => {
-                        *instruction_index == *v_instruction_index && *output_index == *v_output_index
-                    },
-                    _ => false,
-                }
+            InputSlot::InstructionOutput {
+                instruction_index,
+                output_index,
+                ..
+            } => match value {
+                Value::InstructionOutput {
+                    instruction_index: v_instruction_index,
+                    output_index: v_output_index,
+                    ..
+                } => *instruction_index == *v_instruction_index && *output_index == *v_output_index,
+                _ => false,
             },
-            InputSlot::BlockInput { block_index, input_index, .. } => {
-                match value {
-                    Value::BlockInput { block_index: v_block_index, input_index: v_input_index, .. } => {
-                        *block_index == *v_block_index && *input_index == *v_input_index
-                    },
-                    _ => false,
-                }
+            InputSlot::BlockInput { block_index, input_index, .. } => match value {
+                Value::BlockInput {
+                    block_index: v_block_index,
+                    input_index: v_input_index,
+                    ..
+                } => *block_index == *v_block_index && *input_index == *v_input_index,
+                _ => false,
             },
             InputSlot::Constant(..) => false,
         }
@@ -215,12 +252,9 @@ impl InputSlot {
                     output_index,
                     data_type: tp,
                 })
-            },
+            }
             InputSlot::BlockInput {
-                block_index,
-                input_index,
-                tp,
-                ..
+                block_index, input_index, tp, ..
             } => Some(Value::BlockInput {
                 block_index,
                 input_index,
@@ -289,7 +323,7 @@ impl Iterator for IRFunctionValueIterator<'_> {
                     if v.is_some() {
                         return v;
                     }
-                },
+                }
 
                 // These aren't values, so skip
                 crate::ir::Instruction::Branch { .. } | crate::ir::Instruction::Jump { .. } | crate::ir::Instruction::Return { .. } => {
@@ -318,7 +352,6 @@ impl IRFunction {
     }
 }
 
-
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -338,7 +371,7 @@ impl Display for Value {
             Value::BlockInput {
                 block_index,
                 input_index,
-                data_type
+                data_type,
             } => {
                 write!(f, "b{}i{}:{}", block_index, input_index, data_type)
             }
@@ -350,7 +383,7 @@ impl Display for Value {
 struct Usage {
     block_index: usize,
     instruction_index: usize,
-    instruction_index_in_block : usize
+    instruction_index_in_block: usize,
 }
 
 impl Usage {
@@ -389,11 +422,7 @@ impl Ord for Usage {
 
 impl Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "used at block {} instruction index {} (v{})",
-            self.block_index, self.instruction_index_in_block, self.instruction_index
-        )
+        write!(f, "used at block {} instruction index {} (v{})", self.block_index, self.instruction_index_in_block, self.instruction_index)
     }
 }
 
@@ -407,100 +436,73 @@ struct Lifetimes {
 
 fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
     let mut last_used = HashMap::new();
-    let mut all_usages : HashMap<Value, Vec<Usage>> = HashMap::new();
+    let mut all_usages: HashMap<Value, Vec<Usage>> = HashMap::new();
     let mut interference = HashMap::new();
 
     func.blocks
         .iter()
         .enumerate()
         .flat_map(|(block_index, block)| {
-            block.instructions.iter().enumerate().map(
-                move |(instruction_index_in_block, instruction_index)| {
-                    (block_index, instruction_index_in_block, instruction_index)
-                },
-            )
+            block
+                .instructions
+                .iter()
+                .enumerate()
+                .map(move |(instruction_index_in_block, instruction_index)| (block_index, instruction_index_in_block, instruction_index))
         })
-        .for_each(
-            |(block_index, instruction_index_in_block, instruction_index)| match &func.instructions
-                [*instruction_index]
-                .instruction
-            {
-                crate::ir::Instruction::Instruction { inputs, .. } => {
-                    inputs
-                        .iter()
-                        .map(|input| input.to_value(&func))
-                        .for_each(|input| {
-                            if let Some(value) = input {
-                                let u = Usage {
-                                    block_index,
-                                    instruction_index: *instruction_index,
-                                    instruction_index_in_block,
-                                };
-                                last_used.insert(value, u);
-                                all_usages
-                                    .entry(value)
-                                    .or_insert_with(Vec::new)
-                                    .push(u);
-                            };
-                        });
-                }
-                crate::ir::Instruction::Branch { cond, if_true, if_false } => {
-                    if_true
-                        .arguments
-                        .iter()
-                        .chain(if_false.arguments.iter())
-                        .chain(iter::once(cond))
-                        .flat_map(|i| i.to_value(&func))
-                        .for_each(|value| {
-                            let usage = Usage {
-                                block_index,
-                                instruction_index: *instruction_index,
-                                instruction_index_in_block,
-                            };
-                            last_used.insert(value, usage);
-                            all_usages
-                                .entry(value)
-                                .or_insert_with(Vec::new)
-                                .push(usage);
-                        });
-                }
-                crate::ir::Instruction::Jump { target } => {
-                    target
-                        .arguments
-                        .iter()
-                        .flat_map(|i| i.to_value(&func))
-                        .for_each(|value| {
-                            let usage = Usage {
-                                block_index,
-                                instruction_index: *instruction_index,
-                                instruction_index_in_block,
-                            };
-                            last_used.insert(value, usage);
-                            all_usages
-                                .entry(value)
-                                .or_insert_with(Vec::new)
-                                .push(usage);
-                        });
-                }
-                crate::ir::Instruction::Return { value } => value.into_iter().for_each(|input| {
-                    if let Some(value) = input.to_value(&func) {
+        .for_each(|(block_index, instruction_index_in_block, instruction_index)| match &func.instructions[*instruction_index].instruction {
+            crate::ir::Instruction::Instruction { inputs, .. } => {
+                inputs.iter().map(|input| input.to_value(&func)).for_each(|input| {
+                    if let Some(value) = input {
                         let u = Usage {
                             block_index,
                             instruction_index: *instruction_index,
                             instruction_index_in_block,
                         };
-                        last_used.insert(
-                            value,
-                            u,
-                        );
-                        all_usages
-                            .entry(value)
-                            .or_insert_with(Vec::new)
-                            .push(u);
-                    }
-                }),
-            },
-        );
+                        last_used.insert(value, u);
+                        all_usages.entry(value).or_insert_with(Vec::new).push(u);
+                    };
+                });
+            }
+            crate::ir::Instruction::Branch { cond, if_true, if_false } => {
+                if_true
+                    .arguments
+                    .iter()
+                    .chain(if_false.arguments.iter())
+                    .chain(iter::once(cond))
+                    .flat_map(|i| i.to_value(&func))
+                    .for_each(|value| {
+                        let usage = Usage {
+                            block_index,
+                            instruction_index: *instruction_index,
+                            instruction_index_in_block,
+                        };
+                        last_used.insert(value, usage);
+                        all_usages.entry(value).or_insert_with(Vec::new).push(usage);
+                    });
+            }
+            crate::ir::Instruction::Jump { target } => {
+                target.arguments.iter().flat_map(|i| i.to_value(&func)).for_each(|value| {
+                    let usage = Usage {
+                        block_index,
+                        instruction_index: *instruction_index,
+                        instruction_index_in_block,
+                    };
+                    last_used.insert(value, usage);
+                    all_usages.entry(value).or_insert_with(Vec::new).push(usage);
+                });
+            }
+            crate::ir::Instruction::Return { value } => value.into_iter().for_each(|input| {
+                if let Some(value) = input.to_value(&func) {
+                    let u = Usage {
+                        block_index,
+                        instruction_index: *instruction_index,
+                        instruction_index_in_block,
+                    };
+                    last_used.insert(value, u);
+                    all_usages.entry(value).or_insert_with(Vec::new).push(u);
+                }
+            }),
+        });
 
     last_used.keys().combinations(2).for_each(|x| {
         let a = x[0];
@@ -554,12 +556,7 @@ impl IRFunction {
     }
 
     fn get_index_in_block(&self, block_index: usize, instruction_index: usize) -> Option<usize> {
-        self.blocks[block_index]
-            .instructions
-            .iter()
-            .position(|i| {
-                *i == instruction_index
-            })
+        self.blocks[block_index].instructions.iter().position(|i| *i == instruction_index)
     }
 
     fn spill(&mut self, to_spill: &Value, final_usage_pre_spill: &Usage, usages_post_spill: Vec<&Usage>) {
@@ -573,17 +570,19 @@ impl IRFunction {
             index: spill_instr_index,
             instruction: Instruction::Instruction {
                 tp: InstructionType::SpillToStack,
-                inputs: vec![to_spill_inputslot, const_ptr(stack_location), InputSlot::Constant(Constant::DataType(to_spill.data_type()))],
-                outputs: vec![]
+                inputs: vec![
+                    to_spill_inputslot,
+                    const_ptr(stack_location),
+                    InputSlot::Constant(Constant::DataType(to_spill.data_type())),
+                ],
+                outputs: vec![],
             },
         };
         self.instructions.push(spill_instr);
 
         {
             let i = final_usage_pre_spill.instruction_index_in_block + 1; // Insert immediately after the last usage pre-spill
-            self.blocks[final_usage_pre_spill.block_index].instructions.splice(i..i, [
-                spill_instr_index
-            ]);
+            self.blocks[final_usage_pre_spill.block_index].instructions.splice(i..i, [spill_instr_index]);
         }
 
         // Now, insert a reload instruction before the first usage after the spill
@@ -597,16 +596,14 @@ impl IRFunction {
             instruction: Instruction::Instruction {
                 tp: InstructionType::LoadFromStack,
                 inputs: vec![const_ptr(stack_location), InputSlot::Constant(Constant::DataType(to_spill.data_type()))],
-                outputs: vec![ OutputSlot { tp: to_spill.data_type() }],
+                outputs: vec![OutputSlot { tp: to_spill.data_type() }],
             },
         };
         self.instructions.push(reload_instr);
 
         {
             let i = first_usage_post_spill.instruction_index_in_block; // Insert immediately before the first usage post-spill
-            self.blocks[first_usage_post_spill.block_index].instructions.splice(i..i, [
-                reload_instr_index
-            ]);
+            self.blocks[first_usage_post_spill.block_index].instructions.splice(i..i, [reload_instr_index]);
         }
 
         let reloaded_inputslot = InputSlot::InstructionOutput {
@@ -620,31 +617,27 @@ impl IRFunction {
             let instruction = &mut self.instructions[usage.instruction_index];
             match &mut instruction.instruction {
                 Instruction::Instruction { inputs, .. } => {
-                    let indices = inputs
-                        .into_iter()
-                        .positions(|input| input.references_value(to_spill))
-                        .collect::<Vec<usize>>();
+                    let indices = inputs.into_iter().positions(|input| input.references_value(to_spill)).collect::<Vec<usize>>();
 
                     for i in indices {
-                            inputs[i] = reloaded_inputslot;
+                        inputs[i] = reloaded_inputslot;
                     }
-                },
+                }
                 Instruction::Branch { cond, .. } => {
                     if cond.references_value(to_spill) {
                         *cond = reloaded_inputslot;
                     }
-                },
-                Instruction::Jump { .. } => {},
+                }
+                Instruction::Jump { .. } => {}
                 Instruction::Return { value } => {
                     if let Some(v) = value {
                         if v.references_value(to_spill) {
                             *v = reloaded_inputslot;
                         }
                     }
-                },
+                }
             }
         }
-
     }
 }
 
@@ -687,9 +680,7 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
                             (*u, *iv) // This does a copy so we don't have to deal with lifetimes
                         })
                     })
-                    .max_by(|(u1, _iv1), (u2, _iv2)| {
-                        u1.cmp(u2)
-                    })
+                    .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))
                     .clone();
                 if to_spill.is_none() {
                     panic!("Couldn't find a value to spill!");
@@ -714,10 +705,7 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
                 .last()
                 .unwrap_or(&to_spill_first_usage);
 
-            let usages_post_spill = lifetimes.all_usages[&to_spill]
-                .iter()
-                .filter(|u| u >= &&to_spill_next_used)
-                .collect::<Vec<_>>();
+            let usages_post_spill = lifetimes.all_usages[&to_spill].iter().filter(|u| u >= &&to_spill_next_used).collect::<Vec<_>>();
 
             func.spill(&to_spill, final_usage_pre_spill, usages_post_spill);
         }

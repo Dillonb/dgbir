@@ -1,6 +1,14 @@
-use std::{collections::{HashMap, HashSet}, mem};
+use std::{
+    collections::{HashMap, HashSet},
+    mem,
+};
 
-use crate::{disassembler::disassemble, ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot}, reg_pool::{register_type, RegPool}, register_allocator::{alloc_for, get_scratch_registers, Register, Value}};
+use crate::{
+    disassembler::disassemble,
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot},
+    reg_pool::{register_type, RegPool},
+    register_allocator::{alloc_for, get_scratch_registers, Register, Value},
+};
 use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
 use itertools::Itertools;
 
@@ -31,28 +39,24 @@ impl Register {
 
 fn input_slot_to_imm_or_reg(s: &InputSlot, func: &IRFunction, allocations: &HashMap<Value, Register>) -> ConstOrReg {
     match *s {
-        InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => {
-            match allocations[&s.to_value(func).unwrap()] {
-                Register::GPR(r) => ConstOrReg::GPR(r as u32),
-            }
+        InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => match allocations[&s.to_value(func).unwrap()] {
+            Register::GPR(r) => ConstOrReg::GPR(r as u32),
         },
-        InputSlot::Constant(constant) => {
-            match constant {
-                Constant::U32(c) => ConstOrReg::U32(c as u32),
-                Constant::U8(_) => todo!(),
-                Constant::S8(_) => todo!(),
-                Constant::U16(_) => todo!(),
-                Constant::S16(_) => todo!(),
-                Constant::S32(_) => todo!(),
-                Constant::U64(c) => ConstOrReg::U64(c as u64),
-                Constant::S64(_) => todo!(),
-                Constant::F32(_) => todo!(),
-                Constant::F64(_) => todo!(),
-                Constant::Ptr(c) => ConstOrReg::U64(c as u64),
-                Constant::Bool(_) => todo!(),
-                Constant::DataType(_) => todo!(),
-                Constant::CompareType(_) => todo!(),
-            }
+        InputSlot::Constant(constant) => match constant {
+            Constant::U32(c) => ConstOrReg::U32(c as u32),
+            Constant::U8(_) => todo!(),
+            Constant::S8(_) => todo!(),
+            Constant::U16(_) => todo!(),
+            Constant::S16(_) => todo!(),
+            Constant::S32(_) => todo!(),
+            Constant::U64(c) => ConstOrReg::U64(c as u64),
+            Constant::S64(_) => todo!(),
+            Constant::F32(_) => todo!(),
+            Constant::F64(_) => todo!(),
+            Constant::Ptr(c) => ConstOrReg::U64(c as u64),
+            Constant::Bool(_) => todo!(),
+            Constant::DataType(_) => todo!(),
+            Constant::CompareType(_) => todo!(),
         },
         // _ => todo!("Unsupported input slot type: {:?}", s),
     }
@@ -98,7 +102,15 @@ fn load_32_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value:
     }
 }
 
-fn compile_add(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegPool, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>, outputs: &Vec<OutputSlot>, output_registers: Vec<Option<&Register>>) {
+fn compile_add(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    scratch_regs: &RegPool,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    inputs: &Vec<InputSlot>,
+    outputs: &Vec<OutputSlot>,
+    output_registers: Vec<Option<&Register>>,
+) {
     assert_eq!(inputs.len(), 2);
     assert_eq!(outputs.len(), 1);
     assert_eq!(output_registers.len(), 1);
@@ -113,7 +125,7 @@ fn compile_add(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegPool, f
     match (tp, r_out, a, b) {
         (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
             load_32_bit_constant(ops, r_out as u32, c1 + c2);
-        },
+        }
         (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
             if c < 4096 {
                 dynasm!(ops
@@ -126,17 +138,23 @@ fn compile_add(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegPool, f
                     ; add W(r_out as u32), W(r), W(r_temp.r())
                 )
             }
-        },
+        }
         (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
             dynasm!(ops
                 ; add W(r_out as u32), W(r1), W(r2)
             )
-        },
+        }
         _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
     }
 }
 
-fn compile_compare(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>, output_registers: Vec<Option<&Register>>) {
+fn compile_compare(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    inputs: &Vec<InputSlot>,
+    output_registers: Vec<Option<&Register>>,
+) {
     let a = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
     let b = input_slot_to_imm_or_reg(&inputs[2], func, &allocations);
 
@@ -151,7 +169,7 @@ fn compile_compare(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, al
                     ; cmp X(r1 as u32), X(r2 as u32)
                     ; cset W(r_out as u32), lo // unsigned "lower"
                 )
-            },
+            }
             (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::U32(c2)) => {
                 if c2 < 4096 {
                     dynasm!(ops
@@ -163,7 +181,7 @@ fn compile_compare(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, al
                 dynasm!(ops
                     ; cset W(r_out as u32), lo // unsigned "lower"
                 )
-            },
+            }
             _ => todo!("Unsupported Compare operation: {:?} {:?} {:?}", a, compare_type, b),
         }
     } else {
@@ -171,7 +189,13 @@ fn compile_compare(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, al
     }
 }
 
-fn compile_write_ptr(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegPool, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>) {
+fn compile_write_ptr(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    scratch_regs: &RegPool,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    inputs: &Vec<InputSlot>,
+) {
     assert_eq!(inputs.len(), 3);
     // ptr, value, type
     let ptr = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
@@ -187,14 +211,14 @@ fn compile_write_ptr(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegP
                 dynasm!(ops
                     ; str W(r_value.r()), [X(r_address.r())]
                 );
-            },
+            }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
                 let r_address = scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, r_address.r(), *ptr);
                 dynasm!(ops
                     ; str W((*value) as u32), [X(r_address.r())]
                 )
-            },
+            }
             (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
             (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, tp),
@@ -211,9 +235,9 @@ fn compile_spill_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunct
         match (&to_spill, &stack_offset, tp) {
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
-                ; str W(*r), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
-            )
-            },
+                    ; str W(*r), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
+                )
+            }
             _ => todo!("Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}", to_spill, stack_offset, tp),
         }
     } else {
@@ -221,7 +245,14 @@ fn compile_spill_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunct
     }
 }
 
-fn compile_load_from_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>, outputs: &Vec<OutputSlot>, output_registers: Vec<Option<&Register>>) {
+fn compile_load_from_stack(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    inputs: &Vec<InputSlot>,
+    outputs: &Vec<OutputSlot>,
+    output_registers: Vec<Option<&Register>>,
+) {
     let stack_offset = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
 
     let r_out = *output_registers[0].unwrap();
@@ -230,9 +261,9 @@ fn compile_load_from_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunc
     match (r_out, &stack_offset, tp) {
         (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
             dynasm!(ops
-            ; ldr W(r_out as u32), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
-        )
-        },
+                ; ldr W(r_out as u32), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
+            )
+        }
         _ => todo!("Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}", r_out, stack_offset, tp),
     }
 }
@@ -260,7 +291,7 @@ fn save_callee_regs_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFu
                 dynasm!(ops
                     ; str X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                 )
-            },
+            }
         }
     }
 }
@@ -273,7 +304,7 @@ fn pop_callee_regs_from_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRF
                 dynasm!(ops
                     ; ldr X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                 )
-            },
+            }
         }
     }
 }
@@ -325,7 +356,10 @@ fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<Co
                     // Add this move back to postponed_moves and `continue`
                     panic!("Would overwrite a pending move target - we have a cycle. Need to allocate temp regs to fix this.");
                 } else {
-                    println!("\tWould overwrite pending move source {:?} with {:?}, postponing the move (this does not conflict with an already postponed move)", to, from);
+                    println!(
+                        "\tWould overwrite pending move source {:?} with {:?}, postponing the move (this does not conflict with an already postponed move)",
+                        to, from
+                    );
                     // We couldn't make this move, so we need to add it back to the list of moves
                     postponed_moves.push(from);
                     // But do the conflicting one first
@@ -340,7 +374,7 @@ fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<Co
                         moves.remove(&from);
                         pending_move_targets.remove(&to);
                         // It was a constant, so no need to remove the source
-                    },
+                    }
                     (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
                     (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                         dynasm!(ops
@@ -349,7 +383,7 @@ fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<Co
                         moves.remove(&from);
                         pending_move_targets.remove(&to);
                         pending_move_sources.remove(&from.to_reg().unwrap());
-                    },
+                    }
                 }
             }
         }
@@ -357,7 +391,14 @@ fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<Co
     println!();
 }
 
-fn call_block(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, target: &BlockReference, block_labels: &Vec<dynasmrt::DynamicLabel>, _from_block_index: usize) {
+fn call_block(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    target: &BlockReference,
+    block_labels: &Vec<dynasmrt::DynamicLabel>,
+    _from_block_index: usize,
+) {
     let moves = target
         .arguments
         .iter()
@@ -385,10 +426,10 @@ fn call_block(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocat
     // branch instruction should detect if one of the targets is the next block and always put that
     // second. Then we could always elide this jump here.
     // if target.block_index != from_block_index + 1 {
-        let target_label = block_labels[target.block_index];
-        dynasm!(ops
-            ; b =>target_label
-        )
+    let target_label = block_labels[target.block_index];
+    dynasm!(ops
+        ; b =>target_label
+    )
     // }
 }
 
@@ -404,7 +445,6 @@ pub fn compile(func: &mut IRFunction) {
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
 
     let callee_saved = calculate_callee_saved_regs(func, &allocations);
-
 
     // Stack bytes used: aligned to 16 bytes
     let misalignment = func.stack_bytes_used % 16;
@@ -452,7 +492,8 @@ pub fn compile(func: &mut IRFunction) {
                                 block_index,
                                 data_type: output.tp,
                             })
-                        }).collect::<Vec<_>>();
+                        })
+                        .collect::<Vec<_>>();
 
                     match tp {
                         crate::ir::InstructionType::Add => compile_add(&mut ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers),
@@ -462,7 +503,7 @@ pub fn compile(func: &mut IRFunction) {
                         crate::ir::InstructionType::SpillToStack => compile_spill_to_stack(&mut ops, func, &allocations, inputs),
                         crate::ir::InstructionType::LoadFromStack => compile_load_from_stack(&mut ops, func, &allocations, inputs, outputs, output_registers),
                     }
-                },
+                }
                 crate::ir::Instruction::Branch { cond, if_true, if_false } => {
                     let cond = input_slot_to_imm_or_reg(&cond, func, &allocations);
 
@@ -471,7 +512,7 @@ pub fn compile(func: &mut IRFunction) {
                             dynasm!(ops
                                 ; cbz W(c), >if_false
                             );
-                        },
+                        }
                         _ => todo!("Unsupported branch condition: {:?}", cond),
                     }
                     call_block(&mut ops, func, &allocations, if_true, &block_labels, block_index);
@@ -479,10 +520,10 @@ pub fn compile(func: &mut IRFunction) {
                         ; if_false:
                     );
                     call_block(&mut ops, func, &allocations, if_false, &block_labels, block_index);
-                },
+                }
                 crate::ir::Instruction::Jump { target } => {
                     call_block(&mut ops, func, &allocations, target, &block_labels, block_index);
-                },
+                }
                 crate::ir::Instruction::Return { .. } => {
                     pop_callee_regs_from_stack(&mut ops, func, &callee_saved);
                     // Fix sp
@@ -494,11 +535,10 @@ pub fn compile(func: &mut IRFunction) {
                     dynasm!(ops
                         ; ret
                     );
-                },
+                }
             }
         }
     }
-
 
     let code = ops.finalize().unwrap();
     let f: extern "C" fn() = unsafe { mem::transmute(code.ptr(entrypoint)) };

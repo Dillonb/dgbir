@@ -27,7 +27,7 @@ pub mod register_type {
 
         fn is_same(r: Register) -> bool {
             match r {
-                Register::GPR(_) => true
+                Register::GPR(_) => true,
             }
         }
 
@@ -40,7 +40,7 @@ pub mod register_type {
 /// A pool of registers for allocating scratch registers on demand
 #[derive(Debug)]
 pub struct RegPool {
-    pool: Arc<RefCell<RegPoolInternal>>
+    pool: Arc<RefCell<RegPoolInternal>>,
 }
 
 #[derive(Debug)]
@@ -48,14 +48,10 @@ struct RegPoolInternal {
     regs: HashMap<Register, bool>,
 }
 
-
 impl RegPoolInternal {
     fn new(regs: Vec<Register>) -> Self {
         RegPoolInternal {
-            regs: regs
-                .iter()
-                .map(|r| (*r, false))
-                .collect()
+            regs: regs.iter().map(|r| (*r, false)).collect(),
         }
     }
 }
@@ -63,11 +59,11 @@ impl RegPoolInternal {
 impl RegPool {
     pub fn new(regs: Vec<Register>) -> Self {
         RegPool {
-            pool: Arc::new(RefCell::new(RegPoolInternal::new(regs)))
+            pool: Arc::new(RefCell::new(RegPoolInternal::new(regs))),
         }
     }
 
-    pub fn borrow<T : RegPoolRegister>(&self) -> BorrowedReg<T> {
+    pub fn borrow<T: RegPoolRegister>(&self) -> BorrowedReg<T> {
         let mut pool = self.pool.borrow_mut();
 
         let maybe_reg = pool
@@ -75,9 +71,7 @@ impl RegPool {
             .iter()
             .filter(|(_, allocated)| !(**allocated))
             .map(|(reg, _)| reg)
-            .find(|reg| {
-                T::is_same(**reg)
-            });
+            .find(|reg| T::is_same(**reg));
 
         if maybe_reg.is_none() {
             panic!("No registers found!");
@@ -96,7 +90,7 @@ impl RegPool {
     }
 }
 
-pub struct BorrowedReg<T : RegPoolRegister> {
+pub struct BorrowedReg<T: RegPoolRegister> {
     reg: Register,
     pub pool_reg: T,
     pool: Arc<RefCell<RegPoolInternal>>,
@@ -108,12 +102,9 @@ impl<T: RegPoolRegister> BorrowedReg<T> {
     }
 }
 
-impl<T : RegPoolRegister> Drop for BorrowedReg<T> {
+impl<T: RegPoolRegister> Drop for BorrowedReg<T> {
     fn drop(&mut self) {
         println!("Returning temp reg {} to the pool", self.reg);
-        self
-            .pool
-            .borrow_mut()
-            .regs.insert(self.reg, false);
+        self.pool.borrow_mut().regs.insert(self.reg, false);
     }
 }

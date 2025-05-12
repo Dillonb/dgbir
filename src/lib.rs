@@ -5,5 +5,5 @@ pub mod disassembler;
 pub mod ir;
 pub mod ir_interpreter;
 pub mod parser;
-pub mod register_allocator;
 pub mod reg_pool;
+pub mod register_allocator;

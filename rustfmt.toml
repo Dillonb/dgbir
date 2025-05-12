@@ -1,0 +1,4 @@
+max_width = 160
+fn_call_width = 160
+newline_style = "Unix"
+
