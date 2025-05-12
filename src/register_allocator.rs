@@ -1,7 +1,5 @@
 use std::{
-    cmp::{max, min},
-    collections::HashMap,
-    fmt::Display, iter,
+    cmp::{max, min}, collections::HashMap, fmt::Display, iter
 };
 
 use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
@@ -23,7 +21,7 @@ fn get_registers() -> Vec<Register> {
         .collect()
 }
 
-fn get_scratch_registers() -> Vec<Register> {
+pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     vec![9, 10, 11, 12, 13, 14, 15]
         .into_iter()
@@ -51,9 +49,13 @@ impl Register {
             },
         }
     }
+
+     pub fn index(&self) -> usize {
+        match self {
+            Register::GPR(r) => *r
+        }
+    }
 }
-
-
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Value {

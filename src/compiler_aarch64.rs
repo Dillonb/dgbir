@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, mem};
 
-use crate::{disassembler::disassemble, ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot}, register_allocator::{alloc_for, Register, Value}};
+use crate::{disassembler::disassemble, ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot}, reg_pool::{register_type, RegPool}, register_allocator::{alloc_for, get_scratch_registers, Register, Value}};
 use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
 use itertools::Itertools;
 
@@ -98,7 +98,7 @@ fn load_32_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value:
     }
 }
 
-fn compile_add(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>, outputs: &Vec<OutputSlot>, output_registers: Vec<Option<&Register>>) {
+fn compile_add(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegPool, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>, outputs: &Vec<OutputSlot>, output_registers: Vec<Option<&Register>>) {
     assert_eq!(inputs.len(), 2);
     assert_eq!(outputs.len(), 1);
     assert_eq!(output_registers.len(), 1);
@@ -120,10 +120,10 @@ fn compile_add(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, alloca
                     ; add WSP(r_out as u32), WSP(r), c
                 )
             } else {
-                println!("TODO: allocate these temporary registers in a real/safe way");
-                load_32_bit_constant(ops, 0, c);
+                let r_temp = scratch_regs.borrow::<register_type::GPR>();
+                load_32_bit_constant(ops, r_temp.r(), c);
                 dynasm!(ops
-                    ; add W(r_out as u32), W(r), W(0)
+                    ; add W(r_out as u32), W(r), W(r_temp.r())
                 )
             }
         },
@@ -171,7 +171,7 @@ fn compile_compare(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, al
     }
 }
 
-fn compile_write_ptr(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>) {
+fn compile_write_ptr(ops: &mut dynasmrt::aarch64::Assembler, scratch_regs: &RegPool, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>) {
     assert_eq!(inputs.len(), 3);
     // ptr, value, type
     let ptr = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
@@ -179,19 +179,21 @@ fn compile_write_ptr(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, 
     if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
         match (&ptr, &value, tp) {
             (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
-                println!("TODO: allocate these temporary registers in a real/safe way");
-                load_64_bit_constant(ops, 0, *ptr);
-                load_32_bit_constant(ops, 1, *value);
+                let r_address = scratch_regs.borrow::<register_type::GPR>();
+                let r_value = scratch_regs.borrow::<register_type::GPR>();
+
+                load_64_bit_constant(ops, r_address.r(), *ptr);
+                load_32_bit_constant(ops, r_value.r(), *value);
                 dynasm!(ops
-                ; str W(1), [X(0)]
-            )
+                    ; str W(r_value.r()), [X(r_address.r())]
+                );
             },
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
-                println!("TODO: allocate these temporary registers in a real/safe way");
-                load_64_bit_constant(ops, 0, *ptr);
+                let r_address = scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, r_address.r(), *ptr);
                 dynasm!(ops
-                ; str W((*value) as u32), [X(0)]
-            )
+                    ; str W((*value) as u32), [X(r_address.r())]
+                )
             },
             (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
             (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
@@ -355,7 +357,7 @@ fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<Co
     println!();
 }
 
-fn call_block(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, target: &BlockReference, block_labels: &Vec<dynasmrt::DynamicLabel>, from_block_index: usize) {
+fn call_block(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, target: &BlockReference, block_labels: &Vec<dynasmrt::DynamicLabel>, _from_block_index: usize) {
     let moves = target
         .arguments
         .iter()
@@ -392,6 +394,7 @@ fn call_block(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocat
 
 pub fn compile(func: &mut IRFunction) {
     let allocations = alloc_for(func); // TODO: this will eventually return some data
+    let scratch_regs = RegPool::new(get_scratch_registers());
 
     println!("Allocations:");
     allocations.iter().sorted_by_key(|(v, _)| **v).for_each(|(k, v)| {
@@ -452,10 +455,10 @@ pub fn compile(func: &mut IRFunction) {
                         }).collect::<Vec<_>>();
 
                     match tp {
-                        crate::ir::InstructionType::Add => compile_add(&mut ops, func, &allocations, inputs, outputs, output_registers),
+                        crate::ir::InstructionType::Add => compile_add(&mut ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers),
                         crate::ir::InstructionType::Compare => compile_compare(&mut ops, func, &allocations, inputs, output_registers),
                         crate::ir::InstructionType::LoadPtr => todo!("load_ptr"),
-                        crate::ir::InstructionType::WritePtr => compile_write_ptr(&mut ops, func, &allocations, inputs),
+                        crate::ir::InstructionType::WritePtr => compile_write_ptr(&mut ops, &scratch_regs, func, &allocations, inputs),
                         crate::ir::InstructionType::SpillToStack => compile_spill_to_stack(&mut ops, func, &allocations, inputs),
                         crate::ir::InstructionType::LoadFromStack => compile_load_from_stack(&mut ops, func, &allocations, inputs, outputs, output_registers),
                     }
