@@ -1,7 +1,7 @@
 use std::{
     cmp::{max, min},
     collections::HashMap,
-    fmt::Display,
+    fmt::Display, iter,
 };
 
 use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
@@ -251,12 +251,13 @@ impl Iterator for IRFunctionValueIterator<'_> {
             // If we're not done iterating through the inputs, self.block_input_index will be less than
             // the number of inputs
             if self.block_input_index < block.inputs.len() {
-                self.block_input_index += 1;
-                return Some(Value::BlockInput {
+                let result = Some(Value::BlockInput {
                     data_type: block.inputs[self.block_input_index],
                     block_index: self.block_index,
                     input_index: self.block_input_index,
                 });
+                self.block_input_index += 1;
+                return result;
             }
 
             let fn_instruction_index = block.instructions[self.instruction_index];
@@ -441,24 +442,44 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                             };
                         });
                 }
-                crate::ir::Instruction::Branch { cond, .. } => {
-                    if let Some(value) = cond.to_value(&func) {
-                        let u = Usage {
-                            block_index,
-                            instruction_index: *instruction_index,
-                            instruction_index_in_block,
-                        };
-                        last_used.insert(
-                            value,
-                            u,
-                        );
-                        all_usages
-                            .entry(value)
-                            .or_insert_with(Vec::new)
-                            .push(u);
-                    };
+                crate::ir::Instruction::Branch { cond, if_true, if_false } => {
+                    if_true
+                        .arguments
+                        .iter()
+                        .chain(if_false.arguments.iter())
+                        .chain(iter::once(cond))
+                        .flat_map(|i| i.to_value(&func))
+                        .for_each(|value| {
+                            let usage = Usage {
+                                block_index,
+                                instruction_index: *instruction_index,
+                                instruction_index_in_block,
+                            };
+                            last_used.insert(value, usage);
+                            all_usages
+                                .entry(value)
+                                .or_insert_with(Vec::new)
+                                .push(usage);
+                        });
                 }
-                crate::ir::Instruction::Jump { .. } => {}
+                crate::ir::Instruction::Jump { target } => {
+                    target
+                        .arguments
+                        .iter()
+                        .flat_map(|i| i.to_value(&func))
+                        .for_each(|value| {
+                            let usage = Usage {
+                                block_index,
+                                instruction_index: *instruction_index,
+                                instruction_index_in_block,
+                            };
+                            last_used.insert(value, usage);
+                            all_usages
+                                .entry(value)
+                                .or_insert_with(Vec::new)
+                                .push(usage);
+                        });
+                }
                 crate::ir::Instruction::Return { value } => value.into_iter().for_each(|input| {
                     if let Some(value) = input.to_value(&func) {
                         let u = Usage {
@@ -482,6 +503,8 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
     last_used.keys().combinations(2).for_each(|x| {
         let a = x[0];
         let b = x[1];
+
+        println!("Checking interference between {} and {}", a, b);
 
         let a_first = a.into_usage(func);
         let b_first = b.into_usage(func);
@@ -631,13 +654,20 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
         let mut to_spill = None;
         let lifetimes = calculate_lifetimes(&func);
 
+        lifetimes.interference.iter().for_each(|(v, interference)| {
+            for iv in interference {
+                println!("{}: {}", v, iv);
+            }
+        });
+
         for value in func.value_iter() {
-            let interference = &lifetimes.interference[&value];
+            println!("Getting interfering regs for {}", value);
+            let interference = lifetimes.interference.get(&value);
 
             let mut found_reg = false;
             for reg in get_registers() {
                 // Check if the register is already allocated to an interfering value
-                let already_allocated = interference.iter().flat_map(|iv| allocations.get(iv)).any(|r| *r == reg);
+                let already_allocated = interference.is_some() && interference.unwrap().iter().flat_map(|iv| allocations.get(iv)).any(|r| *r == reg);
                 if !already_allocated {
                     allocations.insert(value, reg);
                     found_reg = true;
@@ -647,6 +677,7 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
 
             if !found_reg {
                 to_spill = interference
+                    .unwrap() // If we couldn't find a register, there must be interference
                     .iter()
                     .filter(|iv| allocations.get(iv).is_some())
                     .flat_map(|iv| {

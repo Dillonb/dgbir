@@ -57,16 +57,32 @@ fn main() {
     let r9 = func.add(&block, DataType::U32, r8.val(), r3.val());
     let r10 = func.add(&block, DataType::U32, r9.val(), r2.val());
     let r11 = func.add(&block, DataType::U32, r10.val(), r1.val());
-    let final_result = func.add(&block, DataType::U32, r11.val(), add4_result.val());
+    let nearly_final_result = func.add(&block, DataType::U32, r11.val(), add4_result.val());
 
-    func.write_ptr(
-        &block,
-        DataType::U32,
-        const_ptr(&r as *const u32 as usize),
-        final_result.val(),
+    // Use a loop to add ten to the final result
+    let loop_block = func.new_block(vec![DataType::U32, DataType::U32]);
+    func.jump(&block, loop_block.call(vec![const_u32(0), nearly_final_result.val()]));
+
+    // Add 1 to both the counter and the running total
+    let loop_counter = func.add(&loop_block, DataType::U32, loop_block.input(0), const_u32(1));
+    let running_total = func.add(&loop_block, DataType::U32, loop_block.input(1), const_u32(1));
+
+    let loop_again = func.compare(&loop_block, loop_counter.val(), CompareType::LessThanUnsigned, const_u32(10));
+    let ret_block = func.new_block(vec![DataType::U32]);
+    func.branch(
+        &loop_block,
+        loop_again.val(),
+        loop_block.call(vec![loop_counter.val(), running_total.val()]),
+        ret_block.call(vec![running_total.val()]),
     );
 
-    func.ret(&block, None);
+    func.write_ptr(
+        &ret_block,
+        DataType::U32,
+        const_ptr(&r as *const u32 as usize),
+        ret_block.input(0),
+    );
+    func.ret(&ret_block, None);
 
     println!("{}", func);
     println!("Interpreting");
