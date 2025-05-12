@@ -501,10 +501,10 @@ pub fn compile(func: &mut IRFunction) {
 
 
     let code = ops.finalize().unwrap();
-    let f: extern "C" fn(x: u64) -> u64 = unsafe { mem::transmute(code.ptr(entrypoint)) };
+    let f: extern "C" fn() = unsafe { mem::transmute(code.ptr(entrypoint)) };
 
     println!("{}", disassemble(&code, f as u64));
 
     println!("Running:");
-    f(1);
+    f();
 }
