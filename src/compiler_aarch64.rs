@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     disassembler::disassemble,
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, InstructionType, OutputSlot},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, get_scratch_registers, Register, Value},
 };
@@ -281,7 +281,7 @@ fn compile_instruction(
     let block_index = instruction.block_index;
     let stack_bytes_used = func.stack_bytes_used;
     match &instruction.instruction {
-        crate::ir::Instruction::Instruction { tp, inputs, outputs } => {
+        Instruction::Instruction { tp, inputs, outputs } => {
             let output_registers = outputs
                 .iter()
                 .enumerate()
@@ -304,7 +304,7 @@ fn compile_instruction(
                 InstructionType::LoadFromStack => compile_load_from_stack(ops, func, &allocations, inputs, outputs, output_registers),
             }
         }
-        crate::ir::Instruction::Branch { cond, if_true, if_false } => {
+        Instruction::Branch { cond, if_true, if_false } => {
             let cond = input_slot_to_imm_or_reg(&cond, func, &allocations);
 
             match cond {
@@ -321,10 +321,10 @@ fn compile_instruction(
             );
             call_block(ops, func, &allocations, if_false, &block_labels, block_index);
         }
-        crate::ir::Instruction::Jump { target } => {
+        Instruction::Jump { target } => {
             call_block(ops, func, &allocations, target, &block_labels, block_index);
         }
-        crate::ir::Instruction::Return { .. } => {
+        Instruction::Return { .. } => {
             pop_callee_regs_from_stack(ops, func, &callee_saved);
             // Fix sp
             if stack_bytes_used > 0 {

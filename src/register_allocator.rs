@@ -300,7 +300,7 @@ impl Iterator for IRFunctionValueIterator<'_> {
             let instruction = &self.function.instructions[fn_instruction_index];
 
             match &instruction.instruction {
-                crate::ir::Instruction::Instruction { outputs, .. } => {
+                Instruction::Instruction { outputs, .. } => {
                     let v = if self.output_index < outputs.len() {
                         Some(Value::InstructionOutput {
                             block_index: instruction.block_index,
@@ -326,7 +326,7 @@ impl Iterator for IRFunctionValueIterator<'_> {
                 }
 
                 // These aren't values, so skip
-                crate::ir::Instruction::Branch { .. } | crate::ir::Instruction::Jump { .. } | crate::ir::Instruction::Return { .. } => {
+                Instruction::Branch { .. } | Instruction::Jump { .. } | Instruction::Return { .. } => {
                     self.output_index = 0;
                     self.instruction_index += 1;
                     if self.instruction_index >= block.instructions.len() {
@@ -438,7 +438,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                 .map(move |(instruction_index_in_block, instruction_index)| (block_index, instruction_index_in_block, instruction_index))
         })
         .for_each(|(block_index, instruction_index_in_block, instruction_index)| match &func.instructions[*instruction_index].instruction {
-            crate::ir::Instruction::Instruction { inputs, .. } => {
+            Instruction::Instruction { inputs, .. } => {
                 inputs.iter().map(|input| input.to_value(&func)).for_each(|input| {
                     if let Some(value) = input {
                         let u = Usage {
@@ -451,7 +451,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                     };
                 });
             }
-            crate::ir::Instruction::Branch { cond, if_true, if_false } => {
+            Instruction::Branch { cond, if_true, if_false } => {
                 if_true
                     .arguments
                     .iter()
@@ -468,7 +468,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                         all_usages.entry(value).or_insert_with(Vec::new).push(usage);
                     });
             }
-            crate::ir::Instruction::Jump { target } => {
+            Instruction::Jump { target } => {
                 target.arguments.iter().flat_map(|i| i.to_value(&func)).for_each(|value| {
                     let usage = Usage {
                         block_index,
@@ -479,7 +479,7 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                     all_usages.entry(value).or_insert_with(Vec::new).push(usage);
                 });
             }
-            crate::ir::Instruction::Return { value } => value.into_iter().for_each(|input| {
+            Instruction::Return { value } => value.into_iter().for_each(|input| {
                 if let Some(value) = input.to_value(&func) {
                     let u = Usage {
                         block_index,
