@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     disassembler::disassemble,
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, InstructionType, OutputSlot},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, get_scratch_registers, Register, Value},
 };
@@ -268,6 +268,77 @@ fn compile_load_from_stack(
     }
 }
 
+fn compile_instruction(
+    instruction: &IndexedInstruction,
+    ops: &mut dynasmrt::aarch64::Assembler,
+    block_labels: &Vec<dynasmrt::DynamicLabel>,
+    scratch_regs: &RegPool,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    callee_saved: &Vec<(Register, usize)>,
+) {
+    let instruction_index = instruction.index;
+    let block_index = instruction.block_index;
+    let stack_bytes_used = func.stack_bytes_used;
+    match &instruction.instruction {
+        crate::ir::Instruction::Instruction { tp, inputs, outputs } => {
+            let output_registers = outputs
+                .iter()
+                .enumerate()
+                .map(|(output_index, output)| {
+                    allocations.get(&Value::InstructionOutput {
+                        instruction_index,
+                        output_index,
+                        block_index,
+                        data_type: output.tp,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            match tp {
+                InstructionType::Add => compile_add(ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers),
+                InstructionType::Compare => compile_compare(ops, func, &allocations, inputs, output_registers),
+                InstructionType::LoadPtr => todo!("load_ptr"),
+                InstructionType::WritePtr => compile_write_ptr(ops, &scratch_regs, func, &allocations, inputs),
+                InstructionType::SpillToStack => compile_spill_to_stack(ops, func, &allocations, inputs),
+                InstructionType::LoadFromStack => compile_load_from_stack(ops, func, &allocations, inputs, outputs, output_registers),
+            }
+        }
+        crate::ir::Instruction::Branch { cond, if_true, if_false } => {
+            let cond = input_slot_to_imm_or_reg(&cond, func, &allocations);
+
+            match cond {
+                ConstOrReg::GPR(c) => {
+                    dynasm!(ops
+                        ; cbz W(c), >if_false
+                    );
+                }
+                _ => todo!("Unsupported branch condition: {:?}", cond),
+            }
+            call_block(ops, func, &allocations, if_true, &block_labels, block_index);
+            dynasm!(ops
+                ; if_false:
+            );
+            call_block(ops, func, &allocations, if_false, &block_labels, block_index);
+        }
+        crate::ir::Instruction::Jump { target } => {
+            call_block(ops, func, &allocations, target, &block_labels, block_index);
+        }
+        crate::ir::Instruction::Return { .. } => {
+            pop_callee_regs_from_stack(ops, func, &callee_saved);
+            // Fix sp
+            if stack_bytes_used > 0 {
+                dynasm!(ops
+                    ; add sp, sp, stack_bytes_used.try_into().unwrap()
+                );
+            }
+            dynasm!(ops
+                ; ret
+            );
+        }
+    }
+}
+
 fn calculate_callee_saved_regs(func: &mut IRFunction, allocations: &HashMap<Value, Register>) -> Vec<(Register, usize)> {
     allocations
         .iter()
@@ -473,71 +544,16 @@ pub fn compile(func: &mut IRFunction) {
     let block_labels = func.blocks.iter().map(|_| ops.new_dynamic_label()).collect::<Vec<_>>();
 
     for (block_index, block) in func.blocks.iter().enumerate() {
+        // This "resolves" the block label so it can be jumped to from elsewhere in the program.
+        // This should be done once per block.
         dynasm!(ops
             ; =>block_labels[block_index]
         );
 
-        for (_instruction_index_in_block, instruction_index) in block.instructions.iter().enumerate() {
-            let instruction = &func.instructions[*instruction_index];
-
-            match &instruction.instruction {
-                crate::ir::Instruction::Instruction { tp, inputs, outputs } => {
-                    let output_registers = outputs
-                        .iter()
-                        .enumerate()
-                        .map(|(output_index, output)| {
-                            allocations.get(&Value::InstructionOutput {
-                                instruction_index: *instruction_index,
-                                output_index,
-                                block_index,
-                                data_type: output.tp,
-                            })
-                        })
-                        .collect::<Vec<_>>();
-
-                    match tp {
-                        crate::ir::InstructionType::Add => compile_add(&mut ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers),
-                        crate::ir::InstructionType::Compare => compile_compare(&mut ops, func, &allocations, inputs, output_registers),
-                        crate::ir::InstructionType::LoadPtr => todo!("load_ptr"),
-                        crate::ir::InstructionType::WritePtr => compile_write_ptr(&mut ops, &scratch_regs, func, &allocations, inputs),
-                        crate::ir::InstructionType::SpillToStack => compile_spill_to_stack(&mut ops, func, &allocations, inputs),
-                        crate::ir::InstructionType::LoadFromStack => compile_load_from_stack(&mut ops, func, &allocations, inputs, outputs, output_registers),
-                    }
-                }
-                crate::ir::Instruction::Branch { cond, if_true, if_false } => {
-                    let cond = input_slot_to_imm_or_reg(&cond, func, &allocations);
-
-                    match cond {
-                        ConstOrReg::GPR(c) => {
-                            dynasm!(ops
-                                ; cbz W(c), >if_false
-                            );
-                        }
-                        _ => todo!("Unsupported branch condition: {:?}", cond),
-                    }
-                    call_block(&mut ops, func, &allocations, if_true, &block_labels, block_index);
-                    dynasm!(ops
-                        ; if_false:
-                    );
-                    call_block(&mut ops, func, &allocations, if_false, &block_labels, block_index);
-                }
-                crate::ir::Instruction::Jump { target } => {
-                    call_block(&mut ops, func, &allocations, target, &block_labels, block_index);
-                }
-                crate::ir::Instruction::Return { .. } => {
-                    pop_callee_regs_from_stack(&mut ops, func, &callee_saved);
-                    // Fix sp
-                    if stack_bytes_used > 0 {
-                        dynasm!(ops
-                            ; add sp, sp, stack_bytes_used.try_into().unwrap()
-                        );
-                    }
-                    dynasm!(ops
-                        ; ret
-                    );
-                }
-            }
-        }
+        block.instructions
+            .iter()
+            .map(|i| &func.instructions[*i])
+            .for_each(|instruction| compile_instruction(instruction, &mut ops, &block_labels, &scratch_regs, func, &allocations, &callee_saved))
     }
 
     let code = ops.finalize().unwrap();
