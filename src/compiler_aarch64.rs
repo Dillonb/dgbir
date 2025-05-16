@@ -5,7 +5,10 @@ use std::{
 
 use crate::{
     disassembler::disassemble,
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot},
+    ir::{
+        BlockReference, CompareType, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction,
+        InstructionType, OutputSlot,
+    },
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, get_scratch_registers, Register, Value},
 };
@@ -39,9 +42,11 @@ impl Register {
 
 fn input_slot_to_imm_or_reg(s: &InputSlot, func: &IRFunction, allocations: &HashMap<Value, Register>) -> ConstOrReg {
     match *s {
-        InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => match allocations[&s.to_value(func).unwrap()] {
-            Register::GPR(r) => ConstOrReg::GPR(r as u32),
-        },
+        InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => {
+            match allocations[&s.to_value(func).unwrap()] {
+                Register::GPR(r) => ConstOrReg::GPR(r as u32),
+            }
+        }
         InputSlot::Constant(constant) => match constant {
             Constant::U32(c) => ConstOrReg::U32(c as u32),
             Constant::U8(_) => todo!(),
@@ -228,7 +233,12 @@ fn compile_write_ptr(
     }
 }
 
-fn compile_spill_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, allocations: &HashMap<Value, Register>, inputs: &Vec<InputSlot>) {
+fn compile_spill_to_stack(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    func: &IRFunction,
+    allocations: &HashMap<Value, Register>,
+    inputs: &Vec<InputSlot>,
+) {
     let to_spill = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
     let stack_offset = input_slot_to_imm_or_reg(&inputs[1], func, &allocations);
     if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
@@ -238,7 +248,12 @@ fn compile_spill_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunct
                     ; str W(*r), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
                 )
             }
-            _ => todo!("Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}", to_spill, stack_offset, tp),
+            _ => todo!(
+                "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
+                to_spill,
+                stack_offset,
+                tp
+            ),
         }
     } else {
         panic!("Expected a datatype constant as the third input to SpillToStack");
@@ -264,7 +279,12 @@ fn compile_load_from_stack(
                 ; ldr W(r_out as u32), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
             )
         }
-        _ => todo!("Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}", r_out, stack_offset, tp),
+        _ => todo!(
+            "Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}",
+            r_out,
+            stack_offset,
+            tp
+        ),
     }
 }
 
@@ -296,15 +316,23 @@ fn compile_instruction(
                 .collect::<Vec<_>>();
 
             match tp {
-                InstructionType::Add => compile_add(ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers),
+                InstructionType::Add => {
+                    compile_add(ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers)
+                }
                 InstructionType::Compare => compile_compare(ops, func, &allocations, inputs, output_registers),
                 InstructionType::LoadPtr => todo!("load_ptr"),
                 InstructionType::WritePtr => compile_write_ptr(ops, &scratch_regs, func, &allocations, inputs),
                 InstructionType::SpillToStack => compile_spill_to_stack(ops, func, &allocations, inputs),
-                InstructionType::LoadFromStack => compile_load_from_stack(ops, func, &allocations, inputs, outputs, output_registers),
+                InstructionType::LoadFromStack => {
+                    compile_load_from_stack(ops, func, &allocations, inputs, outputs, output_registers)
+                }
             }
         }
-        Instruction::Branch { cond, if_true, if_false } => {
+        Instruction::Branch {
+            cond,
+            if_true,
+            if_false,
+        } => {
             let cond = input_slot_to_imm_or_reg(&cond, func, &allocations);
 
             match cond {
@@ -339,7 +367,10 @@ fn compile_instruction(
     }
 }
 
-fn calculate_callee_saved_regs(func: &mut IRFunction, allocations: &HashMap<Value, Register>) -> Vec<(Register, usize)> {
+fn calculate_callee_saved_regs(
+    func: &mut IRFunction,
+    allocations: &HashMap<Value, Register>,
+) -> Vec<(Register, usize)> {
     allocations
         .iter()
         .map(|(_, reg)| reg)
@@ -354,7 +385,11 @@ fn calculate_callee_saved_regs(func: &mut IRFunction, allocations: &HashMap<Valu
         .collect::<Vec<_>>()
 }
 
-fn save_callee_regs_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, callee_saved: &Vec<(Register, usize)>) {
+fn save_callee_regs_to_stack(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    func: &IRFunction,
+    callee_saved: &Vec<(Register, usize)>,
+) {
     for (reg, stack_location) in callee_saved {
         match *reg {
             Register::GPR(r) => {
@@ -367,7 +402,11 @@ fn save_callee_regs_to_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFu
     }
 }
 
-fn pop_callee_regs_from_stack(ops: &mut dynasmrt::aarch64::Assembler, func: &IRFunction, callee_saved: &Vec<(Register, usize)>) {
+fn pop_callee_regs_from_stack(
+    ops: &mut dynasmrt::aarch64::Assembler,
+    func: &IRFunction,
+    callee_saved: &Vec<(Register, usize)>,
+) {
     for (reg, stack_location) in callee_saved {
         match *reg {
             Register::GPR(r) => {
@@ -521,7 +560,10 @@ pub fn compile(func: &mut IRFunction) {
     let misalignment = func.stack_bytes_used % 16;
     let correction = if misalignment == 0 { 0 } else { 16 - misalignment };
     let stack_bytes_used = func.stack_bytes_used + correction;
-    println!("Function uses {} bytes of stack, misaligned by {}, corrected to {}", func.stack_bytes_used, misalignment, stack_bytes_used);
+    println!(
+        "Function uses {} bytes of stack, misaligned by {}, corrected to {}",
+        func.stack_bytes_used, misalignment, stack_bytes_used
+    );
     func.stack_bytes_used = stack_bytes_used;
 
     // Entrypoint to the function - get the offset before appending anything
@@ -550,10 +592,21 @@ pub fn compile(func: &mut IRFunction) {
             ; =>block_labels[block_index]
         );
 
-        block.instructions
+        block
+            .instructions
             .iter()
             .map(|i| &func.instructions[*i])
-            .for_each(|instruction| compile_instruction(instruction, &mut ops, &block_labels, &scratch_regs, func, &allocations, &callee_saved))
+            .for_each(|instruction| {
+                compile_instruction(
+                    instruction,
+                    &mut ops,
+                    &block_labels,
+                    &scratch_regs,
+                    func,
+                    &allocations,
+                    &callee_saved,
+                )
+            })
     }
 
     let code = ops.finalize().unwrap();

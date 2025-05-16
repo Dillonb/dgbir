@@ -69,7 +69,12 @@ fn main() {
 
     let loop_again = func.compare(&loop_block, loop_counter.val(), CompareType::LessThanUnsigned, const_u32(10));
     let ret_block = func.new_block(vec![DataType::U32]);
-    func.branch(&loop_block, loop_again.val(), loop_block.call(vec![loop_counter.val(), running_total.val()]), ret_block.call(vec![running_total.val()]));
+    func.branch(
+        &loop_block,
+        loop_again.val(),
+        loop_block.call(vec![loop_counter.val(), running_total.val()]),
+        ret_block.call(vec![running_total.val()]),
+    );
 
     func.write_ptr(&ret_block, DataType::U32, const_ptr(&r as *const u32 as usize), ret_block.input(0));
     func.ret(&ret_block, None);

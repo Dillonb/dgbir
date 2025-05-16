@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction, InstructionType, OutputSlot};
+use crate::ir::{
+    BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction, InstructionType, OutputSlot,
+};
 
 /// Used to simplify code around integer math when width is not as important.
 enum MiniConstant {
@@ -69,7 +71,11 @@ fn constant_to_u64(c: &Constant) -> u64 {
     }
 }
 
-fn resolve_inputslot(input: &InputSlot, block_inputs: &HashMap<usize, Vec<Constant>>, results: &HashMap<usize, Vec<Constant>>) -> Constant {
+fn resolve_inputslot(
+    input: &InputSlot,
+    block_inputs: &HashMap<usize, Vec<Constant>>,
+    results: &HashMap<usize, Vec<Constant>>,
+) -> Constant {
     match input {
         InputSlot::InstructionOutput {
             instruction_index,
@@ -79,7 +85,11 @@ fn resolve_inputslot(input: &InputSlot, block_inputs: &HashMap<usize, Vec<Consta
             let res = results[instruction_index][*output_index].clone();
             res
         }
-        InputSlot::BlockInput { block_index, input_index, .. } => {
+        InputSlot::BlockInput {
+            block_index,
+            input_index,
+            ..
+        } => {
             let res = block_inputs[block_index][*input_index].clone();
             res
         }
@@ -241,11 +251,17 @@ pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
                     .map(|input| resolve_inputslot(input, &block_inputs, &results))
                     .collect::<Vec<Constant>>();
 
-                results.entry(instruction.index).insert_entry(evaluate_instr(tp, &const_inputs, outputs));
+                results
+                    .entry(instruction.index)
+                    .insert_entry(evaluate_instr(tp, &const_inputs, outputs));
 
                 pc += 1;
             }
-            Instruction::Branch { cond, if_true, if_false } => {
+            Instruction::Branch {
+                cond,
+                if_true,
+                if_false,
+            } => {
                 if let Constant::Bool(cond) = resolve_inputslot(cond, &block_inputs, &results) {
                     if cond {
                         jump_to(if_true, &mut block_index, &mut pc, &mut block_inputs, &mut results);

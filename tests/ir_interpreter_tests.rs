@@ -102,7 +102,12 @@ fn test_conditional_branch_loop() {
     let compare = func.compare(&loop_block, running_sum.val(), CompareType::LessThanUnsigned, const_u32(10));
 
     let exit_block = func.new_block(vec![DataType::U32]);
-    func.branch(&loop_block, compare.val(), loop_block.call(vec![running_sum.val()]), exit_block.call(vec![running_sum.val()]));
+    func.branch(
+        &loop_block,
+        compare.val(),
+        loop_block.call(vec![running_sum.val()]),
+        exit_block.call(vec![running_sum.val()]),
+    );
 
     func.write_ptr(&exit_block, DataType::U32, const_ptr(&res as *const u32 as usize), exit_block.input(0));
 

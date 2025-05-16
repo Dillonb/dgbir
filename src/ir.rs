@@ -274,7 +274,13 @@ impl IRFunction {
         return index;
     }
 
-    pub fn append(&mut self, block_handle: &IRBlockHandle, tp: InstructionType, inputs: Vec<InputSlot>, outputs: Vec<OutputSlot>) -> InstructionOutput {
+    pub fn append(
+        &mut self,
+        block_handle: &IRBlockHandle,
+        tp: InstructionType,
+        inputs: Vec<InputSlot>,
+        outputs: Vec<OutputSlot>,
+    ) -> InstructionOutput {
         let index = self.append_obj(
             block_handle,
             Instruction::Instruction {

@@ -5,7 +5,9 @@ use std::{
     iter,
 };
 
-use crate::ir::{const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot};
+use crate::ir::{
+    const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot,
+};
 
 use itertools::Itertools;
 
@@ -18,12 +20,18 @@ fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     // vec![19, 20, 21] // Removed a bunch to test register spilling
-    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28].into_iter().map(|r| Register::GPR(r)).collect()
+    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+        .into_iter()
+        .map(|r| Register::GPR(r))
+        .collect()
 }
 
 pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
-    vec![9, 10, 11, 12, 13, 14, 15].into_iter().map(|r| Register::GPR(r)).collect()
+    vec![9, 10, 11, 12, 13, 14, 15]
+        .into_iter()
+        .map(|r| Register::GPR(r))
+        .collect()
 }
 
 impl Register {
@@ -193,7 +201,11 @@ impl Ord for Value {
                 }
             }
             (
-                Value::BlockInput { block_index, input_index, .. },
+                Value::BlockInput {
+                    block_index,
+                    input_index,
+                    ..
+                },
                 Value::BlockInput {
                     block_index: other_block_index,
                     input_index: other_input_index,
@@ -225,7 +237,11 @@ impl InputSlot {
                 } => *instruction_index == *v_instruction_index && *output_index == *v_output_index,
                 _ => false,
             },
-            InputSlot::BlockInput { block_index, input_index, .. } => match value {
+            InputSlot::BlockInput {
+                block_index,
+                input_index,
+                ..
+            } => match value {
                 Value::BlockInput {
                     block_index: v_block_index,
                     input_index: v_input_index,
@@ -254,7 +270,10 @@ impl InputSlot {
                 })
             }
             InputSlot::BlockInput {
-                block_index, input_index, tp, ..
+                block_index,
+                input_index,
+                tp,
+                ..
             } => Some(Value::BlockInput {
                 block_index,
                 input_index,
@@ -379,7 +398,9 @@ impl Usage {
         Usage {
             block_index: self.block_index,
             instruction_index: self.instruction_index,
-            instruction_index_in_block: func.get_index_in_block(self.block_index, self.instruction_index).unwrap(),
+            instruction_index_in_block: func
+                .get_index_in_block(self.block_index, self.instruction_index)
+                .unwrap(),
         }
     }
 }
@@ -410,7 +431,11 @@ impl Ord for Usage {
 
 impl Display for Usage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "used at block {} instruction index {} (v{})", self.block_index, self.instruction_index_in_block, self.instruction_index)
+        write!(
+            f,
+            "used at block {} instruction index {} (v{})",
+            self.block_index, self.instruction_index_in_block, self.instruction_index
+        )
     }
 }
 
@@ -435,12 +460,63 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                 .instructions
                 .iter()
                 .enumerate()
-                .map(move |(instruction_index_in_block, instruction_index)| (block_index, instruction_index_in_block, instruction_index))
+                .map(move |(instruction_index_in_block, instruction_index)| {
+                    (block_index, instruction_index_in_block, instruction_index)
+                })
         })
-        .for_each(|(block_index, instruction_index_in_block, instruction_index)| match &func.instructions[*instruction_index].instruction {
-            Instruction::Instruction { inputs, .. } => {
-                inputs.iter().map(|input| input.to_value(&func)).for_each(|input| {
-                    if let Some(value) = input {
+        .for_each(|(block_index, instruction_index_in_block, instruction_index)| {
+            match &func.instructions[*instruction_index].instruction {
+                Instruction::Instruction { inputs, .. } => {
+                    inputs.iter().map(|input| input.to_value(&func)).for_each(|input| {
+                        if let Some(value) = input {
+                            let u = Usage {
+                                block_index,
+                                instruction_index: *instruction_index,
+                                instruction_index_in_block,
+                            };
+                            last_used.insert(value, u);
+                            all_usages.entry(value).or_insert_with(Vec::new).push(u);
+                        };
+                    });
+                }
+                Instruction::Branch {
+                    cond,
+                    if_true,
+                    if_false,
+                } => {
+                    if_true
+                        .arguments
+                        .iter()
+                        .chain(if_false.arguments.iter())
+                        .chain(iter::once(cond))
+                        .flat_map(|i| i.to_value(&func))
+                        .for_each(|value| {
+                            let usage = Usage {
+                                block_index,
+                                instruction_index: *instruction_index,
+                                instruction_index_in_block,
+                            };
+                            last_used.insert(value, usage);
+                            all_usages.entry(value).or_insert_with(Vec::new).push(usage);
+                        });
+                }
+                Instruction::Jump { target } => {
+                    target
+                        .arguments
+                        .iter()
+                        .flat_map(|i| i.to_value(&func))
+                        .for_each(|value| {
+                            let usage = Usage {
+                                block_index,
+                                instruction_index: *instruction_index,
+                                instruction_index_in_block,
+                            };
+                            last_used.insert(value, usage);
+                            all_usages.entry(value).or_insert_with(Vec::new).push(usage);
+                        });
+                }
+                Instruction::Return { value } => value.into_iter().for_each(|input| {
+                    if let Some(value) = input.to_value(&func) {
                         let u = Usage {
                             block_index,
                             instruction_index: *instruction_index,
@@ -448,48 +524,9 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
                         };
                         last_used.insert(value, u);
                         all_usages.entry(value).or_insert_with(Vec::new).push(u);
-                    };
-                });
+                    }
+                }),
             }
-            Instruction::Branch { cond, if_true, if_false } => {
-                if_true
-                    .arguments
-                    .iter()
-                    .chain(if_false.arguments.iter())
-                    .chain(iter::once(cond))
-                    .flat_map(|i| i.to_value(&func))
-                    .for_each(|value| {
-                        let usage = Usage {
-                            block_index,
-                            instruction_index: *instruction_index,
-                            instruction_index_in_block,
-                        };
-                        last_used.insert(value, usage);
-                        all_usages.entry(value).or_insert_with(Vec::new).push(usage);
-                    });
-            }
-            Instruction::Jump { target } => {
-                target.arguments.iter().flat_map(|i| i.to_value(&func)).for_each(|value| {
-                    let usage = Usage {
-                        block_index,
-                        instruction_index: *instruction_index,
-                        instruction_index_in_block,
-                    };
-                    last_used.insert(value, usage);
-                    all_usages.entry(value).or_insert_with(Vec::new).push(usage);
-                });
-            }
-            Instruction::Return { value } => value.into_iter().for_each(|input| {
-                if let Some(value) = input.to_value(&func) {
-                    let u = Usage {
-                        block_index,
-                        instruction_index: *instruction_index,
-                        instruction_index_in_block,
-                    };
-                    last_used.insert(value, u);
-                    all_usages.entry(value).or_insert_with(Vec::new).push(u);
-                }
-            }),
         });
 
     last_used.keys().combinations(2).for_each(|x| {
@@ -544,7 +581,10 @@ impl IRFunction {
     }
 
     fn get_index_in_block(&self, block_index: usize, instruction_index: usize) -> Option<usize> {
-        self.blocks[block_index].instructions.iter().position(|i| *i == instruction_index)
+        self.blocks[block_index]
+            .instructions
+            .iter()
+            .position(|i| *i == instruction_index)
     }
 
     fn spill(&mut self, to_spill: &Value, final_usage_pre_spill: &Usage, usages_post_spill: Vec<&Usage>) {
@@ -570,7 +610,9 @@ impl IRFunction {
 
         {
             let i = final_usage_pre_spill.instruction_index_in_block + 1; // Insert immediately after the last usage pre-spill
-            self.blocks[final_usage_pre_spill.block_index].instructions.splice(i..i, [spill_instr_index]);
+            self.blocks[final_usage_pre_spill.block_index]
+                .instructions
+                .splice(i..i, [spill_instr_index]);
         }
 
         // Now, insert a reload instruction before the first usage after the spill
@@ -583,15 +625,22 @@ impl IRFunction {
             index: reload_instr_index,
             instruction: Instruction::Instruction {
                 tp: InstructionType::LoadFromStack,
-                inputs: vec![const_ptr(stack_location), InputSlot::Constant(Constant::DataType(to_spill.data_type()))],
-                outputs: vec![OutputSlot { tp: to_spill.data_type() }],
+                inputs: vec![
+                    const_ptr(stack_location),
+                    InputSlot::Constant(Constant::DataType(to_spill.data_type())),
+                ],
+                outputs: vec![OutputSlot {
+                    tp: to_spill.data_type(),
+                }],
             },
         };
         self.instructions.push(reload_instr);
 
         {
             let i = first_usage_post_spill.instruction_index_in_block; // Insert immediately before the first usage post-spill
-            self.blocks[first_usage_post_spill.block_index].instructions.splice(i..i, [reload_instr_index]);
+            self.blocks[first_usage_post_spill.block_index]
+                .instructions
+                .splice(i..i, [reload_instr_index]);
         }
 
         let reloaded_inputslot = InputSlot::InstructionOutput {
@@ -605,7 +654,10 @@ impl IRFunction {
             let instruction = &mut self.instructions[usage.instruction_index];
             match &mut instruction.instruction {
                 Instruction::Instruction { inputs, .. } => {
-                    let indices = inputs.into_iter().positions(|input| input.references_value(to_spill)).collect::<Vec<usize>>();
+                    let indices = inputs
+                        .into_iter()
+                        .positions(|input| input.references_value(to_spill))
+                        .collect::<Vec<usize>>();
 
                     for i in indices {
                         inputs[i] = reloaded_inputslot;
@@ -660,7 +712,12 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
             let mut found_reg = false;
             for reg in get_registers() {
                 // Check if the register is already allocated to an interfering value
-                let already_allocated = interference.is_some() && interference.unwrap().iter().flat_map(|iv| allocations.get(iv)).any(|r| *r == reg);
+                let already_allocated = interference.is_some()
+                    && interference
+                        .unwrap()
+                        .iter()
+                        .flat_map(|iv| allocations.get(iv))
+                        .any(|r| *r == reg);
                 if !already_allocated {
                     allocations.insert(value, reg);
                     found_reg = true;
@@ -674,9 +731,12 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
                     .iter()
                     .filter(|iv| allocations.get(iv).is_some())
                     .flat_map(|iv| {
-                        lifetimes.all_usages[iv].iter().find(|u| u >= &&value.into_usage(func)).map(|u| {
-                            (*u, *iv) // This does a copy so we don't have to deal with lifetimes
-                        })
+                        lifetimes.all_usages[iv]
+                            .iter()
+                            .find(|u| u >= &&value.into_usage(func))
+                            .map(|u| {
+                                (*u, *iv) // This does a copy so we don't have to deal with lifetimes
+                            })
                     })
                     .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))
                     .clone();
@@ -703,7 +763,10 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
                 .last()
                 .unwrap_or(&to_spill_first_usage);
 
-            let usages_post_spill = lifetimes.all_usages[&to_spill].iter().filter(|u| u >= &&to_spill_next_used).collect::<Vec<_>>();
+            let usages_post_spill = lifetimes.all_usages[&to_spill]
+                .iter()
+                .filter(|u| u >= &&to_spill_next_used)
+                .collect::<Vec<_>>();
 
             func.spill(&to_spill, final_usage_pre_spill, usages_post_spill);
         }

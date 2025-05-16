@@ -65,7 +65,10 @@ fn function_arguments(i: &str) -> IResult<&str, Vec<Rhs>> {
 }
 
 fn function_call(i: &str) -> IResult<&str, Rhs> {
-    map((identifier, delimited(char('('), function_arguments, char(')'))), |(fn_name, args)| Rhs::IrOperation((fn_name.to_string(), args))).parse(i)
+    map((identifier, delimited(char('('), function_arguments, char(')'))), |(fn_name, args)| {
+        Rhs::IrOperation((fn_name.to_string(), args))
+    })
+    .parse(i)
 }
 
 fn rhs(i: &str) -> IResult<&str, Rhs> {
@@ -90,23 +93,43 @@ fn lhs(i: &str) -> IResult<&str, Vec<Lhs>> {
     // TODO: reduce duplication?
     let lhs_identifier = map(identifier, |x| Lhs::Value(x.to_string()));
 
-    let typed_lhs_identifier = map(separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type), |(id, tp)| Lhs::TypedValue(tp, id.to_string()));
+    let typed_lhs_identifier =
+        map(separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type), |(id, tp)| {
+            Lhs::TypedValue(tp, id.to_string())
+        });
 
-    let named_lhs_identifier = map(preceded(char('.'), (terminated(identifier, whitespace), delimited(char('('), identifier, char(')')))), |(name, id)| {
-        Lhs::NamedValue(name.to_string(), id.to_string())
-    });
+    let named_lhs_identifier = map(
+        preceded(char('.'), (terminated(identifier, whitespace), delimited(char('('), identifier, char(')')))),
+        |(name, id)| Lhs::NamedValue(name.to_string(), id.to_string()),
+    );
 
     let named_typed_lhs_identifier = map(
         preceded(
             char('.'),
-            (terminated(identifier, whitespace), delimited(char('('), separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type), char(')'))),
+            (
+                terminated(identifier, whitespace),
+                delimited(
+                    char('('),
+                    separated_pair(identifier, (whitespace, char(':'), whitespace), ir_type),
+                    char(')'),
+                ),
+            ),
         ),
         |(name, (id, tp))| Lhs::TypedNamedValue(tp, name.to_string(), id.to_string()),
     );
 
-    separated_list1((whitespace, char(','), whitespace), alt((named_typed_lhs_identifier, named_lhs_identifier, typed_lhs_identifier, lhs_identifier))).parse(i)
+    separated_list1(
+        (whitespace, char(','), whitespace),
+        alt((named_typed_lhs_identifier, named_lhs_identifier, typed_lhs_identifier, lhs_identifier)),
+    )
+    .parse(i)
 }
 
 pub fn parse_statement(i: &str) -> IResult<&str, Statement> {
-    alt((map((lhs, (whitespace, char('='), whitespace), rhs), |(l, _, r)| Statement::Assignment(l, r)), label, map(rhs, Statement::RhsOnly))).parse(i)
+    alt((
+        map((lhs, (whitespace, char('='), whitespace), rhs), |(l, _, r)| Statement::Assignment(l, r)),
+        label,
+        map(rhs, Statement::RhsOnly),
+    ))
+    .parse(i)
 }

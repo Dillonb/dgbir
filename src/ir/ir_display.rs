@@ -22,7 +22,11 @@ impl Display for InputSlot {
                     write!(f, "v{}", instruction_index)
                 }
             }
-            InputSlot::BlockInput { block_index, input_index, .. } => write!(f, "b{}i{}", block_index, input_index),
+            InputSlot::BlockInput {
+                block_index,
+                input_index,
+                ..
+            } => write!(f, "b{}i{}", block_index, input_index),
             InputSlot::Constant(constant) => write!(f, "{:?}", constant),
         }
     }
@@ -30,7 +34,12 @@ impl Display for InputSlot {
 
 impl Display for BlockReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inputs = self.arguments.iter().map(|input| format!("{input}")).collect::<Vec<String>>().join(", ");
+        let inputs = self
+            .arguments
+            .iter()
+            .map(|input| format!("{input}"))
+            .collect::<Vec<String>>()
+            .join(", ");
 
         write!(f, "block_{}({})", self.block_index, inputs)
     }
@@ -56,7 +65,11 @@ impl Display for IndexedInstruction {
                         .collect::<Vec<String>>()
                         .join(", ");
 
-                    let inputs = inputs.iter().map(|input| format!("{input}")).collect::<Vec<String>>().join(", ");
+                    let inputs = inputs
+                        .iter()
+                        .map(|input| format!("{input}"))
+                        .collect::<Vec<String>>()
+                        .join(", ");
 
                     if outputs.is_empty() {
                         format!("{tp:?}({inputs})")
@@ -64,7 +77,11 @@ impl Display for IndexedInstruction {
                         format!("{outputs} = {tp:?}({inputs})")
                     }
                 }
-                Instruction::Branch { cond, if_true, if_false } => {
+                Instruction::Branch {
+                    cond,
+                    if_true,
+                    if_false,
+                } => {
                     format!("Branch({} ? {} : {})", cond, if_true, if_false)
                 }
                 Instruction::Jump { target } => {
