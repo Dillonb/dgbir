@@ -56,7 +56,7 @@ pub trait Compiler<'a, T> {
     /// Creates a new Compiler object and sets up the function for compilation. Should also emit
     /// the prologue.
     fn new(ops: &mut T, func: &'a mut IRFunction) -> Self;
-    /// Emit the postlude.
+    /// Emit the function epilogue.
     fn epilogue(&self, ops: &mut T);
 
     /// Called whenever a new block is beginning to be compiled
@@ -78,7 +78,9 @@ pub trait Compiler<'a, T> {
 
     /// Compile an IR add instruction
     fn add(&self, ops: &mut T, inputs: &Vec<InputSlot>, outputs: &Vec<OutputSlot>, output_regs: Vec<Option<Register>>);
+    /// Compile an IR compare instruction
     fn compare(&self, ops: &mut T, inputs: &Vec<InputSlot>, output_regs: Vec<Option<Register>>);
+    /// Compile an IR load pointer instruction
     fn load_ptr(
         &self,
         ops: &mut T,
@@ -86,8 +88,11 @@ pub trait Compiler<'a, T> {
         outputs: &Vec<OutputSlot>,
         output_regs: Vec<Option<Register>>,
     );
+    /// Compile an IR write pointer instruction
     fn write_ptr(&self, ops: &mut T, inputs: &Vec<InputSlot>);
+    /// Compile an IR spill to stack instruction
     fn spill_to_stack(&self, ops: &mut T, inputs: &Vec<InputSlot>);
+    /// Compile an IR load from stack instruction
     fn load_from_stack(
         &self,
         ops: &mut T,
@@ -97,6 +102,7 @@ pub trait Compiler<'a, T> {
     );
 }
 
+/// Compile an IR function into machine code
 pub fn compile(func: &mut IRFunction) {
     #[cfg(target_arch = "aarch64")]
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
@@ -119,6 +125,7 @@ pub fn compile(func: &mut IRFunction) {
             .map(|i| &compiler.get_func().instructions[*i])
             .for_each(|instruction| compile_instruction::<_, _>(&mut ops, &compiler, instruction))
     }
+    compiler.epilogue(&mut ops);
 
     let code = ops.finalize().unwrap();
     let f: extern "C" fn() = unsafe { mem::transmute(code.ptr(compiler.get_entrypoint())) };
