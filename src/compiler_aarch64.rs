@@ -166,7 +166,6 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                         );
                     }
                 }
-
             });
         }
 
@@ -401,4 +400,3 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 }
-

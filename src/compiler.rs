@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, mem};
+use std::{
+    collections::{HashMap, HashSet},
+    mem,
+};
 
 use dynasmrt::AssemblyOffset;
 
@@ -45,14 +48,12 @@ fn compile_instruction<'a, TO, TC: Compiler<'a, TO>>(ops: &mut TO, compiler: &TC
                 .iter()
                 .enumerate()
                 .map(|(output_index, output)| {
-                    compiler
-                        .get_allocations()
-                        .get(&Value::InstructionOutput {
-                            instruction_index,
-                            output_index,
-                            block_index,
-                            data_type: output.tp,
-                        })
+                    compiler.get_allocations().get(&Value::InstructionOutput {
+                        instruction_index,
+                        output_index,
+                        block_index,
+                        data_type: output.tp,
+                    })
                 })
                 .collect::<Vec<_>>();
 
@@ -103,7 +104,6 @@ pub trait Compiler<'a, T> {
             // _ => todo!("Unsupported input slot type: {:?}", s),
         }
     }
-
 
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.
@@ -215,12 +215,9 @@ pub fn move_regs_multi(mut moves: HashMap<ConstOrReg, Register>, mut do_move: im
                 do_move(from, to);
 
                 moves.remove(&from);
-                from
-                    .to_reg()
-                    .iter()
-                    .for_each(|r| {
-                        pending_move_sources.remove(r);
-                    });
+                from.to_reg().iter().for_each(|r| {
+                    pending_move_sources.remove(r);
+                });
                 pending_move_targets.remove(&to);
             }
         }

@@ -776,7 +776,6 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
         }
     }
 
-
     let callee_saved = allocations
         .iter()
         .map(|(_, reg)| *reg)
