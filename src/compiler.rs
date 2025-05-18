@@ -201,10 +201,6 @@ pub fn move_regs_multi(mut moves: HashMap<ConstOrReg, Register>, mut do_move: im
                     // Add this move back to postponed_moves and `continue`
                     panic!("Would overwrite a pending move target - we have a cycle. Need to allocate temp regs to fix this.");
                 } else {
-                    println!(
-                        "\tWould overwrite pending move source {:?} with {:?}, postponing the move (this does not conflict with an already postponed move)",
-                        to, from
-                    );
                     // We couldn't make this move, so we need to add it back to the list of moves
                     postponed_moves.push(from);
                     // But do the conflicting one first
