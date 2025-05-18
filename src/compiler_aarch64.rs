@@ -156,7 +156,6 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             move_regs_multi(moves, |from, to| {
                 match (from, to) {
                     (ConstOrReg::U32(c), Register::GPR(r_to)) => {
-                        println!("\tMoving constant {} to register {}", c, r_to);
                         load_32_bit_constant(ops, r_to as u32, c);
                         // It was a constant, so no need to remove the source
                     }
