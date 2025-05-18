@@ -280,16 +280,13 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         let r_out = output_regs[0].unwrap();
 
         if let InputSlot::Constant(Constant::CompareType(compare_type)) = inputs[1] {
-            // TODO: redo this to do the cmp and the cset in separate match statements to reduce
-            // duplication
-            match (r_out, a, compare_type, b) {
-                (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::GPR(r2)) => {
+            match (a, b) {
+                (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                     dynasm!(ops
                         ; cmp X(r1 as u32), X(r2 as u32)
-                        ; cset W(r_out as u32), lo // unsigned "lower"
                     )
                 }
-                (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::U32(c2)) => {
+                (ConstOrReg::GPR(r1), ConstOrReg::U32(c2)) => {
                     if c2 < 4096 {
                         dynasm!(ops
                             ; cmp XSP(r1 as u32), c2
@@ -297,11 +294,31 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     } else {
                         todo!("Too big a constant here, load it to a temp and compare")
                     }
-                    dynasm!(ops
-                        ; cset W(r_out as u32), lo // unsigned "lower"
-                    )
                 }
-                _ => todo!("Unsupported Compare operation: {:?} {:?} {:?}", a, compare_type, b),
+                _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, compare_type, b),
+            }
+
+            // TODO: remove this #allow when the Register enum has more than just GPR in it (this warning will go away)
+            #[allow(irrefutable_let_patterns)]
+            if let Register::GPR(r_out) = r_out {
+                match compare_type {
+                    CompareType::LessThanUnsigned => {
+                        dynasm!(ops
+                            ; cset W(r_out as u32), lo // unsigned "lower"
+                        )
+                    }
+                    CompareType::Equal => todo!("Compare with type Equal"),
+                    CompareType::NotEqual => todo!("Compare with type NotEqual"),
+                    CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
+                    CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
+                    CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
+                    CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
+                    CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
+                    CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
+                    CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
+                }
+            } else {
+                panic!("Expected a GPR as the output of Compare, got {:?}", r_out);
             }
         } else {
             panic!("Expected a compare type constant as the second input to Compare");
