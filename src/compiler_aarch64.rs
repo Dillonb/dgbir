@@ -1,19 +1,15 @@
-use std::{
-    collections::{HashMap, HashSet},
-    mem,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    disassembler::disassemble,
-    ir::{
-        BlockReference, CompareType, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction,
-        InstructionType, OutputSlot,
-    },
+    compiler::Compiler,
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, get_scratch_registers, Register, Value},
 };
-use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
+use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, DynasmLabelApi};
 use itertools::Itertools;
+
+type Ops = dynasmrt::Assembler<Aarch64Relocation>;
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 enum ConstOrReg {
@@ -107,262 +103,349 @@ fn load_32_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value:
     }
 }
 
-fn compile_add(
+fn save_callee_regs_to_stack(
     ops: &mut dynasmrt::aarch64::Assembler,
-    scratch_regs: &RegPool,
     func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    inputs: &Vec<InputSlot>,
-    outputs: &Vec<OutputSlot>,
-    output_registers: Vec<Option<&Register>>,
+    callee_saved: &Vec<(Register, usize)>,
 ) {
-    assert_eq!(inputs.len(), 2);
-    assert_eq!(outputs.len(), 1);
-    assert_eq!(output_registers.len(), 1);
-
-    let a = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
-    let b = input_slot_to_imm_or_reg(&inputs[1], func, &allocations);
-
-    let tp = outputs[0].tp;
-
-    let r_out = *output_registers[0].unwrap();
-
-    match (tp, r_out, a, b) {
-        (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
-            load_32_bit_constant(ops, r_out as u32, c1 + c2);
-        }
-        (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
-            if c < 4096 {
+    for (reg, stack_location) in callee_saved {
+        match *reg {
+            Register::GPR(r) => {
+                assert_eq!(reg.size(), 8);
                 dynasm!(ops
-                    ; add WSP(r_out as u32), WSP(r), c
-                )
-            } else {
-                let r_temp = scratch_regs.borrow::<register_type::GPR>();
-                load_32_bit_constant(ops, r_temp.r(), c);
-                dynasm!(ops
-                    ; add W(r_out as u32), W(r), W(r_temp.r())
+                    ; str X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                 )
             }
         }
-        (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+    }
+}
+
+pub struct Aarch64Compiler<'a> {
+    scratch_regs: RegPool,
+    func: &'a IRFunction,
+    allocations: HashMap<Value, Register>,
+    callee_saved: Vec<(Register, usize)>,
+    entrypoint: dynasmrt::AssemblyOffset,
+    block_labels: Vec<dynasmrt::DynamicLabel>,
+}
+
+impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
+    fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self {
+        let allocations = alloc_for(func);
+
+        let callee_saved = calculate_callee_saved_regs(func, &allocations);
+
+        // Stack bytes used: aligned to 16 bytes
+        let misalignment = func.stack_bytes_used % 16;
+        let correction = if misalignment == 0 { 0 } else { 16 - misalignment };
+        let stack_bytes_used = func.stack_bytes_used + correction;
+        println!(
+            "Function uses {} bytes of stack, misaligned by {}, corrected to {}",
+            func.stack_bytes_used, misalignment, stack_bytes_used
+        );
+        func.stack_bytes_used = stack_bytes_used;
+
+        let entrypoint = ops.offset();
+
+        let block_labels = func.blocks.iter().map(|_| ops.new_dynamic_label()).collect::<Vec<_>>();
+
+        // Setup stack
+        dynasm!(ops
+            ; .arch aarch64
+        );
+        if stack_bytes_used > 0 {
             dynasm!(ops
-                ; add W(r_out as u32), W(r1), W(r2)
+                ; sub sp, sp, stack_bytes_used.try_into().unwrap()
             )
         }
-        _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
-    }
-}
 
-fn compile_compare(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    inputs: &Vec<InputSlot>,
-    output_registers: Vec<Option<&Register>>,
-) {
-    let a = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
-    let b = input_slot_to_imm_or_reg(&inputs[2], func, &allocations);
+        save_callee_regs_to_stack(ops, func, &callee_saved);
 
-    let r_out = *output_registers[0].unwrap();
-
-    if let InputSlot::Constant(Constant::CompareType(compare_type)) = inputs[1] {
-        // TODO: redo this to do the cmp and the cset in separate match statements to reduce
-        // duplication
-        match (r_out, a, compare_type, b) {
-            (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::GPR(r2)) => {
-                dynasm!(ops
-                    ; cmp X(r1 as u32), X(r2 as u32)
-                    ; cset W(r_out as u32), lo // unsigned "lower"
-                )
-            }
-            (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::U32(c2)) => {
-                if c2 < 4096 {
-                    dynasm!(ops
-                        ; cmp XSP(r1 as u32), c2
-                    )
-                } else {
-                    todo!("Too big a constant here, load it to a temp and compare")
-                }
-                dynasm!(ops
-                    ; cset W(r_out as u32), lo // unsigned "lower"
-                )
-            }
-            _ => todo!("Unsupported Compare operation: {:?} {:?} {:?}", a, compare_type, b),
+        Aarch64Compiler {
+            entrypoint,
+            scratch_regs: RegPool::new(get_scratch_registers()),
+            func,
+            allocations,
+            callee_saved,
+            block_labels,
         }
-    } else {
-        panic!("Expected a compare type constant as the second input to Compare");
     }
-}
 
-fn compile_write_ptr(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    scratch_regs: &RegPool,
-    func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    inputs: &Vec<InputSlot>,
-) {
-    assert_eq!(inputs.len(), 3);
-    // ptr, value, type
-    let ptr = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
-    let value = input_slot_to_imm_or_reg(&inputs[1], func, &allocations);
-    if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
-        match (&ptr, &value, tp) {
-            (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
-                let r_address = scratch_regs.borrow::<register_type::GPR>();
-                let r_value = scratch_regs.borrow::<register_type::GPR>();
+    fn epilogue(&self, _ops: &mut Ops) {
+        println!("Epilogue: emitting nothing");
+    }
 
-                load_64_bit_constant(ops, r_address.r(), *ptr);
-                load_32_bit_constant(ops, r_value.r(), *value);
+    fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize) {
+        // This "resolves" the block label so it can be jumped to from elsewhere in the program.
+        // This should be done once per block.
+        dynasm!(ops
+            ; =>self.block_labels[block_index]
+        );
+    }
+
+    fn get_func(&self) -> &IRFunction {
+        self.func
+    }
+
+    fn get_allocations(&self) -> &HashMap<Value, Register> {
+        &self.allocations
+    }
+
+    fn get_entrypoint(&self) -> AssemblyOffset {
+        self.entrypoint
+    }
+
+    fn call_block(&self, ops: &mut Ops, target: &BlockReference) {
+        let moves = target
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(input_index, arg)| {
+                let data_type = self.func.blocks[target.block_index].inputs[input_index];
+
+                let in_block_value = Value::BlockInput {
+                    block_index: target.block_index,
+                    input_index,
+                    data_type,
+                };
+
+                let block_arg_reg = self.allocations.get(&in_block_value).unwrap();
+                (input_slot_to_imm_or_reg(&arg, self.func, &self.allocations), *block_arg_reg)
+            })
+            .collect::<HashMap<_, _>>();
+
+        if moves.len() > 0 {
+            move_regs_multi(ops, moves);
+        }
+
+        // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
+        // we definitely can, but it gets more complicated when it's a branch instruction. Maybe the
+        // branch instruction should detect if one of the targets is the next block and always put that
+        // second. Then we could always elide this jump here.
+        // if target.block_index != from_block_index + 1 {
+        let target_label = self.block_labels[target.block_index];
+        dynasm!(ops
+            ; b =>target_label
+        )
+        // }
+    }
+
+    fn branch(&self, ops: &mut Ops, cond: &InputSlot, if_true: &BlockReference, if_false: &BlockReference) {
+        let cond = input_slot_to_imm_or_reg(&cond, self.func, &self.allocations);
+
+        match cond {
+            ConstOrReg::GPR(c) => {
                 dynasm!(ops
-                    ; str W(r_value.r()), [X(r_address.r())]
+                    ; cbz W(c), >if_false
                 );
             }
-            (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
-                let r_address = scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, r_address.r(), *ptr);
+            _ => todo!("Unsupported branch condition: {:?}", cond),
+        }
+        self.call_block(ops, if_true);
+        dynasm!(ops
+            ; if_false:
+        );
+        self.call_block(ops, if_false);
+    }
+
+    fn ret(&self, ops: &mut Ops, value: &Option<InputSlot>) {
+        if value.is_none() {
+            println!("WARNING: returning values not supported yet")
+        }
+
+        // Pop callee-saved regs from stack
+        // TODO: move this to the epilogue and emit a jmp to the end of the function here (to make
+        // multiple returns more efficient)
+        for (reg, stack_location) in &self.callee_saved {
+            match *reg {
+                Register::GPR(r) => {
+                    assert_eq!(reg.size(), 8);
+                    dynasm!(ops
+                        ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                    )
+                }
+            }
+        }
+
+        // Fix sp
+        if self.func.stack_bytes_used > 0 {
+            dynasm!(ops
+                ; add sp, sp, self.func.stack_bytes_used.try_into().unwrap()
+            );
+        }
+        dynasm!(ops
+            ; ret
+        );
+    }
+
+    fn add(
+        &self,
+        ops: &mut Ops,
+        inputs: &Vec<InputSlot>,
+        outputs: &Vec<OutputSlot>,
+        output_regs: Vec<Option<Register>>,
+    ) {
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(output_regs.len(), 1);
+
+        let a = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
+        let b = input_slot_to_imm_or_reg(&inputs[1], self.func, &self.allocations);
+
+        let tp = outputs[0].tp;
+
+        let r_out = output_regs[0].unwrap();
+
+        match (tp, r_out, a, b) {
+            (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
+                load_32_bit_constant(ops, r_out as u32, c1 + c2);
+            }
+            (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
+                if c < 4096 {
+                    dynasm!(ops
+                        ; add WSP(r_out as u32), WSP(r), c
+                    )
+                } else {
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_32_bit_constant(ops, r_temp.r(), c);
+                    dynasm!(ops
+                        ; add W(r_out as u32), W(r), W(r_temp.r())
+                    )
+                }
+            }
+            (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
-                    ; str W((*value) as u32), [X(r_address.r())]
+                    ; add W(r_out as u32), W(r1), W(r2)
                 )
             }
-            (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
-            (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
-            _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, tp),
+            _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
         }
-    } else {
-        panic!("Expected a datatype constant as the third input to WritePtr");
     }
-}
 
-fn compile_spill_to_stack(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    inputs: &Vec<InputSlot>,
-) {
-    let to_spill = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
-    let stack_offset = input_slot_to_imm_or_reg(&inputs[1], func, &allocations);
-    if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
-        match (&to_spill, &stack_offset, tp) {
-            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
+    fn compare(&self, ops: &mut Ops, inputs: &Vec<InputSlot>, output_regs: Vec<Option<Register>>) {
+        let a = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
+        let b = input_slot_to_imm_or_reg(&inputs[2], self.func, &self.allocations);
+
+        let r_out = output_regs[0].unwrap();
+
+        if let InputSlot::Constant(Constant::CompareType(compare_type)) = inputs[1] {
+            // TODO: redo this to do the cmp and the cset in separate match statements to reduce
+            // duplication
+            match (r_out, a, compare_type, b) {
+                (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; cmp X(r1 as u32), X(r2 as u32)
+                        ; cset W(r_out as u32), lo // unsigned "lower"
+                    )
+                }
+                (Register::GPR(r_out), ConstOrReg::GPR(r1), CompareType::LessThanUnsigned, ConstOrReg::U32(c2)) => {
+                    if c2 < 4096 {
+                        dynasm!(ops
+                            ; cmp XSP(r1 as u32), c2
+                        )
+                    } else {
+                        todo!("Too big a constant here, load it to a temp and compare")
+                    }
+                    dynasm!(ops
+                        ; cset W(r_out as u32), lo // unsigned "lower"
+                    )
+                }
+                _ => todo!("Unsupported Compare operation: {:?} {:?} {:?}", a, compare_type, b),
+            }
+        } else {
+            panic!("Expected a compare type constant as the second input to Compare");
+        }
+    }
+
+    fn load_ptr(
+        &self,
+        _ops: &mut Ops,
+        _inputs: &Vec<InputSlot>,
+        _outputs: &Vec<OutputSlot>,
+        _output_regs: Vec<Option<Register>>,
+    ) {
+        todo!("load_ptr")
+    }
+
+    fn write_ptr(&self, ops: &mut Ops, inputs: &Vec<InputSlot>) {
+        assert_eq!(inputs.len(), 3);
+        // ptr, value, type
+        let ptr = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
+        let value = input_slot_to_imm_or_reg(&inputs[1], self.func, &self.allocations);
+        if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
+            match (&ptr, &value, tp) {
+                (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
+                    let r_address = self.scratch_regs.borrow::<register_type::GPR>();
+                    let r_value = self.scratch_regs.borrow::<register_type::GPR>();
+
+                    load_64_bit_constant(ops, r_address.r(), *ptr);
+                    load_32_bit_constant(ops, r_value.r(), *value);
+                    dynasm!(ops
+                        ; str W(r_value.r()), [X(r_address.r())]
+                    );
+                }
+                (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
+                    let r_address = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_64_bit_constant(ops, r_address.r(), *ptr);
+                    dynasm!(ops
+                        ; str W((*value) as u32), [X(r_address.r())]
+                    )
+                }
+                (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
+                (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
+                _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, tp),
+            }
+        } else {
+            panic!("Expected a datatype constant as the third input to WritePtr");
+        }
+    }
+
+    fn spill_to_stack(&self, ops: &mut Ops, inputs: &Vec<InputSlot>) {
+        let to_spill = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
+        let stack_offset = input_slot_to_imm_or_reg(&inputs[1], self.func, &self.allocations);
+        if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
+            match (&to_spill, &stack_offset, tp) {
+                (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
+                    dynasm!(ops
+                        ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
+                    )
+                }
+                _ => todo!(
+                    "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
+                    to_spill,
+                    stack_offset,
+                    tp
+                ),
+            }
+        } else {
+            panic!("Expected a datatype constant as the third input to SpillToStack");
+        }
+    }
+
+    fn load_from_stack(
+        &self,
+        ops: &mut Ops,
+        inputs: &Vec<InputSlot>,
+        outputs: &Vec<OutputSlot>,
+        output_regs: Vec<Option<Register>>,
+    ) {
+        let stack_offset = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
+
+        let r_out = output_regs[0].unwrap();
+        let tp = outputs[0].tp;
+
+        match (r_out, &stack_offset, tp) {
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
-                    ; str W(*r), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
+                    ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
                 )
             }
             _ => todo!(
-                "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
-                to_spill,
+                "Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}",
+                r_out,
                 stack_offset,
                 tp
             ),
-        }
-    } else {
-        panic!("Expected a datatype constant as the third input to SpillToStack");
-    }
-}
-
-fn compile_load_from_stack(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    inputs: &Vec<InputSlot>,
-    outputs: &Vec<OutputSlot>,
-    output_registers: Vec<Option<&Register>>,
-) {
-    let stack_offset = input_slot_to_imm_or_reg(&inputs[0], func, &allocations);
-
-    let r_out = *output_registers[0].unwrap();
-    let tp = outputs[0].tp;
-
-    match (r_out, &stack_offset, tp) {
-        (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
-            dynasm!(ops
-                ; ldr W(r_out as u32), [sp, func.get_stack_offset_for_location(*offset, DataType::U32)]
-            )
-        }
-        _ => todo!(
-            "Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}",
-            r_out,
-            stack_offset,
-            tp
-        ),
-    }
-}
-
-fn compile_instruction(
-    instruction: &IndexedInstruction,
-    ops: &mut dynasmrt::aarch64::Assembler,
-    block_labels: &Vec<dynasmrt::DynamicLabel>,
-    scratch_regs: &RegPool,
-    func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    callee_saved: &Vec<(Register, usize)>,
-) {
-    let instruction_index = instruction.index;
-    let block_index = instruction.block_index;
-    let stack_bytes_used = func.stack_bytes_used;
-    match &instruction.instruction {
-        Instruction::Instruction { tp, inputs, outputs } => {
-            let output_registers = outputs
-                .iter()
-                .enumerate()
-                .map(|(output_index, output)| {
-                    allocations.get(&Value::InstructionOutput {
-                        instruction_index,
-                        output_index,
-                        block_index,
-                        data_type: output.tp,
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            match tp {
-                InstructionType::Add => {
-                    compile_add(ops, &scratch_regs, func, &allocations, inputs, outputs, output_registers)
-                }
-                InstructionType::Compare => compile_compare(ops, func, &allocations, inputs, output_registers),
-                InstructionType::LoadPtr => todo!("load_ptr"),
-                InstructionType::WritePtr => compile_write_ptr(ops, &scratch_regs, func, &allocations, inputs),
-                InstructionType::SpillToStack => compile_spill_to_stack(ops, func, &allocations, inputs),
-                InstructionType::LoadFromStack => {
-                    compile_load_from_stack(ops, func, &allocations, inputs, outputs, output_registers)
-                }
-            }
-        }
-        Instruction::Branch {
-            cond,
-            if_true,
-            if_false,
-        } => {
-            let cond = input_slot_to_imm_or_reg(&cond, func, &allocations);
-
-            match cond {
-                ConstOrReg::GPR(c) => {
-                    dynasm!(ops
-                        ; cbz W(c), >if_false
-                    );
-                }
-                _ => todo!("Unsupported branch condition: {:?}", cond),
-            }
-            call_block(ops, func, &allocations, if_true, &block_labels, block_index);
-            dynasm!(ops
-                ; if_false:
-            );
-            call_block(ops, func, &allocations, if_false, &block_labels, block_index);
-        }
-        Instruction::Jump { target } => {
-            call_block(ops, func, &allocations, target, &block_labels, block_index);
-        }
-        Instruction::Return { .. } => {
-            pop_callee_regs_from_stack(ops, func, &callee_saved);
-            // Fix sp
-            if stack_bytes_used > 0 {
-                dynasm!(ops
-                    ; add sp, sp, stack_bytes_used.try_into().unwrap()
-                );
-            }
-            dynasm!(ops
-                ; ret
-            );
         }
     }
 }
@@ -385,43 +468,10 @@ fn calculate_callee_saved_regs(
         .collect::<Vec<_>>()
 }
 
-fn save_callee_regs_to_stack(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    callee_saved: &Vec<(Register, usize)>,
-) {
-    for (reg, stack_location) in callee_saved {
-        match *reg {
-            Register::GPR(r) => {
-                assert_eq!(reg.size(), 8);
-                dynasm!(ops
-                    ; str X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
-                )
-            }
-        }
-    }
-}
-
-fn pop_callee_regs_from_stack(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    callee_saved: &Vec<(Register, usize)>,
-) {
-    for (reg, stack_location) in callee_saved {
-        match *reg {
-            Register::GPR(r) => {
-                assert_eq!(reg.size(), 8);
-                dynasm!(ops
-                    ; ldr X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
-                )
-            }
-        }
-    }
-}
-
 /// Moves a set of values into a set of registers. The sets can overlap, but the algorithm assumes
 /// each move is unique. That is, {A->C, B->C} is not allowed, but {A->B, B->C, C->A} is allowed.
 /// Moves to self (A->A) will be ignored.
+/// TODO: generify this so other backends can use it
 fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<ConstOrReg, Register>) {
     println!("Begin move_regs_multi");
     let mut pending_move_targets = HashSet::new();
@@ -499,121 +549,4 @@ fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<Co
         }
     }
     println!();
-}
-
-fn call_block(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    allocations: &HashMap<Value, Register>,
-    target: &BlockReference,
-    block_labels: &Vec<dynasmrt::DynamicLabel>,
-    _from_block_index: usize,
-) {
-    let moves = target
-        .arguments
-        .iter()
-        .enumerate()
-        .map(|(input_index, arg)| {
-            let data_type = func.blocks[target.block_index].inputs[input_index];
-
-            let in_block_value = Value::BlockInput {
-                block_index: target.block_index,
-                input_index,
-                data_type,
-            };
-
-            let block_arg_reg = allocations.get(&in_block_value).unwrap();
-            (input_slot_to_imm_or_reg(&arg, func, &allocations), *block_arg_reg)
-        })
-        .collect::<HashMap<_, _>>();
-
-    if moves.len() > 0 {
-        move_regs_multi(ops, moves);
-    }
-
-    // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
-    // we definitely can, but it gets more complicated when it's a branch instruction. Maybe the
-    // branch instruction should detect if one of the targets is the next block and always put that
-    // second. Then we could always elide this jump here.
-    // if target.block_index != from_block_index + 1 {
-    let target_label = block_labels[target.block_index];
-    dynasm!(ops
-        ; b =>target_label
-    )
-    // }
-}
-
-pub fn compile(func: &mut IRFunction) {
-    let allocations = alloc_for(func); // TODO: this will eventually return some data
-    let scratch_regs = RegPool::new(get_scratch_registers());
-
-    println!("Allocations:");
-    allocations.iter().sorted_by_key(|(v, _)| **v).for_each(|(k, v)| {
-        println!("{} \t {:?}", k, v);
-    });
-
-    let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
-
-    let callee_saved = calculate_callee_saved_regs(func, &allocations);
-
-    // Stack bytes used: aligned to 16 bytes
-    let misalignment = func.stack_bytes_used % 16;
-    let correction = if misalignment == 0 { 0 } else { 16 - misalignment };
-    let stack_bytes_used = func.stack_bytes_used + correction;
-    println!(
-        "Function uses {} bytes of stack, misaligned by {}, corrected to {}",
-        func.stack_bytes_used, misalignment, stack_bytes_used
-    );
-    func.stack_bytes_used = stack_bytes_used;
-
-    // Entrypoint to the function - get the offset before appending anything
-    let entrypoint = ops.offset();
-
-    println!("Compiling function:\n{}", func);
-
-    // Setup stack
-    dynasm!(ops
-        ; .arch aarch64
-    );
-    if stack_bytes_used > 0 {
-        dynasm!(ops
-            ; sub sp, sp, stack_bytes_used.try_into().unwrap()
-        )
-    }
-
-    save_callee_regs_to_stack(&mut ops, func, &callee_saved);
-
-    let block_labels = func.blocks.iter().map(|_| ops.new_dynamic_label()).collect::<Vec<_>>();
-
-    for (block_index, block) in func.blocks.iter().enumerate() {
-        // This "resolves" the block label so it can be jumped to from elsewhere in the program.
-        // This should be done once per block.
-        dynasm!(ops
-            ; =>block_labels[block_index]
-        );
-
-        block
-            .instructions
-            .iter()
-            .map(|i| &func.instructions[*i])
-            .for_each(|instruction| {
-                compile_instruction(
-                    instruction,
-                    &mut ops,
-                    &block_labels,
-                    &scratch_regs,
-                    func,
-                    &allocations,
-                    &callee_saved,
-                )
-            })
-    }
-
-    let code = ops.finalize().unwrap();
-    let f: extern "C" fn() = unsafe { mem::transmute(code.ptr(entrypoint)) };
-
-    println!("{}", disassemble(&code, f as u64));
-
-    println!("Running:");
-    f();
 }
