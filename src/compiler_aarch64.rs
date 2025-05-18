@@ -1,67 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::{
-    compiler::Compiler,
+    compiler::{move_regs_multi, Compiler, ConstOrReg},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot},
     reg_pool::{register_type, RegPool},
-    register_allocator::{alloc_for, get_scratch_registers, Register, Value},
+    register_allocator::{alloc_for, get_scratch_registers, Register, RegisterAllocations, Value},
 };
 use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, DynasmLabelApi};
-use itertools::Itertools;
 
 type Ops = dynasmrt::Assembler<Aarch64Relocation>;
-
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-enum ConstOrReg {
-    U32(u32),
-    U64(u64),
-    GPR(u32),
-}
-
-impl ConstOrReg {
-    fn to_reg(&self) -> Option<Register> {
-        match self {
-            ConstOrReg::GPR(r) => Some(Register::GPR(*r as usize)),
-            ConstOrReg::U32(_) => None,
-            ConstOrReg::U64(_) => None,
-        }
-    }
-}
-
-impl Register {
-    fn to_const_or_reg(&self) -> ConstOrReg {
-        match self {
-            Register::GPR(r) => ConstOrReg::GPR(*r as u32),
-        }
-    }
-}
-
-fn input_slot_to_imm_or_reg(s: &InputSlot, func: &IRFunction, allocations: &HashMap<Value, Register>) -> ConstOrReg {
-    match *s {
-        InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => {
-            match allocations[&s.to_value(func).unwrap()] {
-                Register::GPR(r) => ConstOrReg::GPR(r as u32),
-            }
-        }
-        InputSlot::Constant(constant) => match constant {
-            Constant::U32(c) => ConstOrReg::U32(c as u32),
-            Constant::U8(_) => todo!(),
-            Constant::S8(_) => todo!(),
-            Constant::U16(_) => todo!(),
-            Constant::S16(_) => todo!(),
-            Constant::S32(_) => todo!(),
-            Constant::U64(c) => ConstOrReg::U64(c as u64),
-            Constant::S64(_) => todo!(),
-            Constant::F32(_) => todo!(),
-            Constant::F64(_) => todo!(),
-            Constant::Ptr(c) => ConstOrReg::U64(c as u64),
-            Constant::Bool(_) => todo!(),
-            Constant::DataType(_) => todo!(),
-            Constant::CompareType(_) => todo!(),
-        },
-        // _ => todo!("Unsupported input slot type: {:?}", s),
-    }
-}
 
 // TODO: should I do a literal pool instead?
 fn load_64_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value: u64) {
@@ -103,28 +50,10 @@ fn load_32_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value:
     }
 }
 
-fn save_callee_regs_to_stack(
-    ops: &mut dynasmrt::aarch64::Assembler,
-    func: &IRFunction,
-    callee_saved: &Vec<(Register, usize)>,
-) {
-    for (reg, stack_location) in callee_saved {
-        match *reg {
-            Register::GPR(r) => {
-                assert_eq!(reg.size(), 8);
-                dynasm!(ops
-                    ; str X(r as u32), [sp, func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
-                )
-            }
-        }
-    }
-}
-
 pub struct Aarch64Compiler<'a> {
     scratch_regs: RegPool,
     func: &'a IRFunction,
-    allocations: HashMap<Value, Register>,
-    callee_saved: Vec<(Register, usize)>,
+    allocations: RegisterAllocations,
     entrypoint: dynasmrt::AssemblyOffset,
     block_labels: Vec<dynasmrt::DynamicLabel>,
 }
@@ -132,8 +61,6 @@ pub struct Aarch64Compiler<'a> {
 impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self {
         let allocations = alloc_for(func);
-
-        let callee_saved = calculate_callee_saved_regs(func, &allocations);
 
         // Stack bytes used: aligned to 16 bytes
         let misalignment = func.stack_bytes_used % 16;
@@ -159,15 +86,26 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             )
         }
 
-        save_callee_regs_to_stack(ops, func, &callee_saved);
-
         Aarch64Compiler {
             entrypoint,
             scratch_regs: RegPool::new(get_scratch_registers()),
             func,
             allocations,
-            callee_saved,
             block_labels,
+        }
+    }
+
+    fn prologue(&self, ops: &mut Ops) {
+        // Save callee-saved registers to stack
+        for (reg, stack_location) in &self.allocations.callee_saved {
+            match reg {
+                Register::GPR(r) => {
+                    assert_eq!(reg.size(), 8);
+                    dynasm!(ops
+                        ; str X(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                    )
+                }
+            }
         }
     }
 
@@ -187,7 +125,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         self.func
     }
 
-    fn get_allocations(&self) -> &HashMap<Value, Register> {
+    fn get_allocations(&self) -> &RegisterAllocations {
         &self.allocations
     }
 
@@ -210,12 +148,27 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 };
 
                 let block_arg_reg = self.allocations.get(&in_block_value).unwrap();
-                (input_slot_to_imm_or_reg(&arg, self.func, &self.allocations), *block_arg_reg)
+                (self.to_imm_or_reg(&arg), block_arg_reg)
             })
             .collect::<HashMap<_, _>>();
 
         if moves.len() > 0 {
-            move_regs_multi(ops, moves);
+            move_regs_multi(moves, |from, to| {
+                match (from, to) {
+                    (ConstOrReg::U32(c), Register::GPR(r_to)) => {
+                        println!("\tMoving constant {} to register {}", c, r_to);
+                        load_32_bit_constant(ops, r_to as u32, c);
+                        // It was a constant, so no need to remove the source
+                    }
+                    (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
+                    (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
+                        dynasm!(ops
+                            ; mov X(r_to as u32), X(r_from as u32)
+                        );
+                    }
+                }
+
+            });
         }
 
         // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
@@ -231,7 +184,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn branch(&self, ops: &mut Ops, cond: &InputSlot, if_true: &BlockReference, if_false: &BlockReference) {
-        let cond = input_slot_to_imm_or_reg(&cond, self.func, &self.allocations);
+        let cond = self.to_imm_or_reg(&cond);
 
         match cond {
             ConstOrReg::GPR(c) => {
@@ -256,7 +209,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         // Pop callee-saved regs from stack
         // TODO: move this to the epilogue and emit a jmp to the end of the function here (to make
         // multiple returns more efficient)
-        for (reg, stack_location) in &self.callee_saved {
+        for (reg, stack_location) in &self.allocations.callee_saved {
             match *reg {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
@@ -289,8 +242,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         assert_eq!(outputs.len(), 1);
         assert_eq!(output_regs.len(), 1);
 
-        let a = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
-        let b = input_slot_to_imm_or_reg(&inputs[1], self.func, &self.allocations);
+        let a = self.to_imm_or_reg(&inputs[0]);
+        let b = self.to_imm_or_reg(&inputs[1]);
 
         let tp = outputs[0].tp;
 
@@ -323,8 +276,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn compare(&self, ops: &mut Ops, inputs: &Vec<InputSlot>, output_regs: Vec<Option<Register>>) {
-        let a = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
-        let b = input_slot_to_imm_or_reg(&inputs[2], self.func, &self.allocations);
+        let a = self.to_imm_or_reg(&inputs[0]);
+        let b = self.to_imm_or_reg(&inputs[2]);
 
         let r_out = output_regs[0].unwrap();
 
@@ -370,8 +323,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     fn write_ptr(&self, ops: &mut Ops, inputs: &Vec<InputSlot>) {
         assert_eq!(inputs.len(), 3);
         // ptr, value, type
-        let ptr = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
-        let value = input_slot_to_imm_or_reg(&inputs[1], self.func, &self.allocations);
+        let ptr = self.to_imm_or_reg(&inputs[0]);
+        let value = self.to_imm_or_reg(&inputs[1]);
         if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
             match (&ptr, &value, tp) {
                 (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
@@ -401,8 +354,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn spill_to_stack(&self, ops: &mut Ops, inputs: &Vec<InputSlot>) {
-        let to_spill = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
-        let stack_offset = input_slot_to_imm_or_reg(&inputs[1], self.func, &self.allocations);
+        let to_spill = self.to_imm_or_reg(&inputs[0]);
+        let stack_offset = self.to_imm_or_reg(&inputs[1]);
         if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
             match (&to_spill, &stack_offset, tp) {
                 (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
@@ -429,7 +382,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         outputs: &Vec<OutputSlot>,
         output_regs: Vec<Option<Register>>,
     ) {
-        let stack_offset = input_slot_to_imm_or_reg(&inputs[0], self.func, &self.allocations);
+        let stack_offset = self.to_imm_or_reg(&inputs[0]);
 
         let r_out = output_regs[0].unwrap();
         let tp = outputs[0].tp;
@@ -450,103 +403,3 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 }
 
-fn calculate_callee_saved_regs(
-    func: &mut IRFunction,
-    allocations: &HashMap<Value, Register>,
-) -> Vec<(Register, usize)> {
-    allocations
-        .iter()
-        .map(|(_, reg)| reg)
-        .unique()
-        .flat_map(|reg| {
-            if !reg.is_volatile() {
-                Some((*reg, func.new_sized_stack_location(reg.size())))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-}
-
-/// Moves a set of values into a set of registers. The sets can overlap, but the algorithm assumes
-/// each move is unique. That is, {A->C, B->C} is not allowed, but {A->B, B->C, C->A} is allowed.
-/// Moves to self (A->A) will be ignored.
-/// TODO: generify this so other backends can use it
-fn move_regs_multi(ops: &mut dynasmrt::aarch64::Assembler, mut moves: HashMap<ConstOrReg, Register>) {
-    println!("Begin move_regs_multi");
-    let mut pending_move_targets = HashSet::new();
-    let mut pending_move_sources = HashSet::new();
-
-    for (from, to) in &moves {
-        // assert true: A register can be the target of only one move per run of this algorithm
-        assert_eq!(pending_move_targets.insert(*to), true);
-        if let ConstOrReg::GPR(r) = *from {
-            // assert true: A register can be the source of only one move per run of this algorithm
-            assert_eq!(pending_move_sources.insert(Register::GPR(r as usize)), true);
-        }
-    }
-
-    // Used to reorder the moves in case there's a conflict
-    let mut postponed_moves = Vec::new();
-    while moves.len() > 0 {
-        postponed_moves.push(*moves.keys().next().unwrap());
-
-        while let Some(from) = postponed_moves.pop() {
-            let to = moves[&from];
-            println!("Moving {:?} to {:?}", from, to);
-            println!("\tPending move targets: {:?}", pending_move_targets);
-            println!("\tPending move sources: {:?}", pending_move_sources);
-            if Some(to) == from.to_reg() {
-                println!("Moving {:?} to itself (eliding the move and not outputting anything)", from);
-                // If it's a move to self, no-op.
-                moves.remove(&from);
-                pending_move_targets.remove(&to);
-                pending_move_sources.remove(&to);
-            } else if pending_move_sources.contains(&to) {
-                if postponed_moves.contains(&to.to_const_or_reg()) {
-                    // What I think I have to do here is:
-                    //
-                    // Allocate a temporary register for the move target.
-                    //
-                    // Move the target into the temporary register.
-                    //
-                    // Remove the move of the target to _its target_ from the move queue and replace
-                    // it with a move from the temp reg to the target's target.
-                    //
-                    // Add this move back to postponed_moves and `continue`
-                    panic!("Would overwrite a pending move target - we have a cycle. Need to allocate temp regs to fix this.");
-                } else {
-                    println!(
-                        "\tWould overwrite pending move source {:?} with {:?}, postponing the move (this does not conflict with an already postponed move)",
-                        to, from
-                    );
-                    // We couldn't make this move, so we need to add it back to the list of moves
-                    postponed_moves.push(from);
-                    // But do the conflicting one first
-                    postponed_moves.push(to.to_const_or_reg());
-                }
-            } else {
-                // It is safe to do the move. It's not a self-move, and it doesn't conflict with any other moves.
-                match (from, to) {
-                    (ConstOrReg::U32(c), Register::GPR(r_to)) => {
-                        println!("\tMoving constant {} to register {}", c, r_to);
-                        load_32_bit_constant(ops, r_to as u32, c);
-                        moves.remove(&from);
-                        pending_move_targets.remove(&to);
-                        // It was a constant, so no need to remove the source
-                    }
-                    (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
-                    (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
-                        dynasm!(ops
-                            ; mov X(r_to as u32), X(r_from as u32)
-                        );
-                        moves.remove(&from);
-                        pending_move_targets.remove(&to);
-                        pending_move_sources.remove(&from.to_reg().unwrap());
-                    }
-                }
-            }
-        }
-    }
-    println!();
-}

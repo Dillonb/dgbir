@@ -533,8 +533,6 @@ fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
         let a = x[0];
         let b = x[1];
 
-        println!("Checking interference between {} and {}", a, b);
-
         let a_first = a.into_usage(func);
         let b_first = b.into_usage(func);
 
@@ -691,7 +689,20 @@ impl IRFunction {
     }
 }
 
-pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
+pub struct RegisterAllocations {
+    pub allocations: HashMap<Value, Register>,
+    pub callee_saved: Vec<(Register, usize)>,
+}
+impl RegisterAllocations {
+    pub fn get(&self, value: &Value) -> Option<Register> {
+        self.allocations.get(value).map(|r| *r)
+    }
+}
+
+/// Allocates registers for the given function. This will modify the function to spill values as
+/// needed. Also calculates which callee-saved registers are needed and reserves space on the stack
+/// for them.
+pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
     let mut done = false;
     let mut allocations = HashMap::new();
     while !done {
@@ -699,14 +710,7 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
         let mut to_spill = None;
         let lifetimes = calculate_lifetimes(&func);
 
-        lifetimes.interference.iter().for_each(|(v, interference)| {
-            for iv in interference {
-                println!("{}: {}", v, iv);
-            }
-        });
-
         for value in func.value_iter() {
-            println!("Getting interfering regs for {}", value);
             let interference = lifetimes.interference.get(&value);
 
             let mut found_reg = false;
@@ -772,5 +776,22 @@ pub fn alloc_for(func: &mut IRFunction) -> HashMap<Value, Register> {
         }
     }
 
-    allocations
+
+    let callee_saved = allocations
+        .iter()
+        .map(|(_, reg)| *reg)
+        .unique()
+        .flat_map(|reg| {
+            if !reg.is_volatile() {
+                Some((reg, func.new_sized_stack_location(reg.size())))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    RegisterAllocations {
+        allocations,
+        callee_saved,
+    }
 }

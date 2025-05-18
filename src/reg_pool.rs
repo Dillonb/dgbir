@@ -80,8 +80,6 @@ impl RegPool {
         let reg = *maybe_reg.unwrap();
         pool.regs.insert(reg, true);
 
-        println!("Borrowed temp reg {}", reg);
-
         BorrowedReg {
             reg,
             pool_reg: T::new(reg.index() as u32),
@@ -104,7 +102,6 @@ impl<T: RegPoolRegister> BorrowedReg<T> {
 
 impl<T: RegPoolRegister> Drop for BorrowedReg<T> {
     fn drop(&mut self) {
-        println!("Returning temp reg {} to the pool", self.reg);
         self.pool.borrow_mut().regs.insert(self.reg, false);
     }
 }
