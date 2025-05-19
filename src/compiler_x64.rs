@@ -260,7 +260,11 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 );
             }
             (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
-            (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
+                dynasm!(ops
+                    ; mov DWORD [Rq(r_ptr as u8) + offset as i32], Rd(r_value as u8)
+                );
+            },
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -296,6 +300,27 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 stack_location,
                 tp
             ),
+        }
+    }
+
+    fn load_constant(&self, ops: &mut Ops, r_out: Register, tp: DataType, constant: u64) {
+        match (r_out, tp) {
+            (Register::GPR(r_out), DataType::U32) => {
+                dynasm!(ops
+                    ; mov Rd(r_out as u8), constant as i32
+                )
+            }
+            (Register::GPR(r_out), DataType::U64) => {
+                dynasm!(ops
+                    ; mov Rq(r_out as u8), QWORD constant as i64
+                )
+            }
+            (Register::GPR(r_out), DataType::Ptr) => {
+                dynasm!(ops
+                    ; mov Rq(r_out as u8), QWORD constant as i64
+                )
+            }
+            _ => todo!("Unsupported LoadConstant operation: {} with type {}", r_out, tp),
         }
     }
 }
