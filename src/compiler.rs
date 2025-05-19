@@ -43,6 +43,40 @@ impl Register {
     }
 }
 
+fn expect_constant_data_type(input: &InputSlot) -> DataType {
+    if let InputSlot::Constant(Constant::DataType(data_type)) = input {
+        *data_type
+    } else {
+        panic!("Expected data type constant, got {:?}", input);
+    }
+}
+
+fn expect_constant_cmp_type(input: &InputSlot) -> CompareType {
+    if let InputSlot::Constant(Constant::CompareType(cmp_type)) = input {
+        *cmp_type
+    } else {
+        panic!("Expected compare type constant, got {:?}", input);
+    }
+}
+
+
+fn expect_constant_u64(input: &InputSlot) -> u64 {
+    if let InputSlot::Constant(Constant::U64(value)) = input {
+        *value
+    } else {
+        panic!("Expected u64 constant, got {:?}", input);
+    }
+}
+
+fn expect_gpr(register: Register) -> usize {
+    #[allow(irrefutable_let_patterns)]
+    match register {
+        Register::GPR(r) => r,
+        // Uncomment when this enum has more than just GPR in it
+        // _ => panic!("Expected GPR, got {:?}", register),
+    }
+}
+
 fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: &TC, instruction: &IndexedInstruction) {
     let instruction_index = instruction.index;
     let block_index = instruction.block_index;
@@ -73,51 +107,37 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
                 InstructionType::Compare => {
                     assert_eq!(inputs.len(), 3);
                     assert_eq!(outputs.len(), 1);
-
-                    // TODO: remove this #allow when the Register enum has more than just GPR in it (this warning will go away)
-                    #[allow(irrefutable_let_patterns)]
-                    if let Register::GPR(r_out) = output_regs[0].unwrap() {
-                        if let InputSlot::Constant(Constant::CompareType(cmp_type)) = inputs[1] {
-                            let a = compiler.to_imm_or_reg(&inputs[0]);
-                            let b = compiler.to_imm_or_reg(&inputs[2]);
-                            compiler.compare(ops, r_out, a, cmp_type, b);
-                        } else {
-                            panic!("Expected compare type constant as second input, got {:?}", inputs[1]);
-                        }
-                    } else {
-                        panic!("Output register is not a GPR: {:?}", output_regs[0]);
-                    }
+                    let r_out = expect_gpr(output_regs[0].unwrap());
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let cmp_type = expect_constant_cmp_type(&inputs[1]);
+                    let b = compiler.to_imm_or_reg(&inputs[2]);
+                    compiler.compare(ops, r_out, a, cmp_type, b);
                 }
 
                 InstructionType::LoadPtr => {
-                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let ptr = compiler.to_imm_or_reg(&inputs[0]);
+                    let offset = expect_constant_u64(&inputs[1]);
                     let tp = outputs[0].tp;
                     let r_out = output_regs[0].unwrap();
-
-                    compiler.load_ptr(ops, r_out, tp, ptr);
+                    compiler.load_ptr(ops, r_out, tp, ptr, offset);
                 }
                 InstructionType::WritePtr => {
-                    assert_eq!(inputs.len(), 3);
-                    // ptr, value, type
+                    assert_eq!(inputs.len(), 4);
+                    // ptr, offset, value, type
                     let ptr = compiler.to_imm_or_reg(&inputs[0]);
-                    let value = compiler.to_imm_or_reg(&inputs[1]);
-                    if let InputSlot::Constant(Constant::DataType(data_type)) = inputs[2] {
-                        compiler.write_ptr(ops, ptr, value, data_type);
-                    } else {
-                        panic!("Expected data type constant as third input, got {:?}", inputs[2]);
-                    }
+                    let offset = expect_constant_u64(&inputs[1]);
+                    let value = compiler.to_imm_or_reg(&inputs[2]);
+                    let data_type = expect_constant_data_type(&inputs[3]);
+                    compiler.write_ptr(ops, ptr, offset, value, data_type);
                 }
                 InstructionType::SpillToStack => {
                     assert_eq!(inputs.len(), 3);
-                    if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
-                        let to_spill = compiler.to_imm_or_reg(&inputs[0]);
-                        let stack_offset = compiler.to_imm_or_reg(&inputs[1]);
-                        compiler.spill_to_stack(ops, to_spill, stack_offset, tp);
-                    } else {
-                        panic!("Expected data type constant as third input, got {:?}", inputs[2]);
-                    }
+                    let to_spill = compiler.to_imm_or_reg(&inputs[0]);
+                    let stack_offset = compiler.to_imm_or_reg(&inputs[1]);
+                    let tp = expect_constant_data_type(&inputs[2]);
+                    compiler.spill_to_stack(ops, to_spill, stack_offset, tp);
                 }
                 InstructionType::LoadFromStack => {
                     assert_eq!(inputs.len(), 1);
@@ -300,9 +320,9 @@ pub trait Compiler<'a, Ops> {
     /// Compile an IR compare instruction
     fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
     /// Compile an IR load pointer instruction
-    fn load_ptr(&self, ops: &mut Ops, r_out: Register, tp: DataType, ptr: ConstOrReg);
+    fn load_ptr(&self, ops: &mut Ops, r_out: Register, tp: DataType, ptr: ConstOrReg, offset: u64);
     /// Compile an IR write pointer instruction
-    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, value: ConstOrReg, data_type: DataType);
+    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType);
     /// Compile an IR spill to stack instruction
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction

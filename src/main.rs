@@ -76,7 +76,7 @@ fn main() {
         ret_block.call(vec![running_total.val()]),
     );
 
-    func.write_ptr(&ret_block, DataType::U32, const_ptr(&r as *const u32 as usize), ret_block.input(0));
+    func.write_ptr(&ret_block, DataType::U32, const_ptr(&r as *const u32 as usize), 0, ret_block.input(0));
     func.ret(&ret_block, None);
 
     println!("{}", func);

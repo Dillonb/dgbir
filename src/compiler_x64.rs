@@ -235,18 +235,18 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
     }
 
-    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg) {
+    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
         todo!("load_ptr")
     }
 
-    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, value: ConstOrReg, data_type: DataType) {
+    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
         match (ptr, value, data_type) {
             (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
 
                 dynasm!(ops
-                    ; mov Rq(r_address.r() as u8), QWORD ptr as i64
+                    ; mov Rq(r_address.r() as u8), QWORD (ptr + offset) as i64
                     ; mov Rd(r_value.r() as u8), value as i32
                     ; mov [Rq(r_address.r() as u8)], Rd(r_value.r() as u8)
                 );
@@ -255,7 +255,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
 
                 dynasm!(ops
-                    ; mov Rq(r_address.r() as u8), QWORD ptr as i64
+                    ; mov Rq(r_address.r() as u8), QWORD (ptr + offset) as i64
                     ; mov DWORD [Rq(r_address.r() as u8)], Rd(r_value as u8)
                 );
             }

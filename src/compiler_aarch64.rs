@@ -263,17 +263,17 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 
-    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg) {
+    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
         todo!("load_ptr")
     }
 
-    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, value: ConstOrReg, data_type: DataType) {
+    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
         match (ptr, value, data_type) {
             (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
 
-                load_64_bit_constant(ops, r_address.r(), ptr);
+                load_64_bit_constant(ops, r_address.r(), ptr + offset);
                 load_32_bit_constant(ops, r_value.r(), value);
                 dynasm!(ops
                     ; str W(r_value.r()), [X(r_address.r())]
@@ -281,7 +281,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, r_address.r(), ptr);
+                load_64_bit_constant(ops, r_address.r(), ptr + offset);
                 dynasm!(ops
                     ; str W(value as u32), [X(r_address.r())]
                 );

@@ -152,17 +152,21 @@ fn evaluate_load_ptr(_inputs: &Vec<Constant>, _outputs: &Vec<OutputSlot>) -> Con
 }
 
 fn evaluate_write_ptr(inputs: &Vec<Constant>) {
-    assert_eq!(inputs.len(), 3);
+    assert_eq!(inputs.len(), 4);
 
     let ptr = match inputs[0] {
         Constant::Ptr(p) => p,
         _ => panic!("Expected pointer as first input"),
     };
-    let value = constant_to_u64(&inputs[1]);
-    let raw_ptr = ptr as *mut u8;
-    let tp = match inputs[2] {
+    let offset = match inputs[1] {
+        Constant::U64(o) => o as usize,
+        _ => panic!("Expected offset as second input"),
+    };
+    let value = constant_to_u64(&inputs[2]);
+    let raw_ptr = (ptr + offset) as *mut u8;
+    let tp = match inputs[3] {
         Constant::DataType(tp) => tp,
-        _ => panic!("Expected DataType as third input"),
+        _ => panic!("Expected DataType as fourth input"),
     };
     unsafe {
         match tp {

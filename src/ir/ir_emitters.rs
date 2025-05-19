@@ -16,12 +16,13 @@ impl IRFunction {
         block_handle: &IRBlockHandle,
         tp: DataType,
         ptr: InputSlot,
+        offset: usize,
         value: InputSlot,
     ) -> InstructionOutput {
         self.append(
             block_handle,
             InstructionType::WritePtr,
-            vec![ptr, value, InputSlot::Constant(Constant::DataType(tp))],
+            vec![ptr, InputSlot::Constant(Constant::U64(offset as u64)), value, InputSlot::Constant(Constant::DataType(tp))],
             vec![],
         );
         return InstructionOutput { outputs: vec![] };
