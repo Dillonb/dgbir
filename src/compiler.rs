@@ -168,6 +168,106 @@ pub trait Compiler<'a, Ops> {
         }
     }
 
+    /// Moves a set of values into a set of registers. The sets can overlap, but the algorithm assumes
+    /// each move is unique. That is, {A->C, B->C} is not allowed, but {A->B, B->C, C->A} is allowed.
+    /// Moves to self (A->A) will be ignored.
+    /// - `moves` All moves in the format of from -> to
+    /// - `do_move` Emit a move from the source to the target. When this lambda is called, it is
+    ///            guaranteed to be safe to do the move.
+    fn move_regs_multi(&self, ops: &mut Ops, mut moves: HashMap<ConstOrReg, Register>) {
+        let mut pending_move_targets = HashSet::new();
+        let mut pending_move_sources = HashSet::new();
+
+        for (from, to) in &moves {
+            // assert true: A register can be the target of only one move per run of this algorithm
+            assert_eq!(pending_move_targets.insert(*to), true);
+            if let ConstOrReg::GPR(r) = *from {
+                // assert true: A register can be the source of only one move per run of this algorithm
+                assert_eq!(pending_move_sources.insert(Register::GPR(r as usize)), true);
+            }
+        }
+
+        // Used to reorder the moves in case there's a conflict
+        let mut postponed_moves = Vec::new();
+        while moves.len() > 0 {
+            postponed_moves.push(*moves.keys().next().unwrap());
+
+            while let Some(from) = postponed_moves.pop() {
+                let to = moves[&from];
+                if Some(to) == from.to_reg() {
+                    // If it's a move to self, no-op.
+                    moves.remove(&from);
+                    pending_move_targets.remove(&to);
+                    pending_move_sources.remove(&to);
+                } else if pending_move_sources.contains(&to) {
+                    if postponed_moves.contains(&to.to_const_or_reg()) {
+                        // What I think I have to do here is:
+                        //
+                        // Allocate a temporary register for the move target.
+                        //
+                        // Move the target into the temporary register.
+                        //
+                        // Remove the move of the target to _its target_ from the move queue and replace
+                        // it with a move from the temp reg to the target's target.
+                        //
+                        // Add this move back to postponed_moves and `continue`
+                        panic!("Would overwrite a pending move target - we have a cycle. Need to allocate temp regs to fix this.");
+                    } else {
+                        // We couldn't make this move, so we need to add it back to the list of moves
+                        postponed_moves.push(from);
+                        // But do the conflicting one first
+                        postponed_moves.push(to.to_const_or_reg());
+                    }
+                } else {
+                    // It is safe to do the move. It's not a self-move, and it doesn't conflict with any other moves.
+                    // do_move(from, to);
+                    self.move_to_reg(ops, from, to);
+
+                    moves.remove(&from);
+                    from.to_reg().iter().for_each(|r| {
+                        pending_move_sources.remove(r);
+                    });
+                    pending_move_targets.remove(&to);
+                }
+            }
+        }
+    }
+
+
+    fn call_block(&self, ops: &mut Ops, target: &BlockReference) {
+        let moves = target
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(input_index, arg)| {
+                let data_type = self.get_func().blocks[target.block_index].inputs[input_index];
+
+                let in_block_value = Value::BlockInput {
+                    block_index: target.block_index,
+                    input_index,
+                    data_type,
+                };
+
+                let block_arg_reg = self.get_allocations().get(&in_block_value).unwrap();
+                (self.to_imm_or_reg(&arg), block_arg_reg)
+            })
+            .collect::<HashMap<_, _>>();
+
+        if moves.len() > 0 {
+            self.move_regs_multi(ops, moves);
+        }
+
+        // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
+        // we definitely can, but it gets more complicated when it's a branch instruction. Maybe the
+        // branch instruction should detect if one of the targets is the next block and always put that
+        // second. Then we could always elide this jump here.
+        // if target.block_index != from_block_index + 1 {
+        let target_label = self.get_block_label(target.block_index);
+        self.jump_to_dynamic_label(ops, target_label);
+        // }
+    }
+
+
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.
     fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self;
@@ -175,6 +275,10 @@ pub trait Compiler<'a, Ops> {
     fn prologue(&self, ops: &mut Ops);
     /// Emit the function epilogue.
     fn epilogue(&self, ops: &mut Ops);
+    // Emit a jump to a dynamic label.
+    fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel);
+    /// Emit a move from a register or value to a register.
+    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register);
 
     /// Called whenever a new block is beginning to be compiled
     fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize);
@@ -185,9 +289,9 @@ pub trait Compiler<'a, Ops> {
     fn get_allocations(&self) -> &RegisterAllocations;
     /// Gets an offset to the entry point of this function
     fn get_entrypoint(&self) -> AssemblyOffset;
+    /// Gets a label for a block index
+    fn get_block_label(&self, block_index: usize) -> dynasmrt::DynamicLabel;
 
-    /// Emit a jump to another block + move all inputs into place
-    fn call_block(&self, ops: &mut Ops, target: &BlockReference);
     /// Conditionally emit a jump to one of two blocks + move all inputs into place
     fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference);
     /// Emit a return with an optional value
@@ -205,70 +309,6 @@ pub trait Compiler<'a, Ops> {
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
-}
-
-/// Moves a set of values into a set of registers. The sets can overlap, but the algorithm assumes
-/// each move is unique. That is, {A->C, B->C} is not allowed, but {A->B, B->C, C->A} is allowed.
-/// Moves to self (A->A) will be ignored.
-/// - `moves` All moves in the format of from -> to
-/// - `do_move` Emit a move from the source to the target. When this lambda is called, it is
-///            guaranteed to be safe to do the move.
-pub fn move_regs_multi(mut moves: HashMap<ConstOrReg, Register>, mut do_move: impl FnMut(ConstOrReg, Register)) {
-    let mut pending_move_targets = HashSet::new();
-    let mut pending_move_sources = HashSet::new();
-
-    for (from, to) in &moves {
-        // assert true: A register can be the target of only one move per run of this algorithm
-        assert_eq!(pending_move_targets.insert(*to), true);
-        if let ConstOrReg::GPR(r) = *from {
-            // assert true: A register can be the source of only one move per run of this algorithm
-            assert_eq!(pending_move_sources.insert(Register::GPR(r as usize)), true);
-        }
-    }
-
-    // Used to reorder the moves in case there's a conflict
-    let mut postponed_moves = Vec::new();
-    while moves.len() > 0 {
-        postponed_moves.push(*moves.keys().next().unwrap());
-
-        while let Some(from) = postponed_moves.pop() {
-            let to = moves[&from];
-            if Some(to) == from.to_reg() {
-                // If it's a move to self, no-op.
-                moves.remove(&from);
-                pending_move_targets.remove(&to);
-                pending_move_sources.remove(&to);
-            } else if pending_move_sources.contains(&to) {
-                if postponed_moves.contains(&to.to_const_or_reg()) {
-                    // What I think I have to do here is:
-                    //
-                    // Allocate a temporary register for the move target.
-                    //
-                    // Move the target into the temporary register.
-                    //
-                    // Remove the move of the target to _its target_ from the move queue and replace
-                    // it with a move from the temp reg to the target's target.
-                    //
-                    // Add this move back to postponed_moves and `continue`
-                    panic!("Would overwrite a pending move target - we have a cycle. Need to allocate temp regs to fix this.");
-                } else {
-                    // We couldn't make this move, so we need to add it back to the list of moves
-                    postponed_moves.push(from);
-                    // But do the conflicting one first
-                    postponed_moves.push(to.to_const_or_reg());
-                }
-            } else {
-                // It is safe to do the move. It's not a self-move, and it doesn't conflict with any other moves.
-                do_move(from, to);
-
-                moves.remove(&from);
-                from.to_reg().iter().for_each(|r| {
-                    pending_move_sources.remove(r);
-                });
-                pending_move_targets.remove(&to);
-            }
-        }
-    }
 }
 
 /// Compile an IR function into machine code

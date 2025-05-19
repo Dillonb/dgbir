@@ -76,16 +76,6 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
         let block_labels = func.blocks.iter().map(|_| ops.new_dynamic_label()).collect::<Vec<_>>();
 
-        // Setup stack
-        dynasm!(ops
-            ; .arch aarch64
-        );
-        if stack_bytes_used > 0 {
-            dynasm!(ops
-                ; sub sp, sp, stack_bytes_used.try_into().unwrap()
-            )
-        }
-
         Aarch64Compiler {
             entrypoint,
             scratch_regs: RegPool::new(get_scratch_registers()),
@@ -96,6 +86,16 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn prologue(&self, ops: &mut Ops) {
+        // Setup stack
+        dynasm!(ops
+            ; .arch aarch64
+        );
+        if stack_bytes_used > 0 {
+            dynasm!(ops
+                ; sub sp, sp, stack_bytes_used.try_into().unwrap()
+            )
+        }
+
         // Save callee-saved registers to stack
         for (reg, stack_location) in &self.allocations.callee_saved {
             match reg {
@@ -133,52 +133,29 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         self.entrypoint
     }
 
-    fn call_block(&self, ops: &mut Ops, target: &BlockReference) {
-        let moves = target
-            .arguments
-            .iter()
-            .enumerate()
-            .map(|(input_index, arg)| {
-                let data_type = self.func.blocks[target.block_index].inputs[input_index];
-
-                let in_block_value = Value::BlockInput {
-                    block_index: target.block_index,
-                    input_index,
-                    data_type,
-                };
-
-                let block_arg_reg = self.allocations.get(&in_block_value).unwrap();
-                (self.to_imm_or_reg(&arg), block_arg_reg)
-            })
-            .collect::<HashMap<_, _>>();
-
-        if moves.len() > 0 {
-            move_regs_multi(moves, |from, to| {
-                match (from, to) {
-                    (ConstOrReg::U32(c), Register::GPR(r_to)) => {
-                        load_32_bit_constant(ops, r_to as u32, c);
-                        // It was a constant, so no need to remove the source
-                    }
-                    (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
-                    (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
-                        dynasm!(ops
-                            ; mov X(r_to as u32), X(r_from as u32)
-                        );
-                    }
-                }
-            });
+    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register) {
+        match (from, to) {
+            (ConstOrReg::U32(c), Register::GPR(r_to)) => {
+                load_32_bit_constant(ops, r_to as u32, c);
+                // It was a constant, so no need to remove the source
+            }
+            (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
+            (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
+                dynasm!(ops
+                    ; mov X(r_to as u32), X(r_from as u32)
+                );
+            }
         }
+    }
 
-        // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
-        // we definitely can, but it gets more complicated when it's a branch instruction. Maybe the
-        // branch instruction should detect if one of the targets is the next block and always put that
-        // second. Then we could always elide this jump here.
-        // if target.block_index != from_block_index + 1 {
-        let target_label = self.block_labels[target.block_index];
+    fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel) {
         dynasm!(ops
             ; b =>target_label
         )
-        // }
+    }
+
+    fn get_block_label(&self, block_index: usize) -> dynasmrt::DynamicLabel {
+        self.block_labels[block_index]
     }
 
     fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {

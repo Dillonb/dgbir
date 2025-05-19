@@ -626,8 +626,8 @@ impl IRFunction {
         return self.new_sized_stack_location(tp.size());
     }
 
-    pub fn get_stack_offset_for_location(&self, location: u64, tp: DataType) -> u32 {
-        (self.stack_bytes_used - location as usize - tp.size()) as u32
+    pub fn get_stack_offset_for_location(&self, location: u64, tp: DataType) -> i32 {
+        self.stack_bytes_used as i32 - location as i32 - tp.size() as i32
     }
 
     fn get_index_in_block(&self, block_index: usize, instruction_index: usize) -> Option<usize> {
@@ -675,10 +675,7 @@ impl IRFunction {
             index: reload_instr_index,
             instruction: Instruction::Instruction {
                 tp: InstructionType::LoadFromStack,
-                inputs: vec![
-                    const_ptr(stack_location),
-                    InputSlot::Constant(Constant::DataType(to_spill.data_type())),
-                ],
+                inputs: vec![const_ptr(stack_location)],
                 outputs: vec![OutputSlot {
                     tp: to_spill.data_type(),
                 }],
