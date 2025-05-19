@@ -49,9 +49,6 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
 
     fn prologue(&self, ops: &mut Ops) {
         // Setup stack
-        dynasm!(ops
-            ; .arch aarch64
-        );
         if self.get_func().stack_bytes_used > 0 {
             dynasm!(ops
                 ; sub rsp, self.get_func().stack_bytes_used.try_into().unwrap()
