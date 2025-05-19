@@ -1,8 +1,3 @@
-// This needs to be a separate type than the main Register type because enum variants are not first
-// class types in Rust, so they can't be used as type parameters.
-// https://github.com/rust-lang/rfcs/pull/1450
-// https://github.com/rust-lang/rfcs/pull/2593
-
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use register_type::RegPoolRegister;
@@ -18,6 +13,10 @@ pub mod register_type {
         fn new(idx: u32) -> Self;
     }
 
+    // This needs to be a separate type than the main Register type because enum variants are not first
+    // class types in Rust, so they can't be used as type parameters.
+    // https://github.com/rust-lang/rfcs/pull/1450
+    // https://github.com/rust-lang/rfcs/pull/2593
     pub struct GPR(u32);
 
     impl RegPoolRegister for GPR {
