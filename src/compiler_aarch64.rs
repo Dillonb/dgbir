@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use crate::{
-    compiler::{move_regs_multi, Compiler, ConstOrReg},
+    compiler::{Compiler, ConstOrReg},
     ir::{BlockReference, CompareType, DataType, IRFunction, InputSlot},
     reg_pool::{register_type, RegPool},
-    register_allocator::{alloc_for, get_scratch_registers, Register, RegisterAllocations, Value},
+    register_allocator::{alloc_for, get_scratch_registers, Register, RegisterAllocations},
 };
 use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, DynasmLabelApi};
 
@@ -90,9 +88,9 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         dynasm!(ops
             ; .arch aarch64
         );
-        if stack_bytes_used > 0 {
+        if self.get_func().stack_bytes_used > 0 {
             dynasm!(ops
-                ; sub sp, sp, stack_bytes_used.try_into().unwrap()
+                ; sub sp, sp, self.get_func().stack_bytes_used.try_into().unwrap()
             )
         }
 
@@ -102,7 +100,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; str X(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                        ; str X(*r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
                     )
                 }
             }
@@ -150,7 +148,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel) {
         dynasm!(ops
-            ; b =>target_label
+            ; b =>label
         )
     }
 
@@ -187,7 +185,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                        ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
                     )
                 }
             }
@@ -301,7 +299,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         match (&to_spill, &stack_offset, tp) {
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
-                    ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
+                    ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
             _ => todo!(
@@ -317,7 +315,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         match (r_out, &stack_offset, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
+                    ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
             _ => todo!(
