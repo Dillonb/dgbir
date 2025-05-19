@@ -5,10 +5,12 @@ use std::{
 
 use dynasmrt::AssemblyOffset;
 
-#[allow(unused_imports)]
-use crate::{compiler_aarch64, compiler_x64, ir::IRFunction};
+#[cfg(target_arch = "aarch64")]
+use crate::compiler_aarch64;
+#[cfg(target_arch = "x86_64")]
+use crate::compiler_x64;
+use crate::ir::IRFunction;
 use crate::{
-    compiler_aarch64::Aarch64Compiler,
     disassembler::disassemble,
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
@@ -271,9 +273,15 @@ pub fn move_regs_multi(mut moves: HashMap<ConstOrReg, Register>, mut do_move: im
 
 /// Compile an IR function into machine code
 pub fn compile(func: &mut IRFunction) {
+    #[cfg(target_arch = "x86_64")]
+    let mut ops = dynasmrt::x64::Assembler::new().unwrap();
     #[cfg(target_arch = "aarch64")]
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
-    let compiler = Aarch64Compiler::new(&mut ops, func);
+
+    #[cfg(target_arch = "aarch64")]
+    let compiler = compiler_aarch64::Aarch64Compiler::new(&mut ops, func);
+    #[cfg(target_arch = "x86_64")]
+    let compiler = compiler_x64::X64Compiler::new(&mut ops, func);
 
     compiler.prologue(&mut ops);
 

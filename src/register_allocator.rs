@@ -19,19 +19,55 @@ pub enum Register {
 fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
-    // vec![19, 20, 21] // Removed a bunch to test register spilling
-    vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-        .into_iter()
-        .map(|r| Register::GPR(r))
-        .collect()
+    {
+        // vec![19, 20, 21] // Removed a bunch to test register spilling
+        vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+            .into_iter()
+            .map(|r| Register::GPR(r))
+            .collect()
+    }
+
+    // For x64, it matters whether we're on Linux or Windows
+    #[cfg(target_arch = "x86_64")]
+    {
+        // rbx, rsp, rbp, r12, r13, r14, r15
+        // but we can't use rbp and rsp - so we just have to use rbx, r12, r13, r14, r15
+        #[cfg(target_os = "linux")]
+        {
+            vec![3, 12, 13, 14, 15].into_iter().map(|r| Register::GPR(r)).collect()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            todo!("Preserved regs on x64 Windows")
+        }
+    }
 }
 
 pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
-    vec![9, 10, 11, 12, 13, 14, 15]
-        .into_iter()
-        .map(|r| Register::GPR(r))
-        .collect()
+    {
+        vec![9, 10, 11, 12, 13, 14, 15]
+            .into_iter()
+            .map(|r| Register::GPR(r))
+            .collect()
+    }
+
+    // For x64, it matters whether we're on Linux or Windows
+    #[cfg(target_arch = "x86_64")]
+    {
+        // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
+        #[cfg(target_os = "linux")]
+        {
+            vec![0, 7, 6, 2, 1, 8, 9, 10, 11]
+                .into_iter()
+                .map(|r| Register::GPR(r))
+                .collect()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            todo!("Scratch regs on x64 Windows")
+        }
+    }
 }
 
 impl Register {
@@ -41,6 +77,22 @@ impl Register {
                 #[cfg(target_arch = "aarch64")]
                 {
                     *r < 19 || *r > 28
+                }
+                #[cfg(target_arch = "x86_64")]
+                {
+                    #[cfg(target_os = "linux")]
+                    {
+                        // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
+                        *r == 0
+                            || *r == 7
+                            || *r == 6
+                            || *r == 2
+                            || *r == 1
+                            || *r == 8
+                            || *r == 9
+                            || *r == 10
+                            || *r == 11
+                    }
                 }
             }
         }
