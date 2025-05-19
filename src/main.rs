@@ -1,3 +1,5 @@
+use std::mem::offset_of;
+
 use dgbir::{compiler::compile, ir::*, ir_interpreter::interpret_func};
 
 fn main() {
@@ -31,7 +33,16 @@ fn main() {
     //     }
     // }
 
-    let mut r: u32 = 0;
+    #[derive(Debug)]
+    struct ResultStruct {
+        pre_loop: u32,
+        post_loop: u32,
+    }
+
+    let mut r = ResultStruct {
+        pre_loop: 0,
+        post_loop: 0,
+    };
 
     let context = IRContext::new();
     let mut func = IRFunction::new(context);
@@ -58,6 +69,14 @@ fn main() {
     let r10 = func.add(&block, DataType::U32, r9.val(), r2.val());
     let r11 = func.add(&block, DataType::U32, r10.val(), r1.val());
     let nearly_final_result = func.add(&block, DataType::U32, r11.val(), add4_result.val());
+    let result_ptr = func.load_constant(&block, Constant::Ptr(&r as *const ResultStruct as usize));
+    func.write_ptr(
+        &block,
+        DataType::U32,
+        result_ptr.val(),
+        offset_of!(ResultStruct, pre_loop),
+        nearly_final_result.val(),
+    );
 
     // Use a loop to add ten to the final result
     let loop_block = func.new_block(vec![DataType::U32, DataType::U32]);
@@ -76,7 +95,13 @@ fn main() {
         ret_block.call(vec![running_total.val()]),
     );
 
-    func.write_ptr(&ret_block, DataType::U32, const_ptr(&r as *const u32 as usize), 0, ret_block.input(0));
+    func.write_ptr(
+        &ret_block,
+        DataType::U32,
+        result_ptr.val(),
+        offset_of!(ResultStruct, post_loop),
+        ret_block.input(0),
+    );
     func.ret(&ret_block, None);
 
     println!("{}", func);
@@ -85,7 +110,8 @@ fn main() {
     println!("Result: {:?}", r);
 
     println!("Compiling and running:");
-    r = 0;
+    r.pre_loop = 0;
+    r.post_loop = 0;
     compile(&mut func);
     println!("Result: {:?}", r);
 }

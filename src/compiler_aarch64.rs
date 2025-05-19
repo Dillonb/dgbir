@@ -108,6 +108,27 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         println!("Epilogue: emitting nothing");
     }
 
+    fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel) {
+        dynasm!(ops
+            ; b =>label
+        )
+    }
+
+    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register) {
+        match (from, to) {
+            (ConstOrReg::U32(c), Register::GPR(r_to)) => {
+                load_32_bit_constant(ops, r_to as u32, c);
+                // It was a constant, so no need to remove the source
+            }
+            (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
+            (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
+                dynasm!(ops
+                    ; mov X(r_to as u32), X(r_from as u32)
+                );
+            }
+        }
+    }
+
     fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize) {
         // This "resolves" the block label so it can be jumped to from elsewhere in the program.
         // This should be done once per block.
@@ -126,27 +147,6 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn get_entrypoint(&self) -> AssemblyOffset {
         self.entrypoint
-    }
-
-    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register) {
-        match (from, to) {
-            (ConstOrReg::U32(c), Register::GPR(r_to)) => {
-                load_32_bit_constant(ops, r_to as u32, c);
-                // It was a constant, so no need to remove the source
-            }
-            (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
-            (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
-                dynasm!(ops
-                    ; mov X(r_to as u32), X(r_from as u32)
-                );
-            }
-        }
-    }
-
-    fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel) {
-        dynasm!(ops
-            ; b =>label
-        )
     }
 
     fn get_block_label(&self, block_index: usize) -> dynasmrt::DynamicLabel {
@@ -279,15 +279,19 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; str W(r_value.r()), [X(r_address.r())]
                 );
             }
-            (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
+            (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, r_address.r(), ptr + offset);
                 dynasm!(ops
-                    ; str W(value as u32), [X(r_address.r())]
+                    ; str W(r_value as u32), [X(r_address.r())]
                 );
             }
             (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
-            (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
+                dynasm!(ops
+                    ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
+                );
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -321,6 +325,21 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 stack_offset,
                 tp
             ),
+        }
+    }
+
+    fn load_constant(&self, _ops: &mut Ops, r_out: Register, tp: DataType, constant: u64) {
+        match (r_out, tp) {
+            (Register::GPR(r_out), DataType::U32) => {
+                load_32_bit_constant(_ops, r_out as u32, constant as u32);
+            }
+            (Register::GPR(r_out), DataType::U64) => {
+                load_64_bit_constant(_ops, r_out as u32, constant);
+            }
+            (Register::GPR(r_out), DataType::Ptr) => {
+                load_64_bit_constant(_ops, r_out as u32, constant);
+            }
+            _ => todo!("Unsupported LoadConstant operation: {} with type {}", r_out, tp),
         }
     }
 }

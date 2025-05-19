@@ -58,6 +58,26 @@ pub enum Constant {
     CompareType(CompareType),
 }
 
+impl Constant {
+    pub fn get_type(&self) -> DataType {
+        match self {
+            Constant::U8(_) => DataType::U8,
+            Constant::S8(_) => DataType::S8,
+            Constant::U16(_) => DataType::U16,
+            Constant::S16(_) => DataType::S16,
+            Constant::U32(_) => DataType::U32,
+            Constant::S32(_) => DataType::S32,
+            Constant::U64(_) => DataType::U64,
+            Constant::S64(_) => DataType::S64,
+            Constant::F32(_) => DataType::F32,
+            Constant::F64(_) => DataType::F64,
+            Constant::Ptr(_) => DataType::Ptr,
+            Constant::Bool(_) => DataType::Bool,
+            _ => panic!("Invalid constant type"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum CompareType {
     Equal,
@@ -80,6 +100,7 @@ pub enum InstructionType {
     WritePtr,
     SpillToStack,
     LoadFromStack,
+    LoadConstant,
 }
 
 #[derive(Debug, Clone, Copy)]

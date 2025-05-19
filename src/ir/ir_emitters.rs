@@ -11,6 +11,15 @@ impl IRFunction {
         self.append(block_handle, InstructionType::Add, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }
 
+    pub fn load_constant(&mut self, block_handle: &IRBlockHandle, value: Constant) -> InstructionOutput {
+        self.append(
+            block_handle,
+            InstructionType::LoadConstant,
+            vec![InputSlot::Constant(value)],
+            vec![OutputSlot { tp: value.get_type() }],
+        )
+    }
+
     pub fn write_ptr(
         &mut self,
         block_handle: &IRBlockHandle,
@@ -22,7 +31,12 @@ impl IRFunction {
         self.append(
             block_handle,
             InstructionType::WritePtr,
-            vec![ptr, InputSlot::Constant(Constant::U64(offset as u64)), value, InputSlot::Constant(Constant::DataType(tp))],
+            vec![
+                ptr,
+                InputSlot::Constant(Constant::U64(offset as u64)),
+                value,
+                InputSlot::Constant(Constant::DataType(tp)),
+            ],
             vec![],
         );
         return InstructionOutput { outputs: vec![] };

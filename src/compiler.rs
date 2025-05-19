@@ -59,10 +59,18 @@ fn expect_constant_cmp_type(input: &InputSlot) -> CompareType {
     }
 }
 
-
 fn expect_constant_u64(input: &InputSlot) -> u64 {
-    if let InputSlot::Constant(Constant::U64(value)) = input {
-        *value
+    if let InputSlot::Constant(c) = input {
+        match c {
+            Constant::U64(value) => *value,
+            Constant::U32(value) => *value as u64,
+            Constant::U8(value) => *value as u64,
+            Constant::S64(value) if *value >= 0 => *value as u64,
+            Constant::S16(value) if *value >= 0 => *value as u64,
+            Constant::S8(value) if *value >= 0 => *value as u64,
+            Constant::Ptr(value) => *value as u64,
+            _ => panic!("Expected unsigned, positive, or ptr constant, got {:?}", input),
+        }
     } else {
         panic!("Expected u64 constant, got {:?}", input);
     }
@@ -103,7 +111,6 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
                     let r_out = output_regs[0].unwrap();
                     compiler.add(ops, tp, r_out, a, b);
                 }
-
                 InstructionType::Compare => {
                     assert_eq!(inputs.len(), 3);
                     assert_eq!(outputs.len(), 1);
@@ -113,7 +120,6 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
                     let b = compiler.to_imm_or_reg(&inputs[2]);
                     compiler.compare(ops, r_out, a, cmp_type, b);
                 }
-
                 InstructionType::LoadPtr => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
@@ -146,6 +152,14 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
                     let stack_offset = compiler.to_imm_or_reg(&inputs[0]);
                     let tp = outputs[0].tp;
                     compiler.load_from_stack(ops, r_out, stack_offset, tp);
+                }
+                InstructionType::LoadConstant => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let r_out = output_regs[0].unwrap();
+                    let constant = expect_constant_u64(&inputs[0]);
+                    let tp = outputs[0].tp;
+                    compiler.load_constant(ops, r_out, tp, constant);
                 }
             }
         }
@@ -327,6 +341,8 @@ pub trait Compiler<'a, Ops> {
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
+    /// Compile an IR load constant instruction. Load a constant into a register.
+    fn load_constant(&self, ops: &mut Ops, r_out: Register, tp: DataType, constant: u64);
 }
 
 /// Compile an IR function into machine code
