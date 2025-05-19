@@ -156,7 +156,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; mov Rq(r as u8), [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                        ; mov Rq(r as u8), [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
                     )
                 }
             }
@@ -268,10 +268,10 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
     }
 
-    fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType) {
-        match (&to_spill, &stack_offset, tp) {
+    fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_location: ConstOrReg, tp: DataType) {
+        match (&to_spill, &stack_location, tp) {
             (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U32) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32);
+                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rd(*r as u8)
                 )
@@ -279,16 +279,16 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             _ => todo!(
                 "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
                 to_spill,
-                stack_offset,
+                stack_location,
                 tp
             ),
         }
     }
 
-    fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType) {
-        match (r_out, &stack_offset, tp) {
+    fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_location: ConstOrReg, tp: DataType) {
+        match (r_out, &stack_location, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32);
+                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32) as i32;
                 dynasm!(ops
                     ; mov Rd(r_out as u8), [rsp + offset]
                 )
@@ -296,7 +296,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             _ => todo!(
                 "Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}",
                 r_out,
-                stack_offset,
+                stack_location,
                 tp
             ),
         }
