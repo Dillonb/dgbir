@@ -10,7 +10,9 @@ use crate::{compiler_aarch64, compiler_x64, ir::IRFunction};
 use crate::{
     compiler_aarch64::Aarch64Compiler,
     disassembler::disassemble,
-    ir::{BlockReference, Constant, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot},
+    ir::{
+        BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
+    },
     register_allocator::{Register, RegisterAllocations, Value},
 };
 
@@ -39,7 +41,7 @@ impl Register {
     }
 }
 
-fn compile_instruction<'a, TO, TC: Compiler<'a, TO>>(ops: &mut TO, compiler: &TC, instruction: &IndexedInstruction) {
+fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: &TC, instruction: &IndexedInstruction) {
     let instruction_index = instruction.index;
     let block_index = instruction.block_index;
     match &instruction.instruction {
@@ -58,25 +60,84 @@ fn compile_instruction<'a, TO, TC: Compiler<'a, TO>>(ops: &mut TO, compiler: &TC
                 .collect::<Vec<_>>();
 
             match tp {
-                InstructionType::Add => compiler.add(ops, inputs, outputs, output_regs),
-                InstructionType::Compare => compiler.compare(ops, inputs, output_regs),
-                InstructionType::LoadPtr => compiler.load_ptr(ops, inputs, outputs, output_regs),
-                InstructionType::WritePtr => compiler.write_ptr(ops, inputs),
-                InstructionType::SpillToStack => compiler.spill_to_stack(ops, inputs),
-                InstructionType::LoadFromStack => compiler.load_from_stack(ops, inputs, outputs, output_regs),
+                InstructionType::Add => {
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let tp = outputs[0].tp;
+                    let r_out = output_regs[0].unwrap();
+                    compiler.add(ops, tp, r_out, a, b);
+                }
+
+                InstructionType::Compare => {
+                    assert_eq!(inputs.len(), 3);
+                    assert_eq!(outputs.len(), 1);
+
+                    // TODO: remove this #allow when the Register enum has more than just GPR in it (this warning will go away)
+                    #[allow(irrefutable_let_patterns)]
+                    if let Register::GPR(r_out) = output_regs[0].unwrap() {
+                        if let InputSlot::Constant(Constant::CompareType(cmp_type)) = inputs[1] {
+                            let a = compiler.to_imm_or_reg(&inputs[0]);
+                            let b = compiler.to_imm_or_reg(&inputs[2]);
+                            compiler.compare(ops, r_out, a, cmp_type, b);
+                        } else {
+                            panic!("Expected compare type constant as second input, got {:?}", inputs[1]);
+                        }
+                    } else {
+                        panic!("Output register is not a GPR: {:?}", output_regs[0]);
+                    }
+                }
+
+                InstructionType::LoadPtr => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let ptr = compiler.to_imm_or_reg(&inputs[0]);
+                    let tp = outputs[0].tp;
+                    let r_out = output_regs[0].unwrap();
+
+                    compiler.load_ptr(ops, r_out, tp, ptr);
+                }
+                InstructionType::WritePtr => {
+                    assert_eq!(inputs.len(), 3);
+                    // ptr, value, type
+                    let ptr = compiler.to_imm_or_reg(&inputs[0]);
+                    let value = compiler.to_imm_or_reg(&inputs[1]);
+                    if let InputSlot::Constant(Constant::DataType(data_type)) = inputs[2] {
+                        compiler.write_ptr(ops, ptr, value, data_type);
+                    } else {
+                        panic!("Expected data type constant as third input, got {:?}", inputs[2]);
+                    }
+                }
+                InstructionType::SpillToStack => {
+                    assert_eq!(inputs.len(), 3);
+                    if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
+                        let to_spill = compiler.to_imm_or_reg(&inputs[0]);
+                        let stack_offset = compiler.to_imm_or_reg(&inputs[1]);
+                        compiler.spill_to_stack(ops, to_spill, stack_offset, tp);
+                    } else {
+                        panic!("Expected data type constant as third input, got {:?}", inputs[2]);
+                    }
+                }
+                InstructionType::LoadFromStack => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let r_out = output_regs[0].unwrap();
+                    let stack_offset = compiler.to_imm_or_reg(&inputs[0]);
+                    let tp = outputs[0].tp;
+                    compiler.load_from_stack(ops, r_out, stack_offset, tp);
+                }
             }
         }
         Instruction::Branch {
             cond,
             if_true,
             if_false,
-        } => compiler.branch(ops, cond, if_true, if_false),
+        } => compiler.branch(ops, &compiler.to_imm_or_reg(cond), if_true, if_false),
         Instruction::Jump { target } => compiler.call_block(ops, target),
         Instruction::Return { value } => compiler.ret(ops, value),
     }
 }
 
-pub trait Compiler<'a, T> {
+pub trait Compiler<'a, Ops> {
     // Utility functions, shouldn't be overridden
     fn to_imm_or_reg(&self, s: &InputSlot) -> ConstOrReg {
         match *s {
@@ -107,14 +168,14 @@ pub trait Compiler<'a, T> {
 
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.
-    fn new(ops: &mut T, func: &'a mut IRFunction) -> Self;
+    fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self;
     /// Emit the function prologue.
-    fn prologue(&self, ops: &mut T);
+    fn prologue(&self, ops: &mut Ops);
     /// Emit the function epilogue.
-    fn epilogue(&self, ops: &mut T);
+    fn epilogue(&self, ops: &mut Ops);
 
     /// Called whenever a new block is beginning to be compiled
-    fn on_new_block_begin(&self, ops: &mut T, block_index: usize);
+    fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize);
 
     /// Gets the func object this Compiler is compiling
     fn get_func(&self) -> &IRFunction;
@@ -124,36 +185,24 @@ pub trait Compiler<'a, T> {
     fn get_entrypoint(&self) -> AssemblyOffset;
 
     /// Emit a jump to another block + move all inputs into place
-    fn call_block(&self, ops: &mut T, target: &BlockReference);
+    fn call_block(&self, ops: &mut Ops, target: &BlockReference);
     /// Conditionally emit a jump to one of two blocks + move all inputs into place
-    fn branch(&self, ops: &mut T, cond: &InputSlot, if_true: &BlockReference, if_false: &BlockReference);
+    fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference);
     /// Emit a return with an optional value
-    fn ret(&self, ops: &mut T, value: &Option<InputSlot>);
+    fn ret(&self, ops: &mut Ops, value: &Option<InputSlot>);
 
     /// Compile an IR add instruction
-    fn add(&self, ops: &mut T, inputs: &Vec<InputSlot>, outputs: &Vec<OutputSlot>, output_regs: Vec<Option<Register>>);
+    fn add(&self, ops: &mut Ops, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR compare instruction
-    fn compare(&self, ops: &mut T, inputs: &Vec<InputSlot>, output_regs: Vec<Option<Register>>);
+    fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
     /// Compile an IR load pointer instruction
-    fn load_ptr(
-        &self,
-        ops: &mut T,
-        inputs: &Vec<InputSlot>,
-        outputs: &Vec<OutputSlot>,
-        output_regs: Vec<Option<Register>>,
-    );
+    fn load_ptr(&self, ops: &mut Ops, r_out: Register, tp: DataType, ptr: ConstOrReg);
     /// Compile an IR write pointer instruction
-    fn write_ptr(&self, ops: &mut T, inputs: &Vec<InputSlot>);
+    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, value: ConstOrReg, data_type: DataType);
     /// Compile an IR spill to stack instruction
-    fn spill_to_stack(&self, ops: &mut T, inputs: &Vec<InputSlot>);
+    fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
-    fn load_from_stack(
-        &self,
-        ops: &mut T,
-        inputs: &Vec<InputSlot>,
-        outputs: &Vec<OutputSlot>,
-        output_regs: Vec<Option<Register>>,
-    );
+    fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
 }
 
 /// Moves a set of values into a set of registers. The sets can overlap, but the algorithm assumes

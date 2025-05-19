@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     compiler::{move_regs_multi, Compiler, ConstOrReg},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, OutputSlot},
+    ir::{BlockReference, CompareType, DataType, IRFunction, InputSlot},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, get_scratch_registers, Register, RegisterAllocations, Value},
 };
@@ -181,9 +181,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         // }
     }
 
-    fn branch(&self, ops: &mut Ops, cond: &InputSlot, if_true: &BlockReference, if_false: &BlockReference) {
-        let cond = self.to_imm_or_reg(&cond);
-
+    fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {
         match cond {
             ConstOrReg::GPR(c) => {
                 dynasm!(ops
@@ -229,24 +227,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         );
     }
 
-    fn add(
-        &self,
-        ops: &mut Ops,
-        inputs: &Vec<InputSlot>,
-        outputs: &Vec<OutputSlot>,
-        output_regs: Vec<Option<Register>>,
-    ) {
-        assert_eq!(inputs.len(), 2);
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(output_regs.len(), 1);
-
-        let a = self.to_imm_or_reg(&inputs[0]);
-        let b = self.to_imm_or_reg(&inputs[1]);
-
-        let tp = outputs[0].tp;
-
-        let r_out = output_regs[0].unwrap();
-
+    fn add(&self, ops: &mut Ops, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         match (tp, r_out, a, b) {
             (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
                 load_32_bit_constant(ops, r_out as u32, c1 + c2);
@@ -273,135 +254,89 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 
-    fn compare(&self, ops: &mut Ops, inputs: &Vec<InputSlot>, output_regs: Vec<Option<Register>>) {
-        let a = self.to_imm_or_reg(&inputs[0]);
-        let b = self.to_imm_or_reg(&inputs[2]);
-
-        let r_out = output_regs[0].unwrap();
-
-        if let InputSlot::Constant(Constant::CompareType(compare_type)) = inputs[1] {
-            match (a, b) {
-                (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+    fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
+        match (a, b) {
+            (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+                dynasm!(ops
+                    ; cmp X(r1 as u32), X(r2 as u32)
+                )
+            }
+            (ConstOrReg::GPR(r1), ConstOrReg::U32(c2)) => {
+                if c2 < 4096 {
                     dynasm!(ops
-                        ; cmp X(r1 as u32), X(r2 as u32)
+                        ; cmp XSP(r1 as u32), c2
                     )
+                } else {
+                    todo!("Too big a constant here, load it to a temp and compare")
                 }
-                (ConstOrReg::GPR(r1), ConstOrReg::U32(c2)) => {
-                    if c2 < 4096 {
-                        dynasm!(ops
-                            ; cmp XSP(r1 as u32), c2
-                        )
-                    } else {
-                        todo!("Too big a constant here, load it to a temp and compare")
-                    }
-                }
-                _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, compare_type, b),
             }
+            _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, cmp_type, b),
+        }
 
-            // TODO: remove this #allow when the Register enum has more than just GPR in it (this warning will go away)
-            #[allow(irrefutable_let_patterns)]
-            if let Register::GPR(r_out) = r_out {
-                match compare_type {
-                    CompareType::LessThanUnsigned => {
-                        dynasm!(ops
-                            ; cset W(r_out as u32), lo // unsigned "lower"
-                        )
-                    }
-                    CompareType::Equal => todo!("Compare with type Equal"),
-                    CompareType::NotEqual => todo!("Compare with type NotEqual"),
-                    CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
-                    CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
-                    CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
-                    CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
-                    CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
-                    CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
-                    CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
-                }
-            } else {
-                panic!("Expected a GPR as the output of Compare, got {:?}", r_out);
+        match cmp_type {
+            CompareType::LessThanUnsigned => {
+                dynasm!(ops
+                    ; cset W(r_out as u32), lo // unsigned "lower"
+                )
             }
-        } else {
-            panic!("Expected a compare type constant as the second input to Compare");
+            CompareType::Equal => todo!("Compare with type Equal"),
+            CompareType::NotEqual => todo!("Compare with type NotEqual"),
+            CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
+            CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
+            CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
+            CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
+            CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
+            CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
+            CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
         }
     }
 
-    fn load_ptr(
-        &self,
-        _ops: &mut Ops,
-        _inputs: &Vec<InputSlot>,
-        _outputs: &Vec<OutputSlot>,
-        _output_regs: Vec<Option<Register>>,
-    ) {
+    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg) {
         todo!("load_ptr")
     }
 
-    fn write_ptr(&self, ops: &mut Ops, inputs: &Vec<InputSlot>) {
-        assert_eq!(inputs.len(), 3);
-        // ptr, value, type
-        let ptr = self.to_imm_or_reg(&inputs[0]);
-        let value = self.to_imm_or_reg(&inputs[1]);
-        if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
-            match (&ptr, &value, tp) {
-                (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
-                    let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                    let r_value = self.scratch_regs.borrow::<register_type::GPR>();
+    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, value: ConstOrReg, data_type: DataType) {
+        match (ptr, value, data_type) {
+            (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
+                let r_address = self.scratch_regs.borrow::<register_type::GPR>();
+                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
 
-                    load_64_bit_constant(ops, r_address.r(), *ptr);
-                    load_32_bit_constant(ops, r_value.r(), *value);
-                    dynasm!(ops
-                        ; str W(r_value.r()), [X(r_address.r())]
-                    );
-                }
-                (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
-                    let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_64_bit_constant(ops, r_address.r(), *ptr);
-                    dynasm!(ops
-                        ; str W((*value) as u32), [X(r_address.r())]
-                    )
-                }
-                (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
-                (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
-                _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, tp),
+                load_64_bit_constant(ops, r_address.r(), ptr);
+                load_32_bit_constant(ops, r_value.r(), value);
+                dynasm!(ops
+                    ; str W(r_value.r()), [X(r_address.r())]
+                );
             }
-        } else {
-            panic!("Expected a datatype constant as the third input to WritePtr");
+            (ConstOrReg::U64(ptr), ConstOrReg::GPR(value), DataType::U32) => {
+                let r_address = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, r_address.r(), ptr);
+                dynasm!(ops
+                    ; str W(value as u32), [X(r_address.r())]
+                );
+            }
+            (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
+            (ConstOrReg::GPR(_), ConstOrReg::GPR(_), DataType::U32) => todo!(),
+            _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
 
-    fn spill_to_stack(&self, ops: &mut Ops, inputs: &Vec<InputSlot>) {
-        let to_spill = self.to_imm_or_reg(&inputs[0]);
-        let stack_offset = self.to_imm_or_reg(&inputs[1]);
-        if let InputSlot::Constant(Constant::DataType(tp)) = inputs[2] {
-            match (&to_spill, &stack_offset, tp) {
-                (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
-                    dynasm!(ops
-                        ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
-                    )
-                }
-                _ => todo!(
-                    "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
-                    to_spill,
-                    stack_offset,
-                    tp
-                ),
+    fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType) {
+        match (&to_spill, &stack_offset, tp) {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
+                dynasm!(ops
+                    ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
+                )
             }
-        } else {
-            panic!("Expected a datatype constant as the third input to SpillToStack");
+            _ => todo!(
+                "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
+                to_spill,
+                stack_offset,
+                tp
+            ),
         }
     }
 
-    fn load_from_stack(
-        &self,
-        ops: &mut Ops,
-        inputs: &Vec<InputSlot>,
-        outputs: &Vec<OutputSlot>,
-        output_regs: Vec<Option<Register>>,
-    ) {
-        let stack_offset = self.to_imm_or_reg(&inputs[0]);
-
-        let r_out = output_regs[0].unwrap();
-        let tp = outputs[0].tp;
-
+    fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType) {
         match (r_out, &stack_offset, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
