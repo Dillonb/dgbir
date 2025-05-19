@@ -233,7 +233,6 @@ pub trait Compiler<'a, Ops> {
         }
     }
 
-
     fn call_block(&self, ops: &mut Ops, target: &BlockReference) {
         let moves = target
             .arguments
@@ -266,7 +265,6 @@ pub trait Compiler<'a, Ops> {
         self.jump_to_dynamic_label(ops, target_label);
         // }
     }
-
 
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.

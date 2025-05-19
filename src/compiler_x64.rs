@@ -63,7 +63,10 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             match reg {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
-                    let ofs = self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32;
+                    let ofs = self
+                        .get_func()
+                        .get_stack_offset_for_location(*stack_location as u64, DataType::U64)
+                        as i32;
                     dynasm!(ops
                         ; mov [rsp + ofs], Rq(*r as u8)
                     )
@@ -114,7 +117,6 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     fn get_allocations(&self) -> &RegisterAllocations {
         &self.allocations
     }
-
 
     fn get_entrypoint(&self) -> dynasmrt::AssemblyOffset {
         self.entrypoint
@@ -236,8 +238,8 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
     }
 
-    fn load_ptr(&self, ops: &mut Ops, r_out: Register, tp: DataType, ptr: ConstOrReg) {
-        todo!()
+    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg) {
+        todo!("load_ptr")
     }
 
     fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, value: ConstOrReg, data_type: DataType) {
