@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use register_type::RegPoolRegister;
 
@@ -39,7 +39,7 @@ pub mod register_type {
 /// A pool of registers for allocating scratch registers on demand
 #[derive(Debug)]
 pub struct RegPool {
-    pool: Arc<RefCell<RegPoolInternal>>,
+    pool: Rc<RefCell<RegPoolInternal>>,
 }
 
 #[derive(Debug)]
@@ -58,7 +58,7 @@ impl RegPoolInternal {
 impl RegPool {
     pub fn new(regs: Vec<Register>) -> Self {
         RegPool {
-            pool: Arc::new(RefCell::new(RegPoolInternal::new(regs))),
+            pool: Rc::new(RefCell::new(RegPoolInternal::new(regs))),
         }
     }
 
@@ -90,7 +90,7 @@ impl RegPool {
 pub struct BorrowedReg<T: RegPoolRegister> {
     reg: Register,
     pub pool_reg: T,
-    pool: Arc<RefCell<RegPoolInternal>>,
+    pool: Rc<RefCell<RegPoolInternal>>,
 }
 
 impl<T: RegPoolRegister> BorrowedReg<T> {
