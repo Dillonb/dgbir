@@ -55,7 +55,7 @@ fn get_function() -> IRFunction {
     );
 
     func.write_ptr(&ret_block, DataType::U32, result_ptr, offset_of!(ResultStruct, post_loop), ret_block.input(0));
-    func.ret(&ret_block, None);
+    func.ret(&ret_block, Some(ret_block.input(0)));
 
     return func;
 }
@@ -68,7 +68,6 @@ fn main() {
         post_loop: 0,
     };
 
-
     println!("{}", func);
     println!("Interpreting");
     interpret_func(&func, vec![Constant::Ptr(&r as *const ResultStruct as usize)]);
@@ -77,7 +76,7 @@ fn main() {
     println!("Compiling...");
     let compiled = compile(&mut func);
 
-    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    let f: extern "C" fn(usize) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -86,11 +85,12 @@ fn main() {
         pre_loop: 0,
         post_loop: 0,
     };
-    f(&r2 as *const ResultStruct as usize);
+    let retval = f(&r2 as *const ResultStruct as usize);
 
     println!("\n\nSummary:");
     println!("Interpreter result: {:?}", r);
     println!("   Compiler result: {:?}", r2);
+    println!("Compiled function return value: {}", retval);
 }
 
 // COMPLEX INSTRUCTION SET COMPUTING

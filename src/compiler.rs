@@ -72,7 +72,7 @@ fn expect_constant_u64(input: &InputSlot) -> u64 {
     }
 }
 
-fn expect_gpr(register: Register) -> usize {
+pub fn expect_gpr(register: Register) -> usize {
     #[allow(irrefutable_let_patterns)]
     match register {
         Register::GPR(r) => r,
@@ -157,7 +157,10 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
             if_false,
         } => compiler.branch(ops, &compiler.to_imm_or_reg(cond), if_true, if_false),
         Instruction::Jump { target } => compiler.call_block(ops, target),
-        Instruction::Return { value } => compiler.ret(ops, value),
+        Instruction::Return { value } => {
+            let v = value.map(|v| compiler.to_imm_or_reg(&v));
+            compiler.ret(ops, &v);
+        }
     }
 }
 
@@ -339,7 +342,7 @@ pub trait Compiler<'a, Ops> {
     /// Conditionally emit a jump to one of two blocks + move all inputs into place
     fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference);
     /// Emit a return with an optional value
-    fn ret(&self, ops: &mut Ops, value: &Option<InputSlot>);
+    fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>);
 
     /// Compile an IR add instruction
     fn add(&self, ops: &mut Ops, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);

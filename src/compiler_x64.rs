@@ -1,8 +1,8 @@
 use crate::{
     compiler::{Compiler, ConstOrReg},
-    ir::{BlockReference, CompareType, DataType, IRFunction, InputSlot},
+    ir::{BlockReference, CompareType, DataType, IRFunction},
     reg_pool::{register_type, RegPool},
-    register_allocator::{alloc_for, get_scratch_registers, Register, RegisterAllocations},
+    register_allocator::{alloc_for, get_return_value_registers, get_scratch_registers, Register, RegisterAllocations},
 };
 use dynasmrt::{dynasm, x64::X64Relocation, DynasmApi, DynasmLabelApi};
 
@@ -140,9 +140,9 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         self.call_block(ops, if_false);
     }
 
-    fn ret(&self, ops: &mut Ops, value: &Option<InputSlot>) {
-        if value.is_none() {
-            println!("WARNING: returning values not supported yet")
+    fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>) {
+        if let Some(v) = value {
+            self.move_to_reg(ops, *v, get_return_value_registers()[0]);
         }
 
         // Pop callee-saved regs from stack

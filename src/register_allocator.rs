@@ -83,18 +83,23 @@ pub fn get_function_argument_registers() -> Vec<Register> {
     {
         #[cfg(target_os = "linux")]
         {
-            vec![7, 6, 2, 1, 8, 9]
-                .into_iter()
-                .map(|r| Register::GPR(r))
-                .collect()
+            vec![7, 6, 2, 1, 8, 9].into_iter().map(|r| Register::GPR(r)).collect()
         }
         #[cfg(target_os = "windows")]
         {
-            vec![1, 2, 8, 9]
-                .into_iter()
-                .map(|r| Register::GPR(r))
-                .collect()
+            vec![1, 2, 8, 9].into_iter().map(|r| Register::GPR(r)).collect()
         }
+    }
+}
+
+pub fn get_return_value_registers() -> Vec<Register> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return get_function_argument_registers(); // x0-x7, same as argument registers
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        vec![Register::GPR(0)] // rax
     }
 }
 
