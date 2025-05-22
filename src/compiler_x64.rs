@@ -277,6 +277,12 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                     ; mov [rsp + offset], Rd(*r as u8)
                 )
             }
+            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::Ptr) => {
+                let offset = self.func.get_stack_offset_for_location(*location, DataType::Ptr) as i32;
+                dynasm!(ops
+                    ; mov [rsp + offset], Rq(*r as u8)
+                )
+            }
             _ => todo!(
                 "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
                 to_spill,
@@ -289,9 +295,15 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_location: ConstOrReg, tp: DataType) {
         match (r_out, &stack_location, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32) as i32;
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rd(r_out as u8), [rsp + offset]
+                )
+            }
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov Rq(r_out as u8), [rsp + offset]
                 )
             }
             _ => todo!(
