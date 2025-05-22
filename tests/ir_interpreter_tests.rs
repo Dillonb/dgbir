@@ -13,7 +13,7 @@ fn write_ptr() {
 
     func.ret(&block, None);
     println!("{}", func);
-    interpret_func(&func);
+    interpret_func(&func, vec![]);
     assert_eq!(r, 1);
 }
 
@@ -32,7 +32,7 @@ fn add_write_ptr() {
     func.write_ptr(&block, DataType::U32, const_ptr(&r as *const u32 as usize), 0, add3_result.val());
     func.ret(&block, None);
     println!("{}", func);
-    interpret_func(&func);
+    interpret_func(&func, vec![]);
     assert_eq!(r, 5);
 }
 
@@ -49,7 +49,7 @@ fn write_float_ptr() {
 
     println!("{}", func);
 
-    interpret_func(&func);
+    interpret_func(&func, vec![]);
     assert_eq!(r, 1.0);
 }
 
@@ -72,7 +72,7 @@ fn add_write_float_ptr() {
 
     println!("{}", func);
 
-    interpret_func(&func);
+    interpret_func(&func, vec![]);
     assert_eq!(res_1, 2.0);
     assert_eq!(res_2, 2);
 }
@@ -114,6 +114,6 @@ fn test_conditional_branch_loop() {
     func.ret(&exit_block, Some(exit_block.input(0)));
 
     println!("{}", func);
-    interpret_func(&func);
+    interpret_func(&func, vec![]);
     assert_eq!(res, 10);
 }

@@ -100,7 +100,6 @@ pub enum InstructionType {
     WritePtr,
     SpillToStack,
     LoadFromStack,
-    LoadConstant,
 }
 
 #[derive(Debug, Clone, Copy)]

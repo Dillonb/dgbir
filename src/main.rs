@@ -1,52 +1,18 @@
-use std::mem::offset_of;
+use std::mem::{self, offset_of};
 
-use dgbir::{compiler::compile, ir::*, ir_interpreter::interpret_func};
+use dgbir::{compiler::compile, disassembler::disassemble, ir::*, ir_interpreter::interpret_func};
 
-fn main() {
-    // let samples = [
-    //     "hello:",
-    //     "do_something()",
-    //     "do_something(test)",
-    //     "do_something(test1,test2)",
-    //     "do_something(test1, test2)",
-    //     "do_something(test1 ,test2)",
-    //     "do_something(test1 , test2)",
-    //     "result = do_something(test)",
-    //     "result, result2 = do_something(test)",
-    //     "result , result2 = do_something(test)",
-    //     "result , result2,result3 ,result4 = do_something(test)",
-    //     "result:u8 = do_something()",
-    //     ".output(result) = do_something()",
-    //     ".output(result:u8), .output2(result2: u16) = do_something()",
-    //     ".output(result:u8) = do_something(do_somethingelse(v100))",
-    // ];
-    // for data in samples {
-    //     match parse_statement(data) {
-    //         Ok((leftover, res)) => {
-    //             if !leftover.is_empty() {
-    //                 println!("leftover: {}", leftover);
-    //             }
+#[derive(Debug)]
+struct ResultStruct {
+    pre_loop: u32,
+    post_loop: u32,
+}
 
-    //             println!("{:?}", res);
-    //         }
-    //         Result::Err(e) => panic!("{}", e),
-    //     }
-    // }
-
-    #[derive(Debug)]
-    struct ResultStruct {
-        pre_loop: u32,
-        post_loop: u32,
-    }
-
-    let mut r = ResultStruct {
-        pre_loop: 0,
-        post_loop: 0,
-    };
-
+fn get_function() -> IRFunction {
     let context = IRContext::new();
     let mut func = IRFunction::new(context);
-    let first_block = func.new_block(vec![]);
+    let first_block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = first_block.input(0);
     let block = func.new_block(vec![]);
 
     let add_result = func.add(&first_block, DataType::U32, const_u32(1), const_u32(1));
@@ -69,14 +35,7 @@ fn main() {
     let r10 = func.add(&block, DataType::U32, r9.val(), r2.val());
     let r11 = func.add(&block, DataType::U32, r10.val(), r1.val());
     let nearly_final_result = func.add(&block, DataType::U32, r11.val(), add4_result.val());
-    let result_ptr = func.load_constant(&block, Constant::Ptr(&r as *const ResultStruct as usize));
-    func.write_ptr(
-        &block,
-        DataType::U32,
-        result_ptr.val(),
-        offset_of!(ResultStruct, pre_loop),
-        nearly_final_result.val(),
-    );
+    func.write_ptr(&block, DataType::U32, result_ptr, offset_of!(ResultStruct, pre_loop), nearly_final_result.val());
 
     // Use a loop to add ten to the final result
     let loop_block = func.new_block(vec![DataType::U32, DataType::U32]);
@@ -95,25 +54,43 @@ fn main() {
         ret_block.call(vec![running_total.val()]),
     );
 
-    func.write_ptr(
-        &ret_block,
-        DataType::U32,
-        result_ptr.val(),
-        offset_of!(ResultStruct, post_loop),
-        ret_block.input(0),
-    );
+    func.write_ptr(&ret_block, DataType::U32, result_ptr, offset_of!(ResultStruct, post_loop), ret_block.input(0));
     func.ret(&ret_block, None);
+
+    return func;
+}
+
+fn main() {
+    let mut func = get_function();
+
+    let r = ResultStruct {
+        pre_loop: 0,
+        post_loop: 0,
+    };
+
 
     println!("{}", func);
     println!("Interpreting");
-    interpret_func(&func);
+    interpret_func(&func, vec![Constant::Ptr(&r as *const ResultStruct as usize)]);
     println!("Result: {:?}", r);
 
-    println!("Compiling and running:");
-    r.pre_loop = 0;
-    r.post_loop = 0;
-    compile(&mut func);
-    println!("Result: {:?}", r);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    println!("Running compiled code...");
+    let r2 = ResultStruct {
+        pre_loop: 0,
+        post_loop: 0,
+    };
+    f(&r2 as *const ResultStruct as usize);
+
+    println!("\n\nSummary:");
+    println!("Interpreter result: {:?}", r);
+    println!("   Compiler result: {:?}", r2);
 }
 
 // COMPLEX INSTRUCTION SET COMPUTING

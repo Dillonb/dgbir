@@ -70,6 +70,34 @@ pub fn get_scratch_registers() -> Vec<Register> {
     }
 }
 
+pub fn get_function_argument_registers() -> Vec<Register> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        vec![0, 1, 2, 3, 4, 5, 6, 7]
+            .into_iter()
+            .map(|r| Register::GPR(r))
+            .collect()
+    }
+    // For x64, it matters whether we're on Linux or Windows
+    #[cfg(target_arch = "x86_64")]
+    {
+        #[cfg(target_os = "linux")]
+        {
+            vec![7, 6, 2, 1, 8, 9]
+                .into_iter()
+                .map(|r| Register::GPR(r))
+                .collect()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            vec![1, 2, 8, 9]
+                .into_iter()
+                .map(|r| Register::GPR(r))
+                .collect()
+        }
+    }
+}
+
 impl Register {
     pub fn is_volatile(&self) -> bool {
         match self {

@@ -1,17 +1,13 @@
-use std::{
-    collections::{HashMap, HashSet},
-    mem,
-};
+use std::collections::{HashMap, HashSet};
 
-use dynasmrt::AssemblyOffset;
+use dynasmrt::{AssemblyOffset, ExecutableBuffer};
 
 #[cfg(target_arch = "aarch64")]
 use crate::compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::compiler_x64;
-use crate::ir::IRFunction;
+use crate::{ir::IRFunction, register_allocator::get_function_argument_registers};
 use crate::{
-    disassembler::disassemble,
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
     },
@@ -153,14 +149,6 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
                     let tp = outputs[0].tp;
                     compiler.load_from_stack(ops, r_out, stack_offset, tp);
                 }
-                InstructionType::LoadConstant => {
-                    assert_eq!(inputs.len(), 1);
-                    assert_eq!(outputs.len(), 1);
-                    let r_out = output_regs[0].unwrap();
-                    let constant = expect_constant_u64(&inputs[0]);
-                    let tp = outputs[0].tp;
-                    compiler.load_constant(ops, r_out, tp, constant);
-                }
             }
         }
         Instruction::Branch {
@@ -300,6 +288,30 @@ pub trait Compiler<'a, Ops> {
         // }
     }
 
+    fn handle_function_arguments(&self, ops: &mut Ops) {
+        // Move all arguments into the correct registers
+
+        self.get_func().blocks[0]
+            .inputs
+            .iter()
+            .enumerate()
+            .for_each(|(input_index, input)| {
+                let block_input = Value::BlockInput {
+                    block_index: 0,
+                    input_index,
+                    data_type: *input,
+                };
+                let reg = self.get_allocations().get(&block_input).unwrap();
+                match reg {
+                    Register::GPR(_) => {
+                        // TODO: this is going to be more complicated when we have more than just GPRs
+                        let arg_reg = get_function_argument_registers()[input_index];
+                        self.move_to_reg(ops, arg_reg.to_const_or_reg(), reg);
+                    }
+                }
+            });
+    }
+
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.
     fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self;
@@ -341,12 +353,21 @@ pub trait Compiler<'a, Ops> {
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
-    /// Compile an IR load constant instruction. Load a constant into a register.
-    fn load_constant(&self, ops: &mut Ops, r_out: Register, tp: DataType, constant: u64);
+}
+
+pub struct CompiledFunction {
+    pub entrypoint: AssemblyOffset,
+    pub code: ExecutableBuffer,
+}
+
+impl CompiledFunction {
+    pub fn ptr_entrypoint(&self) -> *const u8 {
+        self.code.ptr(self.entrypoint)
+    }
 }
 
 /// Compile an IR function into machine code
-pub fn compile(func: &mut IRFunction) {
+pub fn compile(func: &mut IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "x86_64")]
     let mut ops = dynasmrt::x64::Assembler::new().unwrap();
     #[cfg(target_arch = "aarch64")]
@@ -358,6 +379,7 @@ pub fn compile(func: &mut IRFunction) {
     let compiler = compiler_x64::X64Compiler::new(&mut ops, func);
 
     compiler.prologue(&mut ops);
+    compiler.handle_function_arguments(&mut ops);
 
     for (block_index, block) in compiler.get_func().blocks.iter().enumerate() {
         compiler.on_new_block_begin(&mut ops, block_index);
@@ -369,11 +391,8 @@ pub fn compile(func: &mut IRFunction) {
     }
     compiler.epilogue(&mut ops);
 
-    let code = ops.finalize().unwrap();
-    let f: extern "C" fn() = unsafe { mem::transmute(code.ptr(compiler.get_entrypoint())) };
-
-    println!("{}", disassemble(&code, f as u64));
-
-    println!("Running:");
-    f();
+    return CompiledFunction {
+        entrypoint: compiler.get_entrypoint(),
+        code: ops.finalize().unwrap(),
+    };
 }

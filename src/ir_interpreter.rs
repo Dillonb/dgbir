@@ -229,11 +229,10 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::Compare => vec![evaluate_compare(inputs, outputs)],
         InstructionType::SpillToStack => todo!("SpillToStack in IR interpreter"),
         InstructionType::LoadFromStack => todo!("LoadFromStack in IR interpreter"),
-        InstructionType::LoadConstant => vec![inputs[0].clone()],
     }
 }
 
-pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
+pub fn interpret_func(func: &IRFunction, args: Vec<Constant>) -> Option<Constant> {
     func.validate();
     let mut block_index: usize = 0;
     let mut pc: usize = 0;
@@ -245,6 +244,11 @@ pub fn interpret_func(func: &IRFunction) -> Option<Constant> {
     let mut results: HashMap<usize, Vec<Constant>> = HashMap::new();
 
     let mut return_value: Option<Constant> = None;
+
+    // Fill in the inputs for the first block
+    for arg in args {
+        block_inputs.entry(0).or_insert_with(Vec::new).push(arg);
+    }
 
     while !returned {
         let block = &func.blocks[block_index];

@@ -327,19 +327,4 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             ),
         }
     }
-
-    fn load_constant(&self, _ops: &mut Ops, r_out: Register, tp: DataType, constant: u64) {
-        match (r_out, tp) {
-            (Register::GPR(r_out), DataType::U32) => {
-                load_32_bit_constant(_ops, r_out as u32, constant as u32);
-            }
-            (Register::GPR(r_out), DataType::U64) => {
-                load_64_bit_constant(_ops, r_out as u32, constant);
-            }
-            (Register::GPR(r_out), DataType::Ptr) => {
-                load_64_bit_constant(_ops, r_out as u32, constant);
-            }
-            _ => todo!("Unsupported LoadConstant operation: {} with type {}", r_out, tp),
-        }
-    }
 }
