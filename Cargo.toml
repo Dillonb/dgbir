@@ -9,3 +9,4 @@ dynasmrt = { git = "https://github.com/Dillonb/dynasm-rs.git" }
 itertools = "0.14.0"
 nom = "8.0.0"
 nom-language = "0.1.0"
+ordered-float = "5.0.0"

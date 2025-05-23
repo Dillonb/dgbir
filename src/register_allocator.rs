@@ -216,7 +216,12 @@ fn get_registers() -> Vec<Register> {
         // but we can't use rbp and rsp - so we just have to use rbx, r12, r13, r14, r15
         #[cfg(target_os = "linux")]
         {
-            vec![RBX, R12, R13, R14, R15]
+            vec![
+                RBX, R12, R13, R14, R15,
+                // These aren't callee-saved, but none are on this ABI. So, we make do.
+                // Use the regs not also used for function arguments.
+                XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
+            ]
         }
         #[cfg(target_os = "windows")]
         {
@@ -234,10 +239,9 @@ pub fn get_scratch_registers() -> Vec<Register> {
     // For x64, it matters whether we're on Linux or Windows
     #[cfg(target_arch = "x86_64")]
     {
-        // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
         #[cfg(target_os = "linux")]
         {
-            vec![RAX, RDI, RSI, RDX, RCX, R8, R9, R10, R11]
+            vec![ RAX, RDI, RSI, RDX, RCX, R8, R9, R10, R11, XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7 ]
         }
         #[cfg(target_os = "windows")]
         {
@@ -274,7 +278,7 @@ pub fn get_return_value_registers() -> Vec<Register> {
     }
     #[cfg(target_arch = "x86_64")]
     {
-        vec![Register::GPR(0)] // rax
+        vec![RAX, XMM0]
     }
 }
 
@@ -990,16 +994,16 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
             let interference = lifetimes.interference.get(&value);
 
             let mut found_reg = false;
-            for reg in get_registers() {
+            for reg in get_registers().iter().filter(|r| r.can_hold_datatype(value.data_type())) {
                 // Check if the register is already allocated to an interfering value
                 let already_allocated = interference.is_some()
                     && interference
                         .unwrap()
                         .iter()
                         .flat_map(|iv| allocations.get(iv))
-                        .any(|r| *r == reg);
+                        .any(|r| r == reg);
                 if !already_allocated {
-                    allocations.insert(value, reg);
+                    allocations.insert(value, *reg);
                     found_reg = true;
                     break;
                 }
@@ -1009,15 +1013,19 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
                 to_spill = interference
                     .unwrap() // If we couldn't find a register, there must be interference
                     .iter()
-                    .filter(|iv| allocations.get(iv).is_some())
+                    // Limit to only values that have been allocated to registers, and only to
+                    // registers that can hold the datatype of the value we're allocating
+                    .filter(|iv| allocations.get(iv).map(|r| r.can_hold_datatype(value.data_type())).is_some())
+                    // Pair each interfering value with its next usage
                     .flat_map(|iv| {
                         lifetimes.all_usages[iv]
                             .iter()
                             .find(|u| u >= &&value.into_usage(func))
                             .map(|u| {
-                                (*u, *iv) // This does a copy so we don't have to deal with lifetimes
+                                (*u, *iv)
                             })
                     })
+                    // Find the one with the farthest out next usage
                     .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))
                     .clone();
                 if to_spill.is_none() {

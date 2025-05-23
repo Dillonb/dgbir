@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use dynasmrt::{AssemblyOffset, ExecutableBuffer};
+use ordered_float::OrderedFloat;
 
 #[cfg(target_arch = "aarch64")]
 use crate::compiler_aarch64;
@@ -18,6 +19,7 @@ use crate::{
 pub enum ConstOrReg {
     U32(u32),
     U64(u64),
+    F32(OrderedFloat<f32>),
     GPR(u32),
     SIMD(u32),
 }
@@ -29,6 +31,22 @@ impl ConstOrReg {
             ConstOrReg::SIMD(r) => Some(Register::SIMD(*r as usize)),
             ConstOrReg::U32(_) => None,
             ConstOrReg::U64(_) => None,
+            ConstOrReg::F32(_) => None,
+        }
+    }
+
+    pub fn is_same_type_as(&self, other: &Register) -> bool {
+        match (self, other) {
+            (ConstOrReg::U32(_), Register::GPR(_)) => true,
+            (ConstOrReg::U32(_), Register::SIMD(_)) => false,
+            (ConstOrReg::U64(_), Register::GPR(_)) => true,
+            (ConstOrReg::U64(_), Register::SIMD(_)) => false,
+            (ConstOrReg::F32(_), Register::GPR(_)) => false,
+            (ConstOrReg::F32(_), Register::SIMD(_)) => true,
+            (ConstOrReg::GPR(_), Register::GPR(_)) => true,
+            (ConstOrReg::GPR(_), Register::SIMD(_)) => false,
+            (ConstOrReg::SIMD(_), Register::GPR(_)) => false,
+            (ConstOrReg::SIMD(_), Register::SIMD(_)) => true,
         }
     }
 }
@@ -176,15 +194,15 @@ pub trait Compiler<'a, Ops> {
                 }
             }
             InputSlot::Constant(constant) => match constant {
-                Constant::U32(c) => ConstOrReg::U32(c as u32),
+                Constant::U32(c) => ConstOrReg::U32(c),
                 Constant::U8(_) => todo!(),
                 Constant::S8(_) => todo!(),
                 Constant::U16(_) => todo!(),
                 Constant::S16(_) => todo!(),
                 Constant::S32(_) => todo!(),
-                Constant::U64(c) => ConstOrReg::U64(c as u64),
+                Constant::U64(c) => ConstOrReg::U64(c),
                 Constant::S64(_) => todo!(),
-                Constant::F32(_) => todo!(),
+                Constant::F32(c) => ConstOrReg::F32(OrderedFloat(c)),
                 Constant::F64(_) => todo!(),
                 Constant::Ptr(c) => ConstOrReg::U64(c as u64),
                 Constant::Bool(_) => todo!(),

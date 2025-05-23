@@ -3,7 +3,7 @@ use std::mem::{self, offset_of};
 use dgbir::{
     compiler::compile,
     disassembler::disassemble,
-    ir::{const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
+    ir::{const_f32, const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
     ir_interpreter::interpret_func,
 };
 
@@ -60,6 +60,44 @@ fn compiler_identityfunc_f32() {
     assert_eq!(f(1.0), 1.0);
     assert_eq!(f(2.0), 2.0);
     assert_eq!(f(10000.0), 10000.0);
+}
+
+#[test]
+fn compiler_addone_f32() {
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::F32]);
+    let add_result = func.add(&block, DataType::F32, block.input(0), const_f32(1.0));
+    func.ret(&block, Some(add_result.val()));
+    println!("{}", func);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    println!("{}", disassemble(&compiled.code, f as u64));
+    assert_eq!(f(0.0), 1.0);
+    assert_eq!(f(1.0), 2.0);
+    assert_eq!(f(2.0), 3.0);
+    assert_eq!(f(10000.0), 10001.0);
+}
+
+#[test]
+fn compiler_add_f32_to_self() {
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::F32]);
+    let add_result = func.add(&block, DataType::F32, block.input(0), block.input(0));
+    func.ret(&block, Some(add_result.val()));
+    println!("{}", func);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    println!("{}", disassemble(&compiled.code, f as u64));
+    assert_eq!(f(0.0), 0.0);
+    assert_eq!(f(1.0), 2.0);
+    assert_eq!(f(2.0), 4.0);
+    assert_eq!(f(10000.0), 20000.0);
 }
 
 #[test]

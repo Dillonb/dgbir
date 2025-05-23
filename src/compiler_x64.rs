@@ -97,6 +97,11 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                     ; mov Rq(r_to as u8), Rq(r_from as u8)
                 );
             }
+            (ConstOrReg::SIMD(r_from), Register::SIMD(r_to)) => {
+                dynasm!(ops
+                    ; movdqa Rx(r_to as u8), Rx(r_from as u8)
+                );
+            }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
@@ -144,7 +149,8 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
 
     fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>) {
         if let Some(v) = value {
-            self.move_to_reg(ops, *v, get_return_value_registers()[0]);
+            let retval_reg = *get_return_value_registers().iter().find(|r| v.is_same_type_as(r)).unwrap();
+            self.move_to_reg(ops, *v, retval_reg);
         }
 
         // Pop callee-saved regs from stack
@@ -190,6 +196,20 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 dynasm!(ops
                     ; mov Rd(r_out as u8), Rd(r1 as u8)
                     ; add Rd(r_out as u8), Rd(r2 as u8)
+                )
+            }
+            (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
+                let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                dynasm!(ops
+                    ; mov Rd(r_temp.r() as u8), c.to_bits() as i32
+                    ; movd Rx(r_out as u8), Rd(r_temp.r() as u8)
+                    ; addss Rx(r_out as u8), Rx(r as u8)
+                )
+            }
+            (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                dynasm!(ops
+                    ; movss Rx(r_out as u8), Rx(r1 as u8)
+                    ; addss Rx(r_out as u8), Rx(r2 as u8)
                 )
             }
             _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
