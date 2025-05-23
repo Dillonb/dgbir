@@ -3,11 +3,12 @@ use std::collections::{HashMap, HashSet};
 use dynasmrt::{AssemblyOffset, ExecutableBuffer};
 use ordered_float::OrderedFloat;
 
+use crate::abi::get_function_argument_registers;
 #[cfg(target_arch = "aarch64")]
 use crate::compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::compiler_x64;
-use crate::{ir::IRFunction, register_allocator::get_function_argument_registers};
+use crate::ir::IRFunction;
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,

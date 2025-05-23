@@ -5,6 +5,7 @@ pub mod compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
 pub mod compiler_x64;
 
+pub mod abi;
 pub mod disassembler;
 pub mod ir;
 pub mod ir_interpreter;

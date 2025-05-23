@@ -1,8 +1,9 @@
 use crate::{
+    abi::{get_return_value_registers, get_scratch_registers},
     compiler::{Compiler, ConstOrReg},
     ir::{BlockReference, CompareType, DataType, IRFunction},
     reg_pool::{register_type, RegPool},
-    register_allocator::{alloc_for, get_return_value_registers, get_scratch_registers, Register, RegisterAllocations},
+    register_allocator::{alloc_for, Register, RegisterAllocations},
 };
 use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, DynasmLabelApi};
 
