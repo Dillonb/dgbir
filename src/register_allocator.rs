@@ -65,8 +65,6 @@ impl Register {
             (Register::SIMD(_), _) => false,
         }
     }
-
-
 }
 
 // X64
@@ -135,7 +133,6 @@ const XMM14: Register = Register::SIMD(14);
 #[allow(dead_code)]
 const XMM15: Register = Register::SIMD(15);
 #[allow(dead_code)]
-
 // AArch64
 #[allow(dead_code)]
 const X0: Register = Register::GPR(0);
@@ -203,25 +200,25 @@ const X30: Register = Register::GPR(30);
 const SP: Register = Register::GPR(31);
 
 #[allow(dead_code)]
-const V0: Register  = Register::SIMD(0);
+const V0: Register = Register::SIMD(0);
 #[allow(dead_code)]
-const V1: Register  = Register::SIMD(1);
+const V1: Register = Register::SIMD(1);
 #[allow(dead_code)]
-const V2: Register  = Register::SIMD(2);
+const V2: Register = Register::SIMD(2);
 #[allow(dead_code)]
-const V3: Register  = Register::SIMD(3);
+const V3: Register = Register::SIMD(3);
 #[allow(dead_code)]
-const V4: Register  = Register::SIMD(4);
+const V4: Register = Register::SIMD(4);
 #[allow(dead_code)]
-const V5: Register  = Register::SIMD(5);
+const V5: Register = Register::SIMD(5);
 #[allow(dead_code)]
-const V6: Register  = Register::SIMD(6);
+const V6: Register = Register::SIMD(6);
 #[allow(dead_code)]
-const V7: Register  = Register::SIMD(7);
+const V7: Register = Register::SIMD(7);
 #[allow(dead_code)]
-const V8: Register  = Register::SIMD(8);
+const V8: Register = Register::SIMD(8);
 #[allow(dead_code)]
-const V9: Register  = Register::SIMD(9);
+const V9: Register = Register::SIMD(9);
 #[allow(dead_code)]
 const V10: Register = Register::SIMD(10);
 #[allow(dead_code)]
@@ -271,7 +268,9 @@ fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     {
-        vec![X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, V8, V9, V10, V11, V12, V13, V14, V15]
+        vec![
+            X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, V8, V9, V10, V11, V12, V13, V14, V15,
+        ]
     }
 
     // For x64, it matters whether we're on Linux or Windows
@@ -298,7 +297,10 @@ fn get_registers() -> Vec<Register> {
 pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     {
-        vec![X9, X10, X11, X12, X13, X14, X15, V16, V17, V18, V19, V20, V21, V22, V23, V24, V25, V26, V27, V28, V29, V30, V31]
+        vec![
+            X9, X10, X11, X12, X13, X14, X15, V16, V17, V18, V19, V20, V21, V22, V23, V24, V25, V26, V27, V28, V29,
+            V30, V31,
+        ]
     }
 
     // For x64, it matters whether we're on Linux or Windows
@@ -306,7 +308,9 @@ pub fn get_scratch_registers() -> Vec<Register> {
     {
         #[cfg(target_os = "linux")]
         {
-            vec![ RAX, RDI, RSI, RDX, RCX, R8, R9, R10, R11, XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7 ]
+            vec![
+                RAX, RDI, RSI, RDX, RCX, R8, R9, R10, R11, XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7,
+            ]
         }
         #[cfg(target_os = "windows")]
         {
@@ -361,15 +365,7 @@ impl Register {
                     #[cfg(target_os = "linux")]
                     {
                         // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
-                        r == 0
-                            || r == 7
-                            || r == 6
-                            || r == 2
-                            || r == 1
-                            || r == 8
-                            || r == 9
-                            || r == 10
-                            || r == 11
+                        r == 0 || r == 7 || r == 6 || r == 2 || r == 1 || r == 8 || r == 9 || r == 10 || r == 11
                     }
                 }
             }
@@ -1060,7 +1056,10 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
             let interference = lifetimes.interference.get(&value);
 
             let mut found_reg = false;
-            for reg in get_registers().iter().filter(|r| r.can_hold_datatype(value.data_type())) {
+            for reg in get_registers()
+                .iter()
+                .filter(|r| r.can_hold_datatype(value.data_type()))
+            {
                 // Check if the register is already allocated to an interfering value
                 let already_allocated = interference.is_some()
                     && interference
@@ -1081,15 +1080,18 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
                     .iter()
                     // Limit to only values that have been allocated to registers, and only to
                     // registers that can hold the datatype of the value we're allocating
-                    .filter(|iv| allocations.get(iv).map(|r| r.can_hold_datatype(value.data_type())).is_some())
+                    .filter(|iv| {
+                        allocations
+                            .get(iv)
+                            .map(|r| r.can_hold_datatype(value.data_type()))
+                            .is_some()
+                    })
                     // Pair each interfering value with its next usage
                     .flat_map(|iv| {
                         lifetimes.all_usages[iv]
                             .iter()
                             .find(|u| u >= &&value.into_usage(func))
-                            .map(|u| {
-                                (*u, *iv)
-                            })
+                            .map(|u| (*u, *iv))
                     })
                     // Find the one with the farthest out next usage
                     .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))

@@ -149,7 +149,10 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
 
     fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>) {
         if let Some(v) = value {
-            let retval_reg = *get_return_value_registers().iter().find(|r| v.is_same_type_as(r)).unwrap();
+            let retval_reg = *get_return_value_registers()
+                .iter()
+                .find(|r| v.is_same_type_as(r))
+                .unwrap();
             self.move_to_reg(ops, *v, retval_reg);
         }
 

@@ -327,7 +327,10 @@ pub trait Compiler<'a, Ops> {
                     data_type: *input,
                 };
                 let input_reg = self.get_allocations().get(&block_input).unwrap();
-                let arg_reg = arg_regs.iter().find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r)).unwrap();
+                let arg_reg = arg_regs
+                    .iter()
+                    .find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r))
+                    .unwrap();
                 allocated_arg_regs.insert(arg_reg);
                 self.move_to_reg(ops, arg_reg.to_const_or_reg(), input_reg);
             });
