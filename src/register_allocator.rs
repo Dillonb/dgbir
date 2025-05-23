@@ -373,10 +373,10 @@ impl Register {
                     }
                 }
             }
-            Register::SIMD(r) => {
+            Register::SIMD(_r) => {
                 #[cfg(target_arch = "aarch64")]
                 {
-                    r < 8 || r > 15
+                    _r < 8 || _r > 15
                 }
                 #[cfg(target_arch = "x86_64")]
                 {
