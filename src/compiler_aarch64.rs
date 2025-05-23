@@ -1,7 +1,7 @@
 use crate::{
     abi::{get_return_value_registers, get_scratch_registers},
-    compiler::{Compiler, ConstOrReg},
-    ir::{BlockReference, CompareType, DataType, IRFunction},
+    compiler::{Compiler, ConstOrReg, LiteralPool},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
@@ -9,42 +9,28 @@ use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, Dy
 
 type Ops = dynasmrt::Assembler<Aarch64Relocation>;
 
-// TODO: should I do a literal pool instead?
-fn load_64_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value: u64) {
-    if value > 0x0000_FFFF_FFFF_FFFF {
-        dynasm!(ops
-            ; movk X(reg), ((value >> 48) & 0xFFFF) as u32, lsl #48
-            ; movk X(reg), ((value >> 32) & 0xFFFF) as u32, lsl #32
-            ; movk X(reg), ((value >> 16) & 0xFFFF) as u32, lsl #16
-            ; movk X(reg), (value & 0xFFFF) as u32
-        );
-    } else if value > 0x0000_0000_FFFF_FFFF {
-        dynasm!(ops
-            ; movz X(reg), ((value >> 32) & 0xFFFF) as u32, lsl #32
-            ; movk X(reg), ((value >> 16) & 0xFFFF) as u32, lsl #16
-            ; movk X(reg), (value & 0xFFFF) as u32
-        );
-    } else if value > 0x0000_0000_0000_FFFF {
-        dynasm!(ops
-            ; movz X(reg), ((value >> 16) & 0xFFFF) as u32, lsl #16
-            ; movk X(reg), (value & 0xFFFF) as u32
-        );
-    } else {
+fn load_64_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u64) {
+    if value <= 0xFFFF {
         dynasm!(ops
             ; movz X(reg), value as u32
+        );
+    } else {
+        let literal = Aarch64Compiler::add_literal(ops, lp, Constant::U64(value));
+        dynasm!(ops
+            ; ldr X(reg), =>literal
         );
     }
 }
 
-fn load_32_bit_constant(ops: &mut dynasmrt::aarch64::Assembler, reg: u32, value: u32) {
-    if value > 0x0000_FFFF {
+fn load_32_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u32) {
+    if value <= 0xFFFF {
         dynasm!(ops
-            ; movz X(reg), (value >> 16) & 0xFFFF, lsl #16
-            ; movk X(reg), value & 0xFFFF
+            ; movz W(reg), value
         );
     } else {
+        let literal = Aarch64Compiler::add_literal(ops, lp, Constant::U32(value));
         dynasm!(ops
-            ; movz X(reg), value
+            ; ldr W(reg), =>literal
         );
     }
 }
@@ -58,6 +44,10 @@ pub struct Aarch64Compiler<'a> {
 }
 
 impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
+    fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
+        ops.new_dynamic_label()
+    }
+
     fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self {
         let allocations = alloc_for(func);
 
@@ -121,10 +111,10 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         )
     }
 
-    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register) {
+    fn move_to_reg(&self, ops: &mut Ops, lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
         match (from, to) {
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
-                load_32_bit_constant(ops, r_to as u32, c);
+                load_32_bit_constant(ops, lp, r_to as u32, c);
             }
             (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
@@ -138,6 +128,28 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 )
             }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
+        }
+    }
+
+    // TODO: this is exactly the same in all compilers, figure out how to share this
+    fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool) {
+        for (literal, label) in lp.literals {
+            ops.align(literal.size(), 0);
+            match literal {
+                Constant::U32(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .u32 c
+                    );
+                }
+                Constant::F32(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .f32 *c
+                    );
+                }
+                _ => todo!("Unsupported literal type: {:?}", literal),
+            }
         }
     }
 
@@ -165,7 +177,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         self.block_labels[block_index]
     }
 
-    fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {
+    fn branch(&self, ops: &mut Ops, lp: &mut LiteralPool, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {
         match cond {
             ConstOrReg::GPR(c) => {
                 dynasm!(ops
@@ -174,17 +186,18 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             }
             _ => todo!("Unsupported branch condition: {:?}", cond),
         }
-        self.call_block(ops, if_true);
+        self.call_block(ops, lp, if_true);
         dynasm!(ops
             ; if_false:
         );
-        self.call_block(ops, if_false);
+        self.call_block(ops, lp, if_false);
     }
 
-    fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>) {
+    fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>) {
         if let Some(v) = value {
             self.move_to_reg(
                 ops,
+                lp,
                 *v,
                 *get_return_value_registers()
                     .iter()
@@ -224,10 +237,10 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         );
     }
 
-    fn add(&self, ops: &mut Ops, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         match (tp, r_out, a, b) {
             (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
-                load_32_bit_constant(ops, r_out as u32, c1 + c2);
+                load_32_bit_constant(ops, lp, r_out as u32, c1 + c2);
             }
             (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
                 if c < 4096 {
@@ -236,8 +249,9 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     )
                 } else {
                     let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_32_bit_constant(ops, r_temp.r(), c);
+                    let literal = Self::add_literal(ops, lp, Constant::U32(c));
                     dynasm!(ops
+                        ; ldr W(r_temp.r()), =>literal
                         ; add W(r_out as u32), W(r), W(r_temp.r())
                     )
                 }
@@ -299,25 +313,25 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 
-    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
+    fn load_ptr(&self, _ops: &mut Ops, _lp: &mut LiteralPool,_r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
         todo!("load_ptr")
     }
 
-    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
+    fn write_ptr(&self, ops: &mut Ops, lp: &mut LiteralPool, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
         match (ptr, value, data_type) {
             (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
 
-                load_64_bit_constant(ops, r_address.r(), ptr + offset);
-                load_32_bit_constant(ops, r_value.r(), value);
+                load_64_bit_constant(ops, lp, r_address.r(), ptr + offset);
+                load_32_bit_constant(ops, lp, r_value.r(), value);
                 dynasm!(ops
                     ; str W(r_value.r()), [X(r_address.r())]
                 );
             }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, r_address.r(), ptr + offset);
+                load_64_bit_constant(ops, lp, r_address.r(), ptr + offset);
                 dynasm!(ops
                     ; str W(r_value as u32), [X(r_address.r())]
                 );

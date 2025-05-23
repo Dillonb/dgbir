@@ -148,7 +148,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let offset = expect_constant_u64(&inputs[1]);
                     let tp = outputs[0].tp;
                     let r_out = output_regs[0].unwrap();
-                    compiler.load_ptr(ops, r_out, tp, ptr, offset);
+                    compiler.load_ptr(ops, lp, r_out, tp, ptr, offset);
                 }
                 InstructionType::WritePtr => {
                     assert_eq!(inputs.len(), 4);
@@ -157,7 +157,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let offset = expect_constant_u64(&inputs[1]);
                     let value = compiler.to_imm_or_reg(&inputs[2]);
                     let data_type = expect_constant_data_type(&inputs[3]);
-                    compiler.write_ptr(ops, ptr, offset, value, data_type);
+                    compiler.write_ptr(ops, lp, ptr, offset, value, data_type);
                 }
                 InstructionType::SpillToStack => {
                     assert_eq!(inputs.len(), 3);
@@ -180,11 +180,11 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
             cond,
             if_true,
             if_false,
-        } => compiler.branch(ops, &compiler.to_imm_or_reg(cond), if_true, if_false),
-        Instruction::Jump { target } => compiler.call_block(ops, target),
+        } => compiler.branch(ops, lp, &compiler.to_imm_or_reg(cond), if_true, if_false),
+        Instruction::Jump { target } => compiler.call_block(ops, lp, target),
         Instruction::Return { value } => {
             let v = value.map(|v| compiler.to_imm_or_reg(&v));
-            compiler.ret(ops, &v);
+            compiler.ret(ops, lp, &v);
         }
     }
 }
@@ -240,7 +240,7 @@ pub trait Compiler<'a, Ops> {
     /// - `moves` All moves in the format of from -> to
     /// - `do_move` Emit a move from the source to the target. When this lambda is called, it is
     ///            guaranteed to be safe to do the move.
-    fn move_regs_multi(&self, ops: &mut Ops, mut moves: HashMap<ConstOrReg, Register>) {
+    fn move_regs_multi(&self, ops: &mut Ops, lp: &mut LiteralPool, mut moves: HashMap<ConstOrReg, Register>) {
         let mut pending_move_targets = HashSet::new();
         let mut pending_move_sources = HashSet::new();
 
@@ -287,7 +287,7 @@ pub trait Compiler<'a, Ops> {
                 } else {
                     // It is safe to do the move. It's not a self-move, and it doesn't conflict with any other moves.
                     // do_move(from, to);
-                    self.move_to_reg(ops, from, to);
+                    self.move_to_reg(ops, lp, from, to);
 
                     moves.remove(&from);
                     from.to_reg().iter().for_each(|r| {
@@ -299,7 +299,7 @@ pub trait Compiler<'a, Ops> {
         }
     }
 
-    fn call_block(&self, ops: &mut Ops, target: &BlockReference) {
+    fn call_block(&self, ops: &mut Ops, lp: &mut LiteralPool, target: &BlockReference) {
         let moves = target
             .arguments
             .iter()
@@ -319,7 +319,7 @@ pub trait Compiler<'a, Ops> {
             .collect::<HashMap<_, _>>();
 
         if moves.len() > 0 {
-            self.move_regs_multi(ops, moves);
+            self.move_regs_multi(ops, lp, moves);
         }
 
         // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
@@ -332,7 +332,7 @@ pub trait Compiler<'a, Ops> {
         // }
     }
 
-    fn handle_function_arguments(&self, ops: &mut Ops) {
+    fn handle_function_arguments(&self, ops: &mut Ops, lp: &mut LiteralPool) {
         // Move all arguments into the correct registers
 
         let arg_regs = get_function_argument_registers();
@@ -353,7 +353,7 @@ pub trait Compiler<'a, Ops> {
                     .find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r))
                     .unwrap();
                 allocated_arg_regs.insert(arg_reg);
-                self.move_to_reg(ops, arg_reg.to_const_or_reg(), input_reg);
+                self.move_to_reg(ops, lp, arg_reg.to_const_or_reg(), input_reg);
             });
     }
 
@@ -371,7 +371,7 @@ pub trait Compiler<'a, Ops> {
     /// Emit a jump to a dynamic label.
     fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel);
     /// Emit a move from a register or value to a register.
-    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register);
+    fn move_to_reg(&self, ops: &mut Ops, lp: &mut LiteralPool, from: ConstOrReg, to: Register);
     /// Emits the literal pool and resolve all the labels. Called at the end of the function.
     fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool);
 
@@ -388,18 +388,18 @@ pub trait Compiler<'a, Ops> {
     fn get_block_label(&self, block_index: usize) -> dynasmrt::DynamicLabel;
 
     /// Conditionally emit a jump to one of two blocks + move all inputs into place
-    fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference);
+    fn branch(&self, ops: &mut Ops, lp: &mut LiteralPool, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference);
     /// Emit a return with an optional value
-    fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>);
+    fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>);
 
     /// Compile an IR add instruction
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR compare instruction
     fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
     /// Compile an IR load pointer instruction
-    fn load_ptr(&self, ops: &mut Ops, r_out: Register, tp: DataType, ptr: ConstOrReg, offset: u64);
+    fn load_ptr(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: Register, tp: DataType, ptr: ConstOrReg, offset: u64);
     /// Compile an IR write pointer instruction
-    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType);
+    fn write_ptr(&self, ops: &mut Ops, lp: &mut LiteralPool, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType);
     /// Compile an IR spill to stack instruction
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
@@ -432,7 +432,7 @@ pub fn compile(func: &mut IRFunction) -> CompiledFunction {
     let mut lp = LiteralPool::new();
 
     compiler.prologue(&mut ops);
-    compiler.handle_function_arguments(&mut ops);
+    compiler.handle_function_arguments(&mut ops, &mut lp);
 
     for (block_index, block) in compiler.get_func().blocks.iter().enumerate() {
         compiler.on_new_block_begin(&mut ops, block_index);

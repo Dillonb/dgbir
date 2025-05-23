@@ -111,6 +111,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
     }
 
+    // TODO: this is exactly the same in all compilers, figure out how to share this
     fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool) {
         for (literal, label) in lp.literals {
             ops.align(literal.size(), 0);
