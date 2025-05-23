@@ -67,204 +67,122 @@ impl Register {
     }
 }
 
-// X64
 #[allow(dead_code)]
-const RAX: Register = Register::GPR(0);
-#[allow(dead_code)]
-const RCX: Register = Register::GPR(1);
-#[allow(dead_code)]
-const RDX: Register = Register::GPR(2);
-#[allow(dead_code)]
-const RBX: Register = Register::GPR(3);
-#[allow(dead_code)]
-const RSP: Register = Register::GPR(4);
-#[allow(dead_code)]
-const RBP: Register = Register::GPR(5);
-#[allow(dead_code)]
-const RSI: Register = Register::GPR(6);
-#[allow(dead_code)]
-const RDI: Register = Register::GPR(7);
-#[allow(dead_code)]
-const R8: Register = Register::GPR(8);
-#[allow(dead_code)]
-const R9: Register = Register::GPR(9);
-#[allow(dead_code)]
-const R10: Register = Register::GPR(10);
-#[allow(dead_code)]
-const R11: Register = Register::GPR(11);
-#[allow(dead_code)]
-const R12: Register = Register::GPR(12);
-#[allow(dead_code)]
-const R13: Register = Register::GPR(13);
-#[allow(dead_code)]
-const R14: Register = Register::GPR(14);
-#[allow(dead_code)]
-const R15: Register = Register::GPR(15);
-#[allow(dead_code)]
-const XMM0: Register = Register::SIMD(0);
-#[allow(dead_code)]
-const XMM1: Register = Register::SIMD(1);
-#[allow(dead_code)]
-const XMM2: Register = Register::SIMD(2);
-#[allow(dead_code)]
-const XMM3: Register = Register::SIMD(3);
-#[allow(dead_code)]
-const XMM4: Register = Register::SIMD(4);
-#[allow(dead_code)]
-const XMM5: Register = Register::SIMD(5);
-#[allow(dead_code)]
-const XMM6: Register = Register::SIMD(6);
-#[allow(dead_code)]
-const XMM7: Register = Register::SIMD(7);
-#[allow(dead_code)]
-const XMM8: Register = Register::SIMD(8);
-#[allow(dead_code)]
-const XMM9: Register = Register::SIMD(9);
-#[allow(dead_code)]
-const XMM10: Register = Register::SIMD(10);
-#[allow(dead_code)]
-const XMM11: Register = Register::SIMD(11);
-#[allow(dead_code)]
-const XMM12: Register = Register::SIMD(12);
-#[allow(dead_code)]
-const XMM13: Register = Register::SIMD(13);
-#[allow(dead_code)]
-const XMM14: Register = Register::SIMD(14);
-#[allow(dead_code)]
-const XMM15: Register = Register::SIMD(15);
-#[allow(dead_code)]
-// AArch64
-#[allow(dead_code)]
-const X0: Register = Register::GPR(0);
-#[allow(dead_code)]
-const X1: Register = Register::GPR(1);
-#[allow(dead_code)]
-const X2: Register = Register::GPR(2);
-#[allow(dead_code)]
-const X3: Register = Register::GPR(3);
-#[allow(dead_code)]
-const X4: Register = Register::GPR(4);
-#[allow(dead_code)]
-const X5: Register = Register::GPR(5);
-#[allow(dead_code)]
-const X6: Register = Register::GPR(6);
-#[allow(dead_code)]
-const X7: Register = Register::GPR(7);
-#[allow(dead_code)]
-const X8: Register = Register::GPR(8);
-#[allow(dead_code)]
-const X9: Register = Register::GPR(9);
-#[allow(dead_code)]
-const X10: Register = Register::GPR(10);
-#[allow(dead_code)]
-const X11: Register = Register::GPR(11);
-#[allow(dead_code)]
-const X12: Register = Register::GPR(12);
-#[allow(dead_code)]
-const X13: Register = Register::GPR(13);
-#[allow(dead_code)]
-const X14: Register = Register::GPR(14);
-#[allow(dead_code)]
-const X15: Register = Register::GPR(15);
-#[allow(dead_code)]
-const X16: Register = Register::GPR(16);
-#[allow(dead_code)]
-const X17: Register = Register::GPR(17);
-#[allow(dead_code)]
-const X18: Register = Register::GPR(18);
-#[allow(dead_code)]
-const X19: Register = Register::GPR(19);
-#[allow(dead_code)]
-const X20: Register = Register::GPR(20);
-#[allow(dead_code)]
-const X21: Register = Register::GPR(21);
-#[allow(dead_code)]
-const X22: Register = Register::GPR(22);
-#[allow(dead_code)]
-const X23: Register = Register::GPR(23);
-#[allow(dead_code)]
-const X24: Register = Register::GPR(24);
-#[allow(dead_code)]
-const X25: Register = Register::GPR(25);
-#[allow(dead_code)]
-const X26: Register = Register::GPR(26);
-#[allow(dead_code)]
-const X27: Register = Register::GPR(27);
-#[allow(dead_code)]
-const X28: Register = Register::GPR(28);
-#[allow(dead_code)]
-const X29: Register = Register::GPR(29);
-#[allow(dead_code)]
-const X30: Register = Register::GPR(30);
-#[allow(dead_code)]
-const SP: Register = Register::GPR(31);
+#[cfg(target_arch = "x86_64")]
+mod reg_constants {
+    use super::Register;
+
+    // X64
+    pub const RAX: Register = Register::GPR(0);
+    pub const RCX: Register = Register::GPR(1);
+    pub const RDX: Register = Register::GPR(2);
+    pub const RBX: Register = Register::GPR(3);
+    pub const RSP: Register = Register::GPR(4);
+    pub const RBP: Register = Register::GPR(5);
+    pub const RSI: Register = Register::GPR(6);
+    pub const RDI: Register = Register::GPR(7);
+    pub const R8: Register = Register::GPR(8);
+    pub const R9: Register = Register::GPR(9);
+    pub const R10: Register = Register::GPR(10);
+    pub const R11: Register = Register::GPR(11);
+    pub const R12: Register = Register::GPR(12);
+    pub const R13: Register = Register::GPR(13);
+    pub const R14: Register = Register::GPR(14);
+    pub const R15: Register = Register::GPR(15);
+
+    pub const XMM0: Register = Register::SIMD(0);
+    pub const XMM1: Register = Register::SIMD(1);
+    pub const XMM2: Register = Register::SIMD(2);
+    pub const XMM3: Register = Register::SIMD(3);
+    pub const XMM4: Register = Register::SIMD(4);
+    pub const XMM5: Register = Register::SIMD(5);
+    pub const XMM6: Register = Register::SIMD(6);
+    pub const XMM7: Register = Register::SIMD(7);
+    pub const XMM8: Register = Register::SIMD(8);
+    pub const XMM9: Register = Register::SIMD(9);
+    pub const XMM10: Register = Register::SIMD(10);
+    pub const XMM11: Register = Register::SIMD(11);
+    pub const XMM12: Register = Register::SIMD(12);
+    pub const XMM13: Register = Register::SIMD(13);
+    pub const XMM14: Register = Register::SIMD(14);
+    pub const XMM15: Register = Register::SIMD(15);
+}
 
 #[allow(dead_code)]
-const V0: Register = Register::SIMD(0);
-#[allow(dead_code)]
-const V1: Register = Register::SIMD(1);
-#[allow(dead_code)]
-const V2: Register = Register::SIMD(2);
-#[allow(dead_code)]
-const V3: Register = Register::SIMD(3);
-#[allow(dead_code)]
-const V4: Register = Register::SIMD(4);
-#[allow(dead_code)]
-const V5: Register = Register::SIMD(5);
-#[allow(dead_code)]
-const V6: Register = Register::SIMD(6);
-#[allow(dead_code)]
-const V7: Register = Register::SIMD(7);
-#[allow(dead_code)]
-const V8: Register = Register::SIMD(8);
-#[allow(dead_code)]
-const V9: Register = Register::SIMD(9);
-#[allow(dead_code)]
-const V10: Register = Register::SIMD(10);
-#[allow(dead_code)]
-const V11: Register = Register::SIMD(11);
-#[allow(dead_code)]
-const V12: Register = Register::SIMD(12);
-#[allow(dead_code)]
-const V13: Register = Register::SIMD(13);
-#[allow(dead_code)]
-const V14: Register = Register::SIMD(14);
-#[allow(dead_code)]
-const V15: Register = Register::SIMD(15);
-#[allow(dead_code)]
-const V16: Register = Register::SIMD(16);
-#[allow(dead_code)]
-const V17: Register = Register::SIMD(17);
-#[allow(dead_code)]
-const V18: Register = Register::SIMD(18);
-#[allow(dead_code)]
-const V19: Register = Register::SIMD(19);
-#[allow(dead_code)]
-const V20: Register = Register::SIMD(20);
-#[allow(dead_code)]
-const V21: Register = Register::SIMD(21);
-#[allow(dead_code)]
-const V22: Register = Register::SIMD(22);
-#[allow(dead_code)]
-const V23: Register = Register::SIMD(23);
-#[allow(dead_code)]
-const V24: Register = Register::SIMD(24);
-#[allow(dead_code)]
-const V25: Register = Register::SIMD(25);
-#[allow(dead_code)]
-const V26: Register = Register::SIMD(26);
-#[allow(dead_code)]
-const V27: Register = Register::SIMD(27);
-#[allow(dead_code)]
-const V28: Register = Register::SIMD(28);
-#[allow(dead_code)]
-const V29: Register = Register::SIMD(29);
-#[allow(dead_code)]
-const V30: Register = Register::SIMD(30);
-#[allow(dead_code)]
-const V31: Register = Register::SIMD(31);
+#[cfg(target_arch = "aarch64")]
+mod reg_constants {
+    use super::Register;
+
+    // AArch64
+    pub const X0: Register = Register::GPR(0);
+    pub const X1: Register = Register::GPR(1);
+    pub const X2: Register = Register::GPR(2);
+    pub const X3: Register = Register::GPR(3);
+    pub const X4: Register = Register::GPR(4);
+    pub const X5: Register = Register::GPR(5);
+    pub const X6: Register = Register::GPR(6);
+    pub const X7: Register = Register::GPR(7);
+    pub const X8: Register = Register::GPR(8);
+    pub const X9: Register = Register::GPR(9);
+    pub const X10: Register = Register::GPR(10);
+    pub const X11: Register = Register::GPR(11);
+    pub const X12: Register = Register::GPR(12);
+    pub const X13: Register = Register::GPR(13);
+    pub const X14: Register = Register::GPR(14);
+    pub const X15: Register = Register::GPR(15);
+    pub const X16: Register = Register::GPR(16);
+    pub const X17: Register = Register::GPR(17);
+    pub const X18: Register = Register::GPR(18);
+    pub const X19: Register = Register::GPR(19);
+    pub const X20: Register = Register::GPR(20);
+    pub const X21: Register = Register::GPR(21);
+    pub const X22: Register = Register::GPR(22);
+    pub const X23: Register = Register::GPR(23);
+    pub const X24: Register = Register::GPR(24);
+    pub const X25: Register = Register::GPR(25);
+    pub const X26: Register = Register::GPR(26);
+    pub const X27: Register = Register::GPR(27);
+    pub const X28: Register = Register::GPR(28);
+    pub const X29: Register = Register::GPR(29);
+    pub const X30: Register = Register::GPR(30);
+    pub const SP: Register = Register::GPR(31);
+
+    pub const V0: Register = Register::SIMD(0);
+    pub const V1: Register = Register::SIMD(1);
+    pub const V2: Register = Register::SIMD(2);
+    pub const V3: Register = Register::SIMD(3);
+    pub const V4: Register = Register::SIMD(4);
+    pub const V5: Register = Register::SIMD(5);
+    pub const V6: Register = Register::SIMD(6);
+    pub const V7: Register = Register::SIMD(7);
+    pub const V8: Register = Register::SIMD(8);
+    pub const V9: Register = Register::SIMD(9);
+    pub const V10: Register = Register::SIMD(10);
+    pub const V11: Register = Register::SIMD(11);
+    pub const V12: Register = Register::SIMD(12);
+    pub const V13: Register = Register::SIMD(13);
+    pub const V14: Register = Register::SIMD(14);
+    pub const V15: Register = Register::SIMD(15);
+    pub const V16: Register = Register::SIMD(16);
+    pub const V17: Register = Register::SIMD(17);
+    pub const V18: Register = Register::SIMD(18);
+    pub const V19: Register = Register::SIMD(19);
+    pub const V20: Register = Register::SIMD(20);
+    pub const V21: Register = Register::SIMD(21);
+    pub const V22: Register = Register::SIMD(22);
+    pub const V23: Register = Register::SIMD(23);
+    pub const V24: Register = Register::SIMD(24);
+    pub const V25: Register = Register::SIMD(25);
+    pub const V26: Register = Register::SIMD(26);
+    pub const V27: Register = Register::SIMD(27);
+    pub const V28: Register = Register::SIMD(28);
+    pub const V29: Register = Register::SIMD(29);
+    pub const V30: Register = Register::SIMD(30);
+    pub const V31: Register = Register::SIMD(31);
+}
 
 fn get_registers() -> Vec<Register> {
+    use reg_constants::*;
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     {
@@ -295,6 +213,7 @@ fn get_registers() -> Vec<Register> {
 }
 
 pub fn get_scratch_registers() -> Vec<Register> {
+    use reg_constants::*;
     #[cfg(target_arch = "aarch64")]
     {
         vec![
@@ -320,6 +239,7 @@ pub fn get_scratch_registers() -> Vec<Register> {
 }
 
 pub fn get_function_argument_registers() -> Vec<Register> {
+    use reg_constants::*;
     #[cfg(target_arch = "aarch64")]
     {
         vec![X0, X1, X2, X3, X4, X5, X6, X7, V0, V1, V2, V3, V4, V5, V6, V7]
@@ -341,6 +261,7 @@ pub fn get_function_argument_registers() -> Vec<Register> {
 }
 
 pub fn get_return_value_registers() -> Vec<Register> {
+    use reg_constants::*;
     #[cfg(target_arch = "aarch64")]
     {
         // Technically, it's x0-x7,v0-v7, but we only support returning one value
