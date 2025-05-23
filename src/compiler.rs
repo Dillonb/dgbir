@@ -19,12 +19,14 @@ pub enum ConstOrReg {
     U32(u32),
     U64(u64),
     GPR(u32),
+    SIMD(u32),
 }
 
 impl ConstOrReg {
     pub fn to_reg(&self) -> Option<Register> {
         match self {
             ConstOrReg::GPR(r) => Some(Register::GPR(*r as usize)),
+            ConstOrReg::SIMD(r) => Some(Register::SIMD(*r as usize)),
             ConstOrReg::U32(_) => None,
             ConstOrReg::U64(_) => None,
         }
@@ -35,6 +37,7 @@ impl Register {
     pub fn to_const_or_reg(&self) -> ConstOrReg {
         match self {
             Register::GPR(r) => ConstOrReg::GPR(*r as u32),
+            Register::SIMD(r) => ConstOrReg::SIMD(*r as u32),
         }
     }
 }
@@ -73,11 +76,9 @@ fn expect_constant_u64(input: &InputSlot) -> u64 {
 }
 
 pub fn expect_gpr(register: Register) -> usize {
-    #[allow(irrefutable_let_patterns)]
     match register {
         Register::GPR(r) => r,
-        // Uncomment when this enum has more than just GPR in it
-        // _ => panic!("Expected GPR, got {:?}", register),
+        _ => panic!("Expected GPR, got {:?}", register),
     }
 }
 
@@ -171,6 +172,7 @@ pub trait Compiler<'a, Ops> {
             InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => {
                 match self.get_allocations().allocations[&s.to_value(self.get_func()).unwrap()] {
                     Register::GPR(r) => ConstOrReg::GPR(r as u32),
+                    Register::SIMD(r) => ConstOrReg::SIMD(r as u32),
                 }
             }
             InputSlot::Constant(constant) => match constant {
@@ -294,6 +296,8 @@ pub trait Compiler<'a, Ops> {
     fn handle_function_arguments(&self, ops: &mut Ops) {
         // Move all arguments into the correct registers
 
+        let arg_regs = get_function_argument_registers();
+        let mut allocated_arg_regs = HashSet::new();
         self.get_func().blocks[0]
             .inputs
             .iter()
@@ -304,14 +308,10 @@ pub trait Compiler<'a, Ops> {
                     input_index,
                     data_type: *input,
                 };
-                let reg = self.get_allocations().get(&block_input).unwrap();
-                match reg {
-                    Register::GPR(_) => {
-                        // TODO: this is going to be more complicated when we have more than just GPRs
-                        let arg_reg = get_function_argument_registers()[input_index];
-                        self.move_to_reg(ops, arg_reg.to_const_or_reg(), reg);
-                    }
-                }
+                let input_reg = self.get_allocations().get(&block_input).unwrap();
+                let arg_reg = arg_regs.iter().find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r)).unwrap();
+                allocated_arg_regs.insert(arg_reg);
+                self.move_to_reg(ops, arg_reg.to_const_or_reg(), input_reg);
             });
     }
 

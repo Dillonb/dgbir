@@ -14,17 +14,199 @@ use itertools::Itertools;
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Register {
     GPR(usize),
+    SIMD(usize),
 }
+
+impl Register {
+    pub fn can_hold_datatype(&self, tp: DataType) -> bool {
+        match self {
+            Register::GPR(_) => {
+                const VALID_GPR_TYPES: [DataType; 10] = [
+                    DataType::U8,
+                    DataType::S8,
+                    DataType::U16,
+                    DataType::S16,
+                    DataType::U32,
+                    DataType::S32,
+                    DataType::U64,
+                    DataType::S64,
+                    DataType::Bool,
+                    DataType::Ptr,
+                ];
+                return VALID_GPR_TYPES.contains(&tp);
+            }
+            Register::SIMD(_) => {
+                const VALID_SIMD_TYPES: [DataType; 2] = [DataType::F32, DataType::F64];
+                return VALID_SIMD_TYPES.contains(&tp);
+            }
+        }
+    }
+
+    pub fn is_gpr(&self) -> bool {
+        match self {
+            Register::GPR(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_simd(&self) -> bool {
+        match self {
+            Register::SIMD(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_same_type_as(&self, other: &Register) -> bool {
+        match (self, other) {
+            (Register::GPR(_), Register::GPR(_)) => true,
+            (Register::GPR(_), _) => false,
+
+            (Register::SIMD(_), Register::SIMD(_)) => true,
+            (Register::SIMD(_), _) => false,
+        }
+    }
+
+
+}
+
+// X64
+#[allow(dead_code)]
+const RAX: Register = Register::GPR(0);
+#[allow(dead_code)]
+const RCX: Register = Register::GPR(1);
+#[allow(dead_code)]
+const RDX: Register = Register::GPR(2);
+#[allow(dead_code)]
+const RBX: Register = Register::GPR(3);
+#[allow(dead_code)]
+const RSP: Register = Register::GPR(4);
+#[allow(dead_code)]
+const RBP: Register = Register::GPR(5);
+#[allow(dead_code)]
+const RSI: Register = Register::GPR(6);
+#[allow(dead_code)]
+const RDI: Register = Register::GPR(7);
+#[allow(dead_code)]
+const R8: Register = Register::GPR(8);
+#[allow(dead_code)]
+const R9: Register = Register::GPR(9);
+#[allow(dead_code)]
+const R10: Register = Register::GPR(10);
+#[allow(dead_code)]
+const R11: Register = Register::GPR(11);
+#[allow(dead_code)]
+const R12: Register = Register::GPR(12);
+#[allow(dead_code)]
+const R13: Register = Register::GPR(13);
+#[allow(dead_code)]
+const R14: Register = Register::GPR(14);
+#[allow(dead_code)]
+const R15: Register = Register::GPR(15);
+#[allow(dead_code)]
+const XMM0: Register = Register::SIMD(0);
+#[allow(dead_code)]
+const XMM1: Register = Register::SIMD(1);
+#[allow(dead_code)]
+const XMM2: Register = Register::SIMD(2);
+#[allow(dead_code)]
+const XMM3: Register = Register::SIMD(3);
+#[allow(dead_code)]
+const XMM4: Register = Register::SIMD(4);
+#[allow(dead_code)]
+const XMM5: Register = Register::SIMD(5);
+#[allow(dead_code)]
+const XMM6: Register = Register::SIMD(6);
+#[allow(dead_code)]
+const XMM7: Register = Register::SIMD(7);
+#[allow(dead_code)]
+const XMM8: Register = Register::SIMD(8);
+#[allow(dead_code)]
+const XMM9: Register = Register::SIMD(9);
+#[allow(dead_code)]
+const XMM10: Register = Register::SIMD(10);
+#[allow(dead_code)]
+const XMM11: Register = Register::SIMD(11);
+#[allow(dead_code)]
+const XMM12: Register = Register::SIMD(12);
+#[allow(dead_code)]
+const XMM13: Register = Register::SIMD(13);
+#[allow(dead_code)]
+const XMM14: Register = Register::SIMD(14);
+#[allow(dead_code)]
+const XMM15: Register = Register::SIMD(15);
+#[allow(dead_code)]
+
+// AArch64
+#[allow(dead_code)]
+const X0: Register = Register::GPR(0);
+#[allow(dead_code)]
+const X1: Register = Register::GPR(1);
+#[allow(dead_code)]
+const X2: Register = Register::GPR(2);
+#[allow(dead_code)]
+const X3: Register = Register::GPR(3);
+#[allow(dead_code)]
+const X4: Register = Register::GPR(4);
+#[allow(dead_code)]
+const X5: Register = Register::GPR(5);
+#[allow(dead_code)]
+const X6: Register = Register::GPR(6);
+#[allow(dead_code)]
+const X7: Register = Register::GPR(7);
+#[allow(dead_code)]
+const X8: Register = Register::GPR(8);
+#[allow(dead_code)]
+const X9: Register = Register::GPR(9);
+#[allow(dead_code)]
+const X10: Register = Register::GPR(10);
+#[allow(dead_code)]
+const X11: Register = Register::GPR(11);
+#[allow(dead_code)]
+const X12: Register = Register::GPR(12);
+#[allow(dead_code)]
+const X13: Register = Register::GPR(13);
+#[allow(dead_code)]
+const X14: Register = Register::GPR(14);
+#[allow(dead_code)]
+const X15: Register = Register::GPR(15);
+#[allow(dead_code)]
+const X16: Register = Register::GPR(16);
+#[allow(dead_code)]
+const X17: Register = Register::GPR(17);
+#[allow(dead_code)]
+const X18: Register = Register::GPR(18);
+#[allow(dead_code)]
+const X19: Register = Register::GPR(19);
+#[allow(dead_code)]
+const X20: Register = Register::GPR(20);
+#[allow(dead_code)]
+const X21: Register = Register::GPR(21);
+#[allow(dead_code)]
+const X22: Register = Register::GPR(22);
+#[allow(dead_code)]
+const X23: Register = Register::GPR(23);
+#[allow(dead_code)]
+const X24: Register = Register::GPR(24);
+#[allow(dead_code)]
+const X25: Register = Register::GPR(25);
+#[allow(dead_code)]
+const X26: Register = Register::GPR(26);
+#[allow(dead_code)]
+const X27: Register = Register::GPR(27);
+#[allow(dead_code)]
+const X28: Register = Register::GPR(28);
+#[allow(dead_code)]
+const X29: Register = Register::GPR(29);
+#[allow(dead_code)]
+const X30: Register = Register::GPR(30);
+#[allow(dead_code)]
+const SP: Register = Register::GPR(31);
 
 fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     {
-        // vec![19, 20, 21] // Removed a bunch to test register spilling
-        vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-            .into_iter()
-            .map(|r| Register::GPR(r))
-            .collect()
+        vec![X19, X20, X21, X22, X23, X24, X25, X26, X27, X28]
     }
 
     // For x64, it matters whether we're on Linux or Windows
@@ -34,7 +216,7 @@ fn get_registers() -> Vec<Register> {
         // but we can't use rbp and rsp - so we just have to use rbx, r12, r13, r14, r15
         #[cfg(target_os = "linux")]
         {
-            vec![3, 12, 13, 14, 15].into_iter().map(|r| Register::GPR(r)).collect()
+            vec![RBX, R12, R13, R14, R15]
         }
         #[cfg(target_os = "windows")]
         {
@@ -46,10 +228,7 @@ fn get_registers() -> Vec<Register> {
 pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     {
-        vec![9, 10, 11, 12, 13, 14, 15]
-            .into_iter()
-            .map(|r| Register::GPR(r))
-            .collect()
+        vec![X9, X10, X11, X12, X13, X14, X15]
     }
 
     // For x64, it matters whether we're on Linux or Windows
@@ -58,10 +237,7 @@ pub fn get_scratch_registers() -> Vec<Register> {
         // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
         #[cfg(target_os = "linux")]
         {
-            vec![0, 7, 6, 2, 1, 8, 9, 10, 11]
-                .into_iter()
-                .map(|r| Register::GPR(r))
-                .collect()
+            vec![RAX, RDI, RSI, RDX, RCX, R8, R9, R10, R11]
         }
         #[cfg(target_os = "windows")]
         {
@@ -73,21 +249,20 @@ pub fn get_scratch_registers() -> Vec<Register> {
 pub fn get_function_argument_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     {
-        vec![0, 1, 2, 3, 4, 5, 6, 7]
-            .into_iter()
-            .map(|r| Register::GPR(r))
-            .collect()
+        vec![X0, X1, X2, X3, X4, X5, X6, X7]
     }
     // For x64, it matters whether we're on Linux or Windows
     #[cfg(target_arch = "x86_64")]
     {
         #[cfg(target_os = "linux")]
         {
-            vec![7, 6, 2, 1, 8, 9].into_iter().map(|r| Register::GPR(r)).collect()
+            vec![
+                RDI, RSI, RDX, RCX, R8, R9, XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7,
+            ]
         }
         #[cfg(target_os = "windows")]
         {
-            vec![1, 2, 8, 9].into_iter().map(|r| Register::GPR(r)).collect()
+            vec![RCX, RDX, R8, R9] // TODO SIMD registers
         }
     }
 }
@@ -128,6 +303,19 @@ impl Register {
                     }
                 }
             }
+            Register::SIMD(_r) => {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    todo!("SIMD registers on aarch64")
+                }
+                #[cfg(target_arch = "x86_64")]
+                {
+                    #[cfg(target_os = "linux")]
+                    {
+                        true // All SIMD registers are volatile in SYSTEM-V
+                    }
+                }
+            }
         }
     }
 
@@ -137,12 +325,17 @@ impl Register {
                 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
                 return 8;
             }
+            Register::SIMD(_) => {
+                #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+                return 16; // 128-bit SIMD registers (AVX's YMM or ZMM registers are unsupported)
+            }
         }
     }
 
     pub fn index(&self) -> usize {
         match self {
             Register::GPR(r) => *r,
+            Register::SIMD(r) => *r,
         }
     }
 }
@@ -644,6 +837,7 @@ impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Register::GPR(r) => write!(f, "GPR({})", r),
+            Register::SIMD(r) => write!(f, "SIMD({})", r),
         }
     }
 }

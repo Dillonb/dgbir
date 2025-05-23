@@ -27,6 +27,7 @@ pub mod register_type {
         fn is_same(r: Register) -> bool {
             match r {
                 Register::GPR(_) => true,
+                _ => false,
             }
         }
 

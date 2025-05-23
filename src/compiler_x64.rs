@@ -68,6 +68,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                         ; mov [rsp + ofs], Rq(*r as u8)
                     )
                 }
+                Register::SIMD(_) => todo!("Saving a preserved SIMD register"),
             }
         }
     }
@@ -96,6 +97,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                     ; mov Rq(r_to as u8), Rq(r_from as u8)
                 );
             }
+            _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
 
@@ -156,6 +158,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                         ; mov Rq(r as u8), [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
                     )
                 }
+                Register::SIMD(_) => todo!("Returning a SIMD register"),
             }
         }
 

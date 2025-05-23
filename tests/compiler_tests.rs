@@ -1,6 +1,11 @@
 use std::mem::{self, offset_of};
 
-use dgbir::{compiler::compile, disassembler::disassemble, ir::{const_u32, CompareType, Constant, DataType, IRContext, IRFunction}, ir_interpreter::interpret_func};
+use dgbir::{
+    compiler::compile,
+    disassembler::disassemble,
+    ir::{const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
+    ir_interpreter::interpret_func,
+};
 
 #[test]
 fn compiler_identityfunc() {
@@ -36,6 +41,25 @@ fn compiler_addone() {
     assert_eq!(f(0), 1);
     assert_eq!(f(1), 2);
     assert_eq!(f(2), 3);
+    assert_eq!(f(10000), 10001);
+}
+
+#[test]
+fn compiler_identityfunc_f32() {
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::F32]);
+    func.ret(&block, Some(block.input(0)));
+    println!("{}", func);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    assert_eq!(f(0.0), 0.0);
+    assert_eq!(f(1.0), 1.0);
+    assert_eq!(f(2.0), 2.0);
+    assert_eq!(f(10000.0), 10000.0);
 }
 
 #[test]
@@ -72,7 +96,13 @@ fn compiler_same_results_as_interpreter() {
         let r10 = func.add(&block, DataType::U32, r9.val(), r2.val());
         let r11 = func.add(&block, DataType::U32, r10.val(), r1.val());
         let nearly_final_result = func.add(&block, DataType::U32, r11.val(), add4_result.val());
-        func.write_ptr(&block, DataType::U32, result_ptr, offset_of!(ResultStruct, pre_loop), nearly_final_result.val());
+        func.write_ptr(
+            &block,
+            DataType::U32,
+            result_ptr,
+            offset_of!(ResultStruct, pre_loop),
+            nearly_final_result.val(),
+        );
 
         // Use a loop to add ten to the final result
         let loop_block = func.new_block(vec![DataType::U32, DataType::U32]);
