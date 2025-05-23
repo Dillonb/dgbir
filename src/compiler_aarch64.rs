@@ -177,7 +177,14 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         self.block_labels[block_index]
     }
 
-    fn branch(&self, ops: &mut Ops, lp: &mut LiteralPool, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {
+    fn branch(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        cond: &ConstOrReg,
+        if_true: &BlockReference,
+        if_false: &BlockReference,
+    ) {
         match cond {
             ConstOrReg::GPR(c) => {
                 dynasm!(ops
@@ -313,11 +320,27 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 
-    fn load_ptr(&self, _ops: &mut Ops, _lp: &mut LiteralPool,_r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
+    fn load_ptr(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _r_out: Register,
+        _tp: DataType,
+        _ptr: ConstOrReg,
+        _offset: u64,
+    ) {
         todo!("load_ptr")
     }
 
-    fn write_ptr(&self, ops: &mut Ops, lp: &mut LiteralPool, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
+    fn write_ptr(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        ptr: ConstOrReg,
+        offset: u64,
+        value: ConstOrReg,
+        data_type: DataType,
+    ) {
         match (ptr, value, data_type) {
             (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();

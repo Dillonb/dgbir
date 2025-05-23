@@ -388,7 +388,14 @@ pub trait Compiler<'a, Ops> {
     fn get_block_label(&self, block_index: usize) -> dynasmrt::DynamicLabel;
 
     /// Conditionally emit a jump to one of two blocks + move all inputs into place
-    fn branch(&self, ops: &mut Ops, lp: &mut LiteralPool, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference);
+    fn branch(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        cond: &ConstOrReg,
+        if_true: &BlockReference,
+        if_false: &BlockReference,
+    );
     /// Emit a return with an optional value
     fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>);
 
@@ -397,9 +404,25 @@ pub trait Compiler<'a, Ops> {
     /// Compile an IR compare instruction
     fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
     /// Compile an IR load pointer instruction
-    fn load_ptr(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: Register, tp: DataType, ptr: ConstOrReg, offset: u64);
+    fn load_ptr(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        tp: DataType,
+        ptr: ConstOrReg,
+        offset: u64,
+    );
     /// Compile an IR write pointer instruction
-    fn write_ptr(&self, ops: &mut Ops, lp: &mut LiteralPool, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType);
+    fn write_ptr(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        ptr: ConstOrReg,
+        offset: u64,
+        value: ConstOrReg,
+        data_type: DataType,
+    );
     /// Compile an IR spill to stack instruction
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
