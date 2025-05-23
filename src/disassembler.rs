@@ -28,7 +28,15 @@ pub fn disassemble(code: &[u8], addr: u64) -> String {
     // for insn in insns.iter() {
     insns
         .iter()
-        .map(|insn| format!("0x{:x}:\t{}\t{}", insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap()))
+        .map(|insn| {
+            format!(
+                "0x{:x} {:?}:\t{}\t{}",
+                insn.address(),
+                insn.bytes(),
+                insn.mnemonic().unwrap(),
+                insn.op_str().unwrap()
+            )
+        })
         .collect::<Vec<String>>()
         .join("\n")
 }

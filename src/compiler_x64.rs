@@ -1,7 +1,7 @@
 use crate::{
     abi::{get_return_value_registers, get_scratch_registers},
-    compiler::{Compiler, ConstOrReg},
-    ir::{BlockReference, CompareType, DataType, IRFunction},
+    compiler::{Compiler, ConstOrReg, LiteralPool},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
@@ -18,6 +18,10 @@ pub struct X64Compiler<'a> {
 }
 
 impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
+    fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
+        ops.new_dynamic_label()
+    }
+
     fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self {
         let allocations = alloc_for(func);
 
@@ -107,6 +111,27 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
     }
 
+    fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool) {
+        for (literal, label) in lp.literals {
+            ops.align(literal.size(), 0);
+            match literal {
+                Constant::U32(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .u32 c
+                    );
+                }
+                Constant::F32(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .f32 *c
+                    );
+                }
+                _ => todo!("Unsupported literal type: {:?}", literal),
+            }
+        }
+    }
+
     fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize) {
         // This "resolves" the block label so it can be jumped to from elsewhere in the program.
         // This should be done once per block.
@@ -183,7 +208,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         );
     }
 
-    fn add(&self, ops: &mut Ops, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         match (tp, r_out, a, b) {
             (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
                 dynasm!(ops
@@ -203,11 +228,10 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 )
             }
             (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
-                let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                let literal = Self::add_literal(ops, lp, Constant::F32(c));
                 dynasm!(ops
-                    ; mov Rd(r_temp.r() as u8), c.to_bits() as i32
-                    ; movd Rx(r_out as u8), Rd(r_temp.r() as u8)
-                    ; addss Rx(r_out as u8), Rx(r as u8)
+                    ; movss Rx(r_out as u8), Rx(r as u8)
+                    ; addss Rx(r_out as u8), DWORD [=>literal]
                 )
             }
             (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {

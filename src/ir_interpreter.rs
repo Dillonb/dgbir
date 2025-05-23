@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use ordered_float::OrderedFloat;
+
 use crate::ir::{
     BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction, InstructionType, OutputSlot,
 };
@@ -22,8 +24,8 @@ fn constant_to_mini_constant(val: &Constant) -> MiniConstant {
         Constant::S32(v) => MiniConstant::S64(*v as i64),
         Constant::U64(v) => MiniConstant::U64(*v),
         Constant::S64(v) => MiniConstant::S64(*v),
-        Constant::F32(v) => MiniConstant::F32(*v),
-        Constant::F64(v) => MiniConstant::F64(*v),
+        Constant::F32(v) => MiniConstant::F32(**v),
+        Constant::F64(v) => MiniConstant::F64(**v),
         _ => panic!("Unsupported constant type for addition: {:?}", val),
     }
 }
@@ -45,9 +47,9 @@ fn mini_constant_to_constant(val: &MiniConstant, tp: DataType) -> Constant {
         (MiniConstant::S64(_), b) => unimplemented!("Cannot convert S64 to {:?}", b),
 
         // Floats just have to be the right type
-        (MiniConstant::F32(v), DataType::F32) => Constant::F32(*v),
+        (MiniConstant::F32(v), DataType::F32) => Constant::F32(OrderedFloat(*v)),
         (MiniConstant::F32(_), b) => unimplemented!("Cannot convert F32 to {:?}", b),
-        (MiniConstant::F64(v), DataType::F64) => Constant::F64(*v),
+        (MiniConstant::F64(v), DataType::F64) => Constant::F64(OrderedFloat(*v)),
         (MiniConstant::F64(_), b) => unimplemented!("Cannot convert F64 to {:?}", b),
     }
 }

@@ -101,7 +101,12 @@ pub fn expect_gpr(register: Register) -> usize {
     }
 }
 
-fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: &TC, instruction: &IndexedInstruction) {
+fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    compiler: &TC,
+    instruction: &IndexedInstruction,
+) {
     let instruction_index = instruction.index;
     let block_index = instruction.block_index;
     match &instruction.instruction {
@@ -125,7 +130,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
                     let b = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     let r_out = output_regs[0].unwrap();
-                    compiler.add(ops, tp, r_out, a, b);
+                    compiler.add(ops, lp, tp, r_out, a, b);
                 }
                 InstructionType::Compare => {
                     assert_eq!(inputs.len(), 3);
@@ -184,7 +189,22 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(ops: &mut Ops, compiler: 
     }
 }
 
+pub struct LiteralPool {
+    pub literals: HashMap<Constant, dynasmrt::DynamicLabel>,
+}
+
+impl LiteralPool {
+    pub fn new() -> Self {
+        Self {
+            literals: HashMap::new(),
+        }
+    }
+}
+
 pub trait Compiler<'a, Ops> {
+    /// Get a new dynamic label.
+    fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel;
+
     // Utility functions, shouldn't be overridden
     fn to_imm_or_reg(&self, s: &InputSlot) -> ConstOrReg {
         match *s {
@@ -203,7 +223,7 @@ pub trait Compiler<'a, Ops> {
                 Constant::S32(_) => todo!(),
                 Constant::U64(c) => ConstOrReg::U64(c),
                 Constant::S64(_) => todo!(),
-                Constant::F32(c) => ConstOrReg::F32(OrderedFloat(c)),
+                Constant::F32(c) => ConstOrReg::F32(c),
                 Constant::F64(_) => todo!(),
                 Constant::Ptr(c) => ConstOrReg::U64(c as u64),
                 Constant::Bool(_) => todo!(),
@@ -337,6 +357,10 @@ pub trait Compiler<'a, Ops> {
             });
     }
 
+    fn add_literal(ops: &mut Ops, lp: &mut LiteralPool, literal: Constant) -> dynasmrt::DynamicLabel {
+        *lp.literals.entry(literal).or_insert(Self::new_dynamic_label(ops))
+    }
+
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.
     fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self;
@@ -344,10 +368,12 @@ pub trait Compiler<'a, Ops> {
     fn prologue(&self, ops: &mut Ops);
     /// Emit the function epilogue.
     fn epilogue(&self, ops: &mut Ops);
-    // Emit a jump to a dynamic label.
+    /// Emit a jump to a dynamic label.
     fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel);
     /// Emit a move from a register or value to a register.
     fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register);
+    /// Emits the literal pool and resolve all the labels. Called at the end of the function.
+    fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool);
 
     /// Called whenever a new block is beginning to be compiled
     fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize);
@@ -367,7 +393,7 @@ pub trait Compiler<'a, Ops> {
     fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>);
 
     /// Compile an IR add instruction
-    fn add(&self, ops: &mut Ops, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
+    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR compare instruction
     fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
     /// Compile an IR load pointer instruction
@@ -403,6 +429,8 @@ pub fn compile(func: &mut IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, func);
 
+    let mut lp = LiteralPool::new();
+
     compiler.prologue(&mut ops);
     compiler.handle_function_arguments(&mut ops);
 
@@ -412,9 +440,10 @@ pub fn compile(func: &mut IRFunction) -> CompiledFunction {
             .instructions
             .iter()
             .map(|i| &compiler.get_func().instructions[*i])
-            .for_each(|instruction| compile_instruction::<_, _>(&mut ops, &compiler, instruction))
+            .for_each(|instruction| compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, instruction))
     }
     compiler.epilogue(&mut ops);
+    compiler.emit_literal_pool(&mut ops, lp);
 
     return CompiledFunction {
         entrypoint: compiler.get_entrypoint(),

@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 
+use ordered_float::OrderedFloat;
+
 mod ir_display;
 mod ir_emitters;
 
@@ -42,7 +44,7 @@ impl DataType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Constant {
     U8(u8),
     S8(i8),
@@ -52,8 +54,8 @@ pub enum Constant {
     S32(i32),
     U64(u64),
     S64(i64),
-    F32(f32),
-    F64(f64),
+    F32(OrderedFloat<f32>),
+    F64(OrderedFloat<f64>),
     Ptr(usize),
     Bool(bool),
     DataType(DataType),
@@ -78,9 +80,13 @@ impl Constant {
             _ => panic!("Invalid constant type"),
         }
     }
+
+    pub fn size(&self) -> usize {
+        self.get_type().size()
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompareType {
     Equal,
     NotEqual,
@@ -175,7 +181,7 @@ pub fn const_u32(value: u32) -> InputSlot {
 }
 
 pub fn const_f32(value: f32) -> InputSlot {
-    InputSlot::Constant(Constant::F32(value))
+    InputSlot::Constant(Constant::F32(OrderedFloat(value)))
 }
 
 pub fn const_ptr(value: usize) -> InputSlot {
