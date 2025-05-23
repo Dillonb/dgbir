@@ -88,7 +88,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         );
     }
 
-    fn move_to_reg(&self, ops: &mut Ops, from: ConstOrReg, to: Register) {
+    fn move_to_reg(&self, ops: &mut Ops, _lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
         match (from, to) {
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
                 dynasm!(ops
@@ -157,7 +157,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         self.block_labels[block_index]
     }
 
-    fn branch(&self, ops: &mut Ops, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {
+    fn branch(&self, ops: &mut Ops, lp: &mut LiteralPool, cond: &ConstOrReg, if_true: &BlockReference, if_false: &BlockReference) {
         match cond {
             ConstOrReg::GPR(c) => {
                 dynasm!(ops
@@ -167,20 +167,20 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             }
             _ => todo!("Unsupported branch condition: {:?}", cond),
         }
-        self.call_block(ops, if_true);
+        self.call_block(ops, lp, if_true);
         dynasm!(ops
             ; if_false:
         );
-        self.call_block(ops, if_false);
+        self.call_block(ops, lp, if_false);
     }
 
-    fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>) {
+    fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>) {
         if let Some(v) = value {
             let retval_reg = *get_return_value_registers()
                 .iter()
                 .find(|r| v.is_same_type_as(r))
                 .unwrap();
-            self.move_to_reg(ops, *v, retval_reg);
+            self.move_to_reg(ops, lp, *v, retval_reg);
         }
 
         // Pop callee-saved regs from stack
@@ -287,11 +287,11 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
     }
 
-    fn load_ptr(&self, _ops: &mut Ops, _r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
+    fn load_ptr(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _r_out: Register, _tp: DataType, _ptr: ConstOrReg, _offset: u64) {
         todo!("load_ptr")
     }
 
-    fn write_ptr(&self, ops: &mut Ops, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
+    fn write_ptr(&self, ops: &mut Ops, _lp: &mut LiteralPool, ptr: ConstOrReg, offset: u64, value: ConstOrReg, data_type: DataType) {
         match (ptr, value, data_type) {
             (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
