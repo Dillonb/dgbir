@@ -202,11 +202,76 @@ const X30: Register = Register::GPR(30);
 #[allow(dead_code)]
 const SP: Register = Register::GPR(31);
 
+#[allow(dead_code)]
+const V0: Register  = Register::SIMD(0);
+#[allow(dead_code)]
+const V1: Register  = Register::SIMD(1);
+#[allow(dead_code)]
+const V2: Register  = Register::SIMD(2);
+#[allow(dead_code)]
+const V3: Register  = Register::SIMD(3);
+#[allow(dead_code)]
+const V4: Register  = Register::SIMD(4);
+#[allow(dead_code)]
+const V5: Register  = Register::SIMD(5);
+#[allow(dead_code)]
+const V6: Register  = Register::SIMD(6);
+#[allow(dead_code)]
+const V7: Register  = Register::SIMD(7);
+#[allow(dead_code)]
+const V8: Register  = Register::SIMD(8);
+#[allow(dead_code)]
+const V9: Register  = Register::SIMD(9);
+#[allow(dead_code)]
+const V10: Register = Register::SIMD(10);
+#[allow(dead_code)]
+const V11: Register = Register::SIMD(11);
+#[allow(dead_code)]
+const V12: Register = Register::SIMD(12);
+#[allow(dead_code)]
+const V13: Register = Register::SIMD(13);
+#[allow(dead_code)]
+const V14: Register = Register::SIMD(14);
+#[allow(dead_code)]
+const V15: Register = Register::SIMD(15);
+#[allow(dead_code)]
+const V16: Register = Register::SIMD(16);
+#[allow(dead_code)]
+const V17: Register = Register::SIMD(17);
+#[allow(dead_code)]
+const V18: Register = Register::SIMD(18);
+#[allow(dead_code)]
+const V19: Register = Register::SIMD(19);
+#[allow(dead_code)]
+const V20: Register = Register::SIMD(20);
+#[allow(dead_code)]
+const V21: Register = Register::SIMD(21);
+#[allow(dead_code)]
+const V22: Register = Register::SIMD(22);
+#[allow(dead_code)]
+const V23: Register = Register::SIMD(23);
+#[allow(dead_code)]
+const V24: Register = Register::SIMD(24);
+#[allow(dead_code)]
+const V25: Register = Register::SIMD(25);
+#[allow(dead_code)]
+const V26: Register = Register::SIMD(26);
+#[allow(dead_code)]
+const V27: Register = Register::SIMD(27);
+#[allow(dead_code)]
+const V28: Register = Register::SIMD(28);
+#[allow(dead_code)]
+const V29: Register = Register::SIMD(29);
+#[allow(dead_code)]
+const V30: Register = Register::SIMD(30);
+#[allow(dead_code)]
+const V31: Register = Register::SIMD(31);
+
 fn get_registers() -> Vec<Register> {
     // Callee-saved registers
     #[cfg(target_arch = "aarch64")]
     {
-        vec![X19, X20, X21, X22, X23, X24, X25, X26, X27, X28]
+        vec![X19, X20, X21, X22, X23, X24, X25, X26, X27, X28, V8, V9, V10, V11, V12, V13, V14, V15]
     }
 
     // For x64, it matters whether we're on Linux or Windows
@@ -233,7 +298,7 @@ fn get_registers() -> Vec<Register> {
 pub fn get_scratch_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     {
-        vec![X9, X10, X11, X12, X13, X14, X15]
+        vec![X9, X10, X11, X12, X13, X14, X15, V16, V17, V18, V19, V20, V21, V22, V23, V24, V25, V26, V27, V28, V29, V30, V31]
     }
 
     // For x64, it matters whether we're on Linux or Windows
@@ -253,7 +318,7 @@ pub fn get_scratch_registers() -> Vec<Register> {
 pub fn get_function_argument_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     {
-        vec![X0, X1, X2, X3, X4, X5, X6, X7]
+        vec![X0, X1, X2, X3, X4, X5, X6, X7, V0, V1, V2, V3, V4, V5, V6, V7]
     }
     // For x64, it matters whether we're on Linux or Windows
     #[cfg(target_arch = "x86_64")]
@@ -274,7 +339,8 @@ pub fn get_function_argument_registers() -> Vec<Register> {
 pub fn get_return_value_registers() -> Vec<Register> {
     #[cfg(target_arch = "aarch64")]
     {
-        return get_function_argument_registers(); // x0-x7, same as argument registers
+        // Technically, it's x0-x7,v0-v7, but we only support returning one value
+        return vec![X0, V0];
     }
     #[cfg(target_arch = "x86_64")]
     {
@@ -284,33 +350,33 @@ pub fn get_return_value_registers() -> Vec<Register> {
 
 impl Register {
     pub fn is_volatile(&self) -> bool {
-        match self {
+        match *self {
             Register::GPR(r) => {
                 #[cfg(target_arch = "aarch64")]
                 {
-                    *r < 19 || *r > 28
+                    r < 19 || r > 28
                 }
                 #[cfg(target_arch = "x86_64")]
                 {
                     #[cfg(target_os = "linux")]
                     {
                         // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
-                        *r == 0
-                            || *r == 7
-                            || *r == 6
-                            || *r == 2
-                            || *r == 1
-                            || *r == 8
-                            || *r == 9
-                            || *r == 10
-                            || *r == 11
+                        r == 0
+                            || r == 7
+                            || r == 6
+                            || r == 2
+                            || r == 1
+                            || r == 8
+                            || r == 9
+                            || r == 10
+                            || r == 11
                     }
                 }
             }
-            Register::SIMD(_r) => {
+            Register::SIMD(r) => {
                 #[cfg(target_arch = "aarch64")]
                 {
-                    todo!("SIMD registers on aarch64")
+                    r < 8 || r > 15
                 }
                 #[cfg(target_arch = "x86_64")]
                 {

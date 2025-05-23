@@ -179,6 +179,8 @@ fn evaluate_write_ptr(inputs: &Vec<Constant>) {
             DataType::U64 => *raw_ptr.cast() = value,
             DataType::S64 => *raw_ptr.cast() = value as i64,
 
+            DataType::U128 => *raw_ptr.cast() = value as u128,
+
             DataType::Bool => *raw_ptr.cast() = value != 0,
 
             // For floats, the constant_to_u64() above will extract the bits, we just need

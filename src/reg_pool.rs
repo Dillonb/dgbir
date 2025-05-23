@@ -18,6 +18,7 @@ pub mod register_type {
     // https://github.com/rust-lang/rfcs/pull/1450
     // https://github.com/rust-lang/rfcs/pull/2593
     pub struct GPR(u32);
+    pub struct SIMD(u32);
 
     impl RegPoolRegister for GPR {
         fn idx(&self) -> u32 {
@@ -33,6 +34,23 @@ pub mod register_type {
 
         fn new(idx: u32) -> Self {
             GPR(idx)
+        }
+    }
+
+    impl RegPoolRegister for SIMD {
+        fn idx(&self) -> u32 {
+            self.0
+        }
+
+        fn is_same(r: Register) -> bool {
+            match r {
+                Register::SIMD(_) => true,
+                _ => false,
+            }
+        }
+
+        fn new(idx: u32) -> Self {
+            SIMD(idx)
         }
     }
 }

@@ -164,7 +164,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                         ; mov Rq(r as u8), [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
                     )
                 }
-                Register::SIMD(_) => todo!("Returning a SIMD register"),
+                Register::SIMD(_) => todo!("Restoring saved SIMD register from stack"),
             }
         }
 

@@ -100,6 +100,12 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                         ; str X(*r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
                     )
                 }
+                Register::SIMD(r) => {
+                    assert_eq!(reg.size(), 16);
+                    dynasm!(ops
+                        ; str Q(*r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
+                    );
+                }
             }
         }
     }
@@ -125,6 +131,12 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; mov X(r_to as u32), X(r_from as u32)
                 );
             }
+            (ConstOrReg::SIMD(r_from), Register::SIMD(r_to)) => {
+                dynasm!(ops
+                    ; mov V(r_to as u32).B16, V(r_from as u32).B16
+                )
+            }
+            _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
 
@@ -170,7 +182,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn ret(&self, ops: &mut Ops, value: &Option<ConstOrReg>) {
         if let Some(v) = value {
-            self.move_to_reg(ops, *v, get_return_value_registers()[0]);
+            self.move_to_reg(ops, *v, *get_return_value_registers().iter().find(|r| v.is_same_type_as(*r)).unwrap());
         }
 
         // Pop callee-saved regs from stack
@@ -182,6 +194,12 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
                         ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
+                    )
+                }
+                Register::SIMD(r) => {
+                    assert_eq!(reg.size(), 16);
+                    dynasm!(ops
+                        ; ldr Q(r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     )
                 }
             }
@@ -219,6 +237,17 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
                     ; add W(r_out as u32), W(r1), W(r2)
+                )
+            }
+            (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                dynasm!(ops
+                    ; fadd S(r_out as u32), S(r1), S(r2)
+                )
+            }
+            (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
+                dynasm!(ops
+                    ; fmov S(r_out as u32), *c
+                    ; fadd S(r_out as u32), S(r_out as u32), S(r)
                 )
             }
             _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
