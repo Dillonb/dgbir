@@ -7,6 +7,26 @@ use dgbir::{
     ir_interpreter::interpret_func,
 };
 
+fn validate(results: &[u32], expected: &[u32]) {
+    for (i, &v) in expected.iter().enumerate() {
+        assert_eq!(results[i], v);
+    }
+}
+
+
+#[test]
+#[should_panic(expected = "Unclosed block")]
+fn unclosed_block() {
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::U32]);
+    func.add(&block, DataType::U32, block.input(0), const_u32(1));
+    // No return statement, block is unclosed
+    println!("{}", func);
+    println!("Compiling...");
+    compile(&mut func);
+}
+
 #[test]
 fn compiler_identityfunc() {
     let context = IRContext::new();
@@ -98,6 +118,40 @@ fn compiler_add_f32_to_self() {
     assert_eq!(f(1.0), 2.0);
     assert_eq!(f(2.0), 4.0);
     assert_eq!(f(10000.0), 20000.0);
+}
+
+#[test]
+fn constant_shifts_32() {
+    let results : Vec<u32> = vec![0; 64];
+
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::Ptr, DataType::U32]);
+    let result_ptr = block.input(0);
+    let input = block.input(1);
+    let mut index = 0;
+    for tp in vec![DataType::U32, DataType::S32] {
+        for const_shift_amount in vec![0, 1, 6, 32] {
+            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
+            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+
+            func.write_ptr(&block, tp, result_ptr, index * size_of::<u32>(), left_result.val());
+            index += 1;
+            func.write_ptr(&block, tp, result_ptr, index * size_of::<u32>(), right_result.val());
+            index += 1;
+        }
+    }
+
+    func.ret(&block, None);
+
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(usize, u32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    f(results.as_ptr() as usize, 2);
+
+    validate(&results, &[2, 2, 4, 1, 128, 0, 2, 2]);
+
 }
 
 #[test]

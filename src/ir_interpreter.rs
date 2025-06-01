@@ -233,6 +233,8 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::Compare => vec![evaluate_compare(inputs, outputs)],
         InstructionType::SpillToStack => todo!("SpillToStack in IR interpreter"),
         InstructionType::LoadFromStack => todo!("LoadFromStack in IR interpreter"),
+        InstructionType::LeftShift => todo!(),
+        InstructionType::RightShift => todo!(),
     }
 }
 

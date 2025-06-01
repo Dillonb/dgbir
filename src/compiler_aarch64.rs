@@ -360,7 +360,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 );
             }
             (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
                 );
@@ -398,6 +398,33 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 stack_offset,
                 tp
             ),
+        }
+    }
+
+    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
+        match (tp, n, amount) {
+            (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n), ConstOrReg::U32(c_amount)) => {
+                dynasm!(ops
+                    ; lsl W(r_out as u32), W(r_n as u32), c_amount & 0b11111
+                );
+            }
+            _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
+        }
+    }
+
+    fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
+        match (tp, n, amount) {
+            (DataType::U32, ConstOrReg::GPR(r_n), ConstOrReg::U32(c_amount)) => {
+                dynasm!(ops
+                    ; lsr W(r_out as u32), W(r_n as u32), c_amount & 0b11111
+                );
+            }
+            (DataType::S32, ConstOrReg::GPR(r_n), ConstOrReg::U32(c_amount)) => {
+                dynasm!(ops
+                    ; asr W(r_out as u32), W(r_n as u32), c_amount & 0b11111
+                );
+            }
+            _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
         }
     }
 }

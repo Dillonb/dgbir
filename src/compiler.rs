@@ -174,6 +174,24 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let tp = outputs[0].tp;
                     compiler.load_from_stack(ops, r_out, stack_offset, tp);
                 }
+                InstructionType::LeftShift => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let r_out = expect_gpr(output_regs[0].unwrap());
+                    let n = compiler.to_imm_or_reg(&inputs[0]);
+                    let amount = compiler.to_imm_or_reg(&inputs[1]);
+                    let tp = outputs[0].tp;
+                    compiler.left_shift(ops, r_out, n, amount, tp);
+                },
+                InstructionType::RightShift => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let r_out = expect_gpr(output_regs[0].unwrap());
+                    let n = compiler.to_imm_or_reg(&inputs[0]);
+                    let amount = compiler.to_imm_or_reg(&inputs[1]);
+                    let tp = outputs[0].tp;
+                    compiler.right_shift(ops, r_out, n, amount, tp);
+                }
             }
         }
         Instruction::Branch {
@@ -427,6 +445,10 @@ pub trait Compiler<'a, Ops> {
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR load from stack instruction
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
+    /// Compile an IR left shift instruction
+    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
+    /// Compile an IR right shift instruction
+    fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
 }
 
 pub struct CompiledFunction {
@@ -442,6 +464,7 @@ impl CompiledFunction {
 
 /// Compile an IR function into machine code
 pub fn compile(func: &mut IRFunction) -> CompiledFunction {
+    func.validate();
     #[cfg(target_arch = "x86_64")]
     let mut ops = dynasmrt::x64::Assembler::new().unwrap();
     #[cfg(target_arch = "aarch64")]

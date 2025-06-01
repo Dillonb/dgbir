@@ -11,6 +11,26 @@ impl IRFunction {
         self.append(block_handle, InstructionType::Add, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }
 
+    pub fn left_shift(
+        &mut self,
+        block_handle: &IRBlockHandle,
+        result_tp: DataType,
+        arg1: InputSlot,
+        arg2: InputSlot,
+    ) -> InstructionOutput {
+        self.append(block_handle, InstructionType::LeftShift, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
+    }
+
+    pub fn right_shift(
+        &mut self,
+        block_handle: &IRBlockHandle,
+        result_tp: DataType,
+        arg1: InputSlot,
+        arg2: InputSlot,
+    ) -> InstructionOutput {
+        self.append(block_handle, InstructionType::RightShift, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
+    }
+
     pub fn write_ptr(
         &mut self,
         block_handle: &IRBlockHandle,

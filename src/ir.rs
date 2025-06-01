@@ -103,6 +103,8 @@ pub enum CompareType {
 #[derive(Debug)]
 pub enum InstructionType {
     Add,
+    LeftShift,
+    RightShift,
     Compare,
     LoadPtr,
     WritePtr,
