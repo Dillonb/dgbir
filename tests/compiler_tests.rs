@@ -127,8 +127,188 @@ fn compiler_add_f32_to_self() {
 }
 
 #[test]
+fn constant_shifts_8() {
+    let results: Vec<u64> = vec![0; 16];
+
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::Ptr, DataType::U8]);
+    let result_ptr = block.input(0);
+    let input = block.input(1);
+    let mut index = 0;
+    for tp in vec![DataType::U8, DataType::S8] {
+        for const_shift_amount in vec![0, 1, 6, 8] {
+            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
+            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+
+            // Write the entire 64 bit register even though we only did a 32 bit shift to ensure
+            // the behavior is consistent
+            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
+            index += 1;
+            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
+            index += 1;
+        }
+    }
+
+    func.ret(&block, None);
+
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(usize, u8) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    // println!("{}", disassemble(&compiled.code, f as u64));
+
+    f(results.as_ptr() as usize, 2);
+    println!("Shift 2: Results:");
+    for (i, r) in results.iter().enumerate() {
+        println!("{}: 0x{:08X}, ", i, r);
+    }
+    validate(
+        &results,
+        &[
+            // U8
+            2,   // << 0
+            2,   // >> 0
+            4,   // << 1
+            1,   // >> 1
+            128, // << 6
+            0,   // >> 6
+            2,   // << 8
+            2,   // >> 8
+            // S8
+            2,   // << 0
+            2,   // >> 0
+            4,   // << 1
+            1,   // >> 1
+            128, // << 6
+            0,   // >> 6
+            2,   // << 8
+            2,   // >> 8
+        ],
+    );
+
+    f(results.as_ptr() as usize, 0xFF);
+    println!("Shift 0xFF: Results:");
+
+    for (i, r) in results.iter().enumerate() {
+        println!("{}: 0x{:02X}, ", i, r);
+    }
+    validate(
+        &results,
+        &[
+            // U8
+            0xFF, // << 0
+            0xFF, // >> 0
+            0xFE, // << 1
+            0x7F, // >> 1
+            0xC0, // << 6
+            0x03, // >> 6
+            0xFF, // << 8
+            0xFF, // >> 8
+            // S8
+            0xFF, // << 0
+            0xFF, // >> 0
+            0xFE, // << 1
+            0xFF, // >> 1
+            0xC0, // << 6
+            0xFF, // >> 6
+            0xFF, // << 8
+            0xFF, // >> 8
+        ],
+    );
+}
+
+#[test]
+fn constant_shifts_16() {
+    let results: Vec<u64> = vec![0; 16];
+
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::Ptr, DataType::U16]);
+    let result_ptr = block.input(0);
+    let input = block.input(1);
+    let mut index = 0;
+    for tp in vec![DataType::U16, DataType::S16] {
+        for const_shift_amount in vec![0, 1, 6, 32] {
+            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
+            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+
+            // Write the entire 64 bit register even though we only did a 32 bit shift to ensure
+            // the behavior is consistent
+            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
+            index += 1;
+            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
+            index += 1;
+        }
+    }
+
+    func.ret(&block, None);
+
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(usize, u16) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    f(results.as_ptr() as usize, 2);
+    println!("Shift 2: Results:");
+    for (i, r) in results.iter().enumerate() {
+        println!("{}: 0x{:08X}, ", i, r);
+    }
+    validate(
+        &results,
+        &[
+            // U16
+            2,   // << 0
+            2,   // >> 0
+            4,   // << 1
+            1,   // >> 1
+            128, // << 6
+            0,   // >> 6
+            2,   // << 16
+            2,   // >> 16
+            // S16
+            2,   // << 0
+            2,   // >> 0
+            4,   // << 1
+            1,   // >> 1
+            128, // << 6
+            0,   // >> 6
+            2,   // << 16
+            2,   // >> 16
+        ],
+    );
+
+    f(results.as_ptr() as usize, 0xFFFF);
+    println!("Shift 0xFFFF: Results:");
+
+    for (i, r) in results.iter().enumerate() {
+        println!("{}: 0x{:04X}, ", i, r);
+    }
+    validate(
+        &results,
+        &[
+            // U16
+            0xFFFF, // << 0
+            0xFFFF, // >> 0
+            0xFFFE, // << 1
+            0x7FFF, // >> 1
+            0xFFC0, // << 6
+            0x03FF, // >> 6
+            0xFFFF, // << 16
+            0xFFFF, // >> 16
+            // S16
+            0xFFFF, // << 0
+            0xFFFF, // >> 0
+            0xFFFE, // << 1
+            0xFFFF, // >> 1
+            0xFFC0, // << 6
+            0xFFFF, // >> 6
+            0xFFFF, // << 16
+            0xFFFF, // >> 16
+        ],
+    );
+}
+
+#[test]
 fn constant_shifts_32() {
-    let results: Vec<u32> = vec![0; 16];
+    let results: Vec<u64> = vec![0; 16];
 
     let context = IRContext::new();
     let mut func = IRFunction::new(context);
@@ -141,9 +321,11 @@ fn constant_shifts_32() {
             let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
             let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
 
-            func.write_ptr(&block, tp, result_ptr, index * size_of::<u32>(), left_result.val());
+            // Write the entire 64 bit register even though we only did a 32 bit shift to ensure
+            // the behavior is consistent
+            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
             index += 1;
-            func.write_ptr(&block, tp, result_ptr, index * size_of::<u32>(), right_result.val());
+            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
             index += 1;
         }
     }
@@ -152,7 +334,6 @@ fn constant_shifts_32() {
 
     let compiled = compile(&mut func);
     let f: extern "C" fn(usize, u32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    // println!("{}", disassemble(&compiled.code, f as u64));
 
     f(results.as_ptr() as usize, 2);
     println!("Shift 2: Results:");

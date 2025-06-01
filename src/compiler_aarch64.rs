@@ -410,6 +410,18 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             match (tp, n) {
+                (DataType::U8 | DataType::S8, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsl W(r_out as u32), W(r_n as u32), amount & 0b111
+                        ; and WSP(r_out as u32), W(r_out as u32), 0xFF // Mask to 8 bits
+                    );
+                }
+                (DataType::U16 | DataType::S16, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsl W(r_out as u32), W(r_n as u32), amount & 0b1111
+                        ; and WSP(r_out as u32), W(r_out as u32), 0xFFFF // Mask to 16
+                    );
+                }
                 (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
                         ; lsl W(r_out as u32), W(r_n as u32), amount & 0b11111
@@ -431,6 +443,34 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             match (tp, n) {
+                (DataType::U8, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsr W(r_out as u32), W(r_n as u32), amount & 0b111
+                    );
+                }
+                (DataType::S8, ConstOrReg::GPR(r_n)) => {
+                    // Shift left to put the sign bit in the 32 bit sign bit position, then shift
+                    // right.
+                    dynasm!(ops
+                        ; lsl W(r_out as u32), W(r_n as u32), 24
+                        ; asr W(r_out as u32), W(r_out as u32), (amount & 0b111) + 24
+                        ; and WSP(r_out as u32), W(r_out as u32), 0xFF // Mask to 8 bits
+                    );
+                }
+                (DataType::U16, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsr W(r_out as u32), W(r_n as u32), amount & 0b1111
+                    );
+                }
+                (DataType::S16, ConstOrReg::GPR(r_n)) => {
+                    // Shift left to put the sign bit in the 32 bit sign bit position, then shift
+                    // right.
+                    dynasm!(ops
+                        ; lsl W(r_out as u32), W(r_n as u32), 16
+                        ; asr W(r_out as u32), W(r_out as u32), (amount & 0b1111) + 16
+                        ; and WSP(r_out as u32), W(r_out as u32), 0xFFFF // Mask to 16 bits
+                    );
+                }
                 (DataType::U32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
                         ; lsr W(r_out as u32), W(r_n as u32), amount & 0b11111
