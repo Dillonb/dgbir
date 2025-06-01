@@ -397,4 +397,8 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     fn right_shift(&self, _ops: &mut Ops, _r_out: usize, _n: ConstOrReg, _amount: ConstOrReg, _tp: DataType) {
         todo!("Implement right shift operation")
     }
+
+    fn convert(&self, _ops: &mut Ops, _r_out: Register, _input: ConstOrReg, _from_tp: DataType, _to_tp: DataType) {
+        todo!()
+    }
 }
