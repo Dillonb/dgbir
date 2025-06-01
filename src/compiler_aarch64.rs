@@ -497,4 +497,16 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             todo!("RightShift with register amount: {:?} >> {:?}", n, r_amount);
         }
     }
+
+    fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
+        match (r_out, to_tp, input, from_tp) {
+            (Register::GPR(r_out), DataType::U64, ConstOrReg::GPR(r_in), DataType::U32) => {
+                dynasm!(ops
+                    // mov to a 32 bit register zero extends it by default
+                    ; mov W(r_out as u32), W(r_in as u32)
+                );
+            }
+            _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
+        }
+    }
 }

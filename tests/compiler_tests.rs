@@ -583,3 +583,22 @@ fn compiler_same_results_as_interpreter() {
     println!("   Compiler result: {:?}", r2);
     println!("Compiled function return value: {}", retval);
 }
+
+#[test]
+fn convert_integers() {
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::U32]);
+    let converted = func.convert(&block, DataType::U64, block.input(0));
+    func.ret(&block, Some(converted.val()));
+    println!("{}", func);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(u32) -> u64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    for i in 0..100 {
+        assert_eq!(f(i), i as u64, "Failed to convert {} to u64", i);
+    }
+}

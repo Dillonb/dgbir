@@ -202,6 +202,15 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let tp = outputs[0].tp;
                     compiler.right_shift(ops, r_out, n, amount, tp);
                 }
+                InstructionType::Convert => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let r_out = output_regs[0].unwrap();
+                    let input = compiler.to_imm_or_reg(&inputs[0]);
+                    let from_tp = inputs[0].tp();
+                    let to_tp = outputs[0].tp;
+                    compiler.convert(ops, r_out, input, from_tp, to_tp);
+                }
             }
         }
         Instruction::Branch {
@@ -459,6 +468,8 @@ pub trait Compiler<'a, Ops> {
     fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
     /// Compile an IR right shift instruction
     fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
+    /// Compile an IR convert instruction
+    fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType);
 }
 
 pub struct CompiledFunction {

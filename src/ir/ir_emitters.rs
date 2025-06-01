@@ -92,4 +92,8 @@ impl IRFunction {
     pub fn ret(&mut self, block_handle: &IRBlockHandle, input: Option<InputSlot>) {
         self.append_obj(block_handle, Instruction::Return { value: input });
     }
+
+    pub fn convert(&mut self, block_handle: &IRBlockHandle, tp: DataType, value: InputSlot) -> InstructionOutput {
+        self.append(block_handle, InstructionType::Convert, vec![value], vec![OutputSlot { tp }])
+    }
 }

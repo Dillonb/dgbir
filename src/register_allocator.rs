@@ -345,6 +345,14 @@ impl InputSlot {
             InputSlot::Constant(_) => None,
         }
     }
+
+    pub fn tp(&self) -> DataType {
+        match self {
+            InputSlot::InstructionOutput { tp, .. } => *tp,
+            InputSlot::BlockInput { tp, .. } => *tp,
+            InputSlot::Constant(c) => c.get_type(),
+        }
+    }
 }
 
 struct IRFunctionValueIterator<'a> {
