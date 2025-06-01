@@ -7,12 +7,18 @@ use dgbir::{
     ir_interpreter::interpret_func,
 };
 
-fn validate(results: &[u32], expected: &[u32]) {
-    for (i, &v) in expected.iter().enumerate() {
-        assert_eq!(results[i], v);
+fn validate<T: std::fmt::Display + std::fmt::Debug + std::cmp::PartialEq>(results: &[T], expected: &[T]) {
+    assert_eq!(
+        results.len(),
+        expected.len(),
+        "Results length mismatch: expected {}, got {}",
+        expected.len(),
+        results.len()
+    );
+    for (i, v) in expected.iter().enumerate() {
+        assert_eq!(results[i], *v, "Validation failed at index {}: expected {}, got {}", i, v, results[i]);
     }
 }
-
 
 #[test]
 #[should_panic(expected = "Unclosed block")]
@@ -122,7 +128,7 @@ fn compiler_add_f32_to_self() {
 
 #[test]
 fn constant_shifts_32() {
-    let results : Vec<u32> = vec![0; 64];
+    let results: Vec<u32> = vec![0; 16];
 
     let context = IRContext::new();
     let mut func = IRFunction::new(context);
@@ -146,12 +152,159 @@ fn constant_shifts_32() {
 
     let compiled = compile(&mut func);
     let f: extern "C" fn(usize, u32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    // println!("{}", disassemble(&compiled.code, f as u64));
+
+    f(results.as_ptr() as usize, 2);
+    println!("Shift 2: Results:");
+    for (i, r) in results.iter().enumerate() {
+        println!("{}: 0x{:08X}, ", i, r);
+    }
+    validate(
+        &results,
+        &[
+            // U32
+            2,   // << 0
+            2,   // >> 0
+            4,   // << 1
+            1,   // >> 1
+            128, // << 6
+            0,   // >> 6
+            2,   // << 32
+            2,   // >> 32
+            // S32
+            2,   // << 0
+            2,   // >> 0
+            4,   // << 1
+            1,   // >> 1
+            128, // << 6
+            0,   // >> 6
+            2,   // << 32
+            2,   // >> 32
+        ],
+    );
+
+    f(results.as_ptr() as usize, 0xFFFF_FFFF);
+    println!("Shift 0xFFFF_FFFF: Results:");
+
+    for (i, r) in results.iter().enumerate() {
+        println!("{}: 0x{:08X}, ", i, r);
+    }
+    validate(
+        &results,
+        &[
+            // U32
+            0xFFFF_FFFF, // << 0
+            0xFFFF_FFFF, // >> 0
+            0xFFFF_FFFE, // << 1
+            0x7FFF_FFFF, // >> 1
+            0xFFFF_FFC0, // << 6
+            0x03FF_FFFF, // >> 6
+            0xFFFF_FFFF, // << 32
+            0xFFFF_FFFF, // >> 32
+            // S32
+            0xFFFF_FFFF, // << 0
+            0xFFFF_FFFF, // >> 0
+            0xFFFF_FFFE, // << 1
+            0xFFFF_FFFF, // >> 1
+            0xFFFF_FFC0, // << 6
+            0xFFFF_FFFF, // >> 6
+            0xFFFF_FFFF, // << 32
+            0xFFFF_FFFF, // >> 32
+        ],
+    );
+}
+
+#[test]
+fn constant_shifts_64() {
+    let results: Vec<u64> = vec![0; 20];
+
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::Ptr, DataType::U64]);
+    let result_ptr = block.input(0);
+    let input = block.input(1);
+    let mut index = 0;
+    for tp in vec![DataType::U64, DataType::S64] {
+        for const_shift_amount in vec![0, 1, 6, 32, 64] {
+            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
+            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+
+            func.write_ptr(&block, tp, result_ptr, index * size_of::<u64>(), left_result.val());
+            index += 1;
+            func.write_ptr(&block, tp, result_ptr, index * size_of::<u64>(), right_result.val());
+            index += 1;
+        }
+    }
+
+    func.ret(&block, None);
+
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(usize, u64) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     println!("{}", disassemble(&compiled.code, f as u64));
 
     f(results.as_ptr() as usize, 2);
+    println!("Shift 2: Results: {:?}", results);
+    validate(
+        &results,
+        &[
+            // U64
+            2,           // << 0
+            2,           // >> 0
+            4,           // << 1
+            1,           // >> 1
+            128,         // << 6
+            0,           // >> 6
+            0x200000000, // << 32
+            0,           // >> 32
+            2,           // << 64
+            2,           // >> 64
+            // S64
+            2,           // << 0
+            2,           // >> 0
+            4,           // << 1
+            1,           // >> 1
+            128,         // << 6
+            0,           // >> 6
+            0x200000000, // << 32
+            0,           // >> 32
+            2,           // << 64
+            2,           // >> 64
+        ],
+    );
 
-    validate(&results, &[2, 2, 4, 1, 128, 0, 2, 2]);
-
+    f(results.as_ptr() as usize, 0xFFFF_FFFF_FFFF_FFFF);
+    println!("Shift 0xFFFF_FFFF_FFFF_FFFF: Results: "); //{:?}", results);
+    for r in results.iter() {
+        print!("{:016X} ", r);
+    }
+    println!();
+    validate(
+        &results,
+        &[
+            // U64
+            0xFFFFFFFFFFFFFFFF, // << 0
+            0xFFFFFFFFFFFFFFFF, // >> 0
+            0xFFFFFFFFFFFFFFFE, // << 1
+            0x7FFFFFFFFFFFFFFF, // >> 1
+            0xFFFFFFFFFFFFFFC0, // << 6
+            0x03FFFFFFFFFFFFFF, // >> 6
+            0xFFFFFFFF00000000, // << 32
+            0x00000000FFFFFFFF, // >> 32
+            0xFFFFFFFFFFFFFFFF, // << 64
+            0xFFFFFFFFFFFFFFFF, // >> 64
+            // S64
+            0xFFFFFFFFFFFFFFFF, // << 0
+            0xFFFFFFFFFFFFFFFF, // >> 0
+            0xFFFFFFFFFFFFFFFE, // << 1
+            0xFFFFFFFFFFFFFFFF, // >> 1
+            0xFFFFFFFFFFFFFFC0, // << 6
+            0xFFFFFFFFFFFFFFFF, // >> 6
+            0xFFFFFFFF00000000, // << 32
+            0xFFFFFFFFFFFFFFFF, // >> 32
+            0xFFFFFFFFFFFFFFFF, // << 64
+            0xFFFFFFFFFFFFFFFF, // >> 64
+        ],
+    );
 }
 
 #[test]

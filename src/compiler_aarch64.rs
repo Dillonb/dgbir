@@ -365,6 +365,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64) => {
+                dynasm!(ops
+                    ; str X(r_value as u32), [X(r_ptr as u32), offset as u32]
+                );
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -401,30 +406,55 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 
-    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
-        match (tp, n, amount) {
-            (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n), ConstOrReg::U32(c_amount)) => {
-                dynasm!(ops
-                    ; lsl W(r_out as u32), W(r_n as u32), c_amount & 0b11111
-                );
+    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) -> () {
+        if let Some(amount) = amount.to_u64_const() {
+            let amount = amount as u32;
+            match (tp, n) {
+                (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsl W(r_out as u32), W(r_n as u32), amount & 0b11111
+                    );
+                }
+                (DataType::U64 | DataType::S64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsl X(r_out as u32), X(r_n as u32), amount & 0b111111
+                    );
+                }
+                _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
             }
-            _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
+        } else if let Some(r_amount) = amount.to_reg() {
+            todo!("LeftShift with register amount: {:?} << {:?}", n, r_amount);
         }
     }
 
     fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
-        match (tp, n, amount) {
-            (DataType::U32, ConstOrReg::GPR(r_n), ConstOrReg::U32(c_amount)) => {
-                dynasm!(ops
-                    ; lsr W(r_out as u32), W(r_n as u32), c_amount & 0b11111
-                );
+        if let Some(amount) = amount.to_u64_const() {
+            let amount = amount as u32;
+            match (tp, n) {
+                (DataType::U32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsr W(r_out as u32), W(r_n as u32), amount & 0b11111
+                    );
+                }
+                (DataType::S32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; asr W(r_out as u32), W(r_n as u32), amount & 0b11111
+                    );
+                }
+                (DataType::U64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsr X(r_out as u32), X(r_n as u32), amount & 0b111111
+                    );
+                }
+                (DataType::S64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; asr X(r_out as u32), X(r_n as u32), amount & 0b111111
+                    );
+                }
+                _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
             }
-            (DataType::S32, ConstOrReg::GPR(r_n), ConstOrReg::U32(c_amount)) => {
-                dynasm!(ops
-                    ; asr W(r_out as u32), W(r_n as u32), c_amount & 0b11111
-                );
-            }
-            _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
+        } else if let Some(r_amount) = amount.to_reg() {
+            todo!("RightShift with register amount: {:?} >> {:?}", n, r_amount);
         }
     }
 }

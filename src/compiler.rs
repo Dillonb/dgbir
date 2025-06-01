@@ -36,6 +36,16 @@ impl ConstOrReg {
         }
     }
 
+    pub fn to_u64_const(&self) -> Option<u64> {
+        match self {
+            ConstOrReg::U32(c) => Some(*c as u64),
+            ConstOrReg::U64(c) => Some(*c),
+            ConstOrReg::F32(_) => None,
+            ConstOrReg::GPR(_) => None,
+            ConstOrReg::SIMD(_) => None,
+        }
+    }
+
     pub fn is_same_type_as(&self, other: &Register) -> bool {
         match (self, other) {
             (ConstOrReg::U32(_), Register::GPR(_)) => true,
@@ -182,7 +192,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     compiler.left_shift(ops, r_out, n, amount, tp);
-                },
+                }
                 InstructionType::RightShift => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
