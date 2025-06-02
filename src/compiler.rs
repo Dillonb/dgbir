@@ -298,6 +298,25 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let tp = outputs[0].tp;
                     compiler.negate(ops, lp, tp, r_out, value);
                 }
+                InstructionType::Call => {
+                    assert_eq!(
+                        inputs.len() >= 1,
+                        true,
+                        "Call instruction must have at least one input (the function to call)"
+                    );
+                    assert_eq!(
+                        outputs.len() <= 1,
+                        true,
+                        "Call instruction can have at most one output (the return value)"
+                    );
+                    let address = compiler.to_imm_or_reg(&inputs[0]);
+                    let args = inputs[1..]
+                        .iter()
+                        .map(|i| compiler.to_imm_or_reg(i))
+                        .collect::<Vec<_>>();
+                    let return_tp = outputs.get(0).map(|o| o.tp);
+                    compiler.call(ops, lp, address, return_tp, args);
+                }
             }
         }
         Instruction::Branch {
@@ -602,6 +621,15 @@ pub trait Compiler<'a, Ops> {
     fn absolute_value(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
     /// Compile an IR negate instruction
     fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
+    /// Compile an IR call instruction
+    fn call(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        address: ConstOrReg,
+        return_tp: Option<DataType>,
+        args: Vec<ConstOrReg>,
+    );
 }
 
 pub struct CompiledFunction {

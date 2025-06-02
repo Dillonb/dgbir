@@ -164,7 +164,12 @@ impl IRFunction {
         dividend: InputSlot,
         divisor: InputSlot,
     ) -> InstructionOutput {
-        self.append(block_handle, InstructionType::Divide, vec![dividend, divisor], vec![OutputSlot { tp: result_tp }, OutputSlot { tp: result_tp }])
+        self.append(
+            block_handle,
+            InstructionType::Divide,
+            vec![dividend, divisor],
+            vec![OutputSlot { tp: result_tp }, OutputSlot { tp: result_tp }],
+        )
     }
 
     pub fn square_root(
@@ -187,5 +192,20 @@ impl IRFunction {
 
     pub fn negate(&mut self, block_handle: &IRBlockHandle, result_tp: DataType, value: InputSlot) -> InstructionOutput {
         self.append(block_handle, InstructionType::Negate, vec![value], vec![OutputSlot { tp: result_tp }])
+    }
+
+    pub fn call(
+        &mut self,
+        block_handle: &IRBlockHandle,
+        address: InputSlot,
+        return_tp: DataType,
+        args: Vec<InputSlot>,
+    ) -> InstructionOutput {
+        self.append(
+            block_handle,
+            InstructionType::Call,
+            std::iter::once(address).chain(args).collect(),
+            vec![OutputSlot { tp: return_tp }],
+        )
     }
 }

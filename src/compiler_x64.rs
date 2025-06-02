@@ -497,4 +497,15 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     fn negate(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
         todo!()
     }
+
+    fn call(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _address: ConstOrReg,
+        _return_tp: Option<DataType>,
+        _args: Vec<ConstOrReg>,
+    ) {
+        todo!()
+    }
 }
