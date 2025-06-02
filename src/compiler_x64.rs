@@ -504,6 +504,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         _lp: &mut LiteralPool,
         _address: ConstOrReg,
         _return_tp: Option<DataType>,
+        _r_out: Option<Register>,
         _args: Vec<ConstOrReg>,
     ) {
         todo!()

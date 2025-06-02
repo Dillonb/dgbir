@@ -315,7 +315,8 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                         .map(|i| compiler.to_imm_or_reg(i))
                         .collect::<Vec<_>>();
                     let return_tp = outputs.get(0).map(|o| o.tp);
-                    compiler.call(ops, lp, address, return_tp, args);
+                    let r_out = output_regs[0];
+                    compiler.call(ops, lp, address, return_tp, r_out, args);
                 }
             }
         }
@@ -628,6 +629,7 @@ pub trait Compiler<'a, Ops> {
         lp: &mut LiteralPool,
         address: ConstOrReg,
         return_tp: Option<DataType>,
+        r_out: Option<Register>,
         args: Vec<ConstOrReg>,
     );
 }
