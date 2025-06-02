@@ -585,7 +585,7 @@ fn compiler_same_results_as_interpreter() {
 }
 
 #[test]
-fn convert_integers() {
+fn convert_u32_u64() {
     let context = IRContext::new();
     let mut func = IRFunction::new(context);
     let block = func.new_block(vec![DataType::U32]);
@@ -601,4 +601,30 @@ fn convert_integers() {
     for i in 0..100 {
         assert_eq!(f(i), i as u64, "Failed to convert {} to u64", i);
     }
+    assert_eq!(f(0x7FFFFFFF), 0x000000007FFFFFFF);
+    assert_eq!(f(0xFFFFFFFF), 0x00000000FFFFFFFF);
+    assert_eq!(f(0x80000000), 0x0000000080000000);
 }
+
+#[test]
+fn convert_s32_s64() {
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::S32]);
+    let converted = func.convert(&block, DataType::S64, block.input(0));
+    func.ret(&block, Some(converted.val()));
+    println!("{}", func);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(i32) -> i64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    for i in 0..100 {
+        assert_eq!(f(i), i as i64, "Failed to convert {} to i64", i);
+    }
+    assert_eq!(f(0x7FFFFFFF), 0x7FFFFFFF);
+    assert_eq!(f(-1), -1);
+    assert_eq!(f(-2147483648), -2147483648);
+}
+
