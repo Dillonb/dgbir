@@ -299,16 +299,8 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     compiler.negate(ops, lp, tp, r_out, value);
                 }
                 InstructionType::Call => {
-                    assert_eq!(
-                        inputs.len() >= 1,
-                        true,
-                        "Call instruction must have at least one input (the function to call)"
-                    );
-                    assert_eq!(
-                        outputs.len() <= 1,
-                        true,
-                        "Call instruction can have at most one output (the return value)"
-                    );
+                    assert_eq!(inputs.len() >= 1, true);
+                    assert_eq!(outputs.len() <= 1, true);
                     let address = compiler.to_imm_or_reg(&inputs[0]);
                     let args = inputs[1..]
                         .iter()

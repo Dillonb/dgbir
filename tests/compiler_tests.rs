@@ -3,7 +3,7 @@ use std::mem::{self, offset_of};
 use dgbir::{
     compiler::compile,
     disassembler::disassemble,
-    ir::{const_f32, const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
+    ir::{const_f32, const_ptr, const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
     ir_interpreter::interpret_func,
 };
 
@@ -626,4 +626,31 @@ fn convert_s32_s64() {
     assert_eq!(f(0x7FFFFFFF), 0x7FFFFFFF);
     assert_eq!(f(-1), -1);
     assert_eq!(f(-2147483648), -2147483648);
+}
+
+#[test]
+fn call_external_function() {
+    extern "C" fn add_ten(x: u32) -> u32 {
+        x + 10
+    }
+
+    let context = IRContext::new();
+    let mut func = IRFunction::new(context);
+    let block = func.new_block(vec![DataType::U32]);
+
+    let input = block.input(0);
+    let call_result = func.call(&block, const_ptr(add_ten as usize), DataType::U32, vec![input]);
+    func.ret(&block, Some(call_result.val()));
+
+    println!("{}", func);
+    println!("Compiling...");
+    let compiled = compile(&mut func);
+    let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    println!("{}", disassemble(&compiled.code, f as u64));
+
+    println!("Running compiled code...");
+    assert_eq!(f(0), 10);
+    assert_eq!(f(1), 11);
+    assert_eq!(f(2), 12);
 }

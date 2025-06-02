@@ -2,7 +2,7 @@ use crate::register_allocator::Register;
 
 #[allow(dead_code)]
 #[cfg(target_arch = "x86_64")]
-mod reg_constants {
+pub mod reg_constants {
     use crate::register_allocator::Register;
 
     // X64
@@ -43,7 +43,7 @@ mod reg_constants {
 
 #[allow(dead_code)]
 #[cfg(target_arch = "aarch64")]
-mod reg_constants {
+pub mod reg_constants {
     use crate::register_allocator::Register;
 
     // AArch64
@@ -77,7 +77,7 @@ mod reg_constants {
     pub const X27: Register = Register::GPR(27);
     pub const X28: Register = Register::GPR(28);
     pub const X29: Register = Register::GPR(29);
-    pub const X30: Register = Register::GPR(30);
+    pub const LR: Register = Register::GPR(30);
     pub const SP: Register = Register::GPR(31);
 
     pub const V0: Register = Register::SIMD(0);

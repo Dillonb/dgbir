@@ -104,6 +104,15 @@ impl RegPool {
             pool: self.pool.clone(), // Increment refcount
         }
     }
+
+    pub fn active_regs(&self) -> Vec<Register> {
+        let pool = self.pool.borrow();
+        pool.regs
+            .iter()
+            .filter(|(_, allocated)| **allocated)
+            .map(|(reg, _)| *reg)
+            .collect()
+    }
 }
 
 pub struct BorrowedReg<T: RegPoolRegister> {

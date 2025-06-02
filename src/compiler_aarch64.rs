@@ -1,5 +1,7 @@
+use std::{collections::HashMap, iter};
+
 use crate::{
-    abi::{get_return_value_registers, get_scratch_registers},
+    abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{Compiler, ConstOrReg, LiteralPool},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunction},
     reg_pool::{register_type, RegPool},
@@ -10,12 +12,14 @@ use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, Dy
 type Ops = dynasmrt::Assembler<Aarch64Relocation>;
 
 fn load_64_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u64) {
+    println!("Loading 64-bit constant: 0x{:X}", value);
     if value <= 0xFFFF {
         dynasm!(ops
             ; movz X(reg), value as u32
         );
     } else {
         let literal = Aarch64Compiler::add_literal(ops, lp, Constant::U64(value));
+        println!("Loading using literal pool");
         dynasm!(ops
             ; ldr X(reg), =>literal
         );
@@ -134,12 +138,19 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     // TODO: this is exactly the same in all compilers, figure out how to share this
     fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool) {
         for (literal, label) in lp.literals {
+            println!("Aligning to {} bytes for literal {:?}", literal.size(), literal);
             ops.align(literal.size(), 0);
             match literal {
                 Constant::U32(c) => {
                     dynasm!(ops
                         ; =>label
                         ; .u32 c
+                    );
+                }
+                Constant::U64(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .u64 c
                     );
                 }
                 Constant::F32(c) => {
@@ -613,13 +624,79 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn call(
         &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _address: ConstOrReg,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        address: ConstOrReg,
         _return_tp: Option<DataType>,
-        _r_out: Option<Register>,
-        _args: Vec<ConstOrReg>,
+        r_out: Option<Register>,
+        args: Vec<ConstOrReg>,
     ) {
-        todo!()
+        // TODO: also need to save all active non-scratch regs that are marked volatile by the ABI
+        // Get it from self.allocations.lifetimes
+        let active_regs = self
+            .scratch_regs
+            .active_regs()
+            .into_iter()
+            .chain(iter::once(reg_constants::LR))
+            .collect::<Vec<_>>();
+
+        let stack_bytes_needed = active_regs.iter().map(|r| r.size()).sum::<usize>();
+        let misalignment = stack_bytes_needed % 16;
+        let stack_bytes_needed = stack_bytes_needed + misalignment;
+
+        dynasm!(ops
+            ; sub sp, sp, stack_bytes_needed as u32 // Allocate stack space for the call
+        );
+
+        let mut stack_offsets = HashMap::new();
+        let mut stack_offset = 0;
+        for reg in active_regs.iter() {
+            stack_offsets.insert(reg, stack_offset);
+            match reg {
+                Register::GPR(r) => {
+                    dynasm!(ops
+                        ; str X(*r as u32), [sp, stack_offset]
+                    );
+                }
+                Register::SIMD(_r) => todo!(),
+            }
+            stack_offset += reg.size() as u32;
+        }
+
+        // Move the arguments into place
+        let moves = args
+            .into_iter()
+            .zip(get_function_argument_registers().into_iter())
+            .collect::<HashMap<ConstOrReg, Register>>();
+        self.move_regs_multi(ops, lp, moves);
+
+        match address {
+            ConstOrReg::U64(ptr) => {
+                let temp_reg = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, temp_reg.r(), ptr);
+                dynasm!(ops
+                    ; blr X(temp_reg.r())
+                );
+            }
+            _ => todo!("Unsupported call to: {:?}", address),
+        }
+
+        if let Some(to) = r_out {
+            self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
+        }
+
+        for reg in active_regs.iter() {
+            match reg {
+                Register::GPR(r) => {
+                    dynasm!(ops
+                        ; ldr X(*r as u32), [sp, stack_offsets[reg]]
+                    );
+                }
+                Register::SIMD(_r) => todo!(),
+            }
+        }
+        dynasm!(ops
+            ; add sp, sp, stack_bytes_needed as u32 // Deallocate stack space for the call
+        );
     }
 }

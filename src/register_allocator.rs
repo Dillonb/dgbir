@@ -510,7 +510,7 @@ impl Display for Usage {
     }
 }
 
-struct Lifetimes {
+pub struct Lifetimes {
     #[allow(dead_code)] // Maybe I'll need this later
     last_used: HashMap<Value, Usage>,
     interference: HashMap<Value, Vec<Value>>,
@@ -761,6 +761,7 @@ impl IRFunction {
 pub struct RegisterAllocations {
     pub allocations: HashMap<Value, Register>,
     pub callee_saved: Vec<(Register, usize)>,
+    pub lifetimes: Lifetimes,
 }
 impl RegisterAllocations {
     pub fn get(&self, value: &Value) -> Option<Register> {
@@ -868,8 +869,10 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
         })
         .collect::<Vec<_>>();
 
+    let lifetimes = calculate_lifetimes(func);
     RegisterAllocations {
         allocations,
         callee_saved,
+        lifetimes,
     }
 }
