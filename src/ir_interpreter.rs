@@ -246,7 +246,7 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::SquareRoot => todo!(),
         InstructionType::AbsoluteValue => todo!(),
         InstructionType::Negate => todo!(),
-        InstructionType::Call => todo!(),
+        InstructionType::CallFunction => todo!(),
     }
 }
 

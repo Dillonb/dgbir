@@ -115,6 +115,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
     ops: &mut Ops,
     lp: &mut LiteralPool,
     compiler: &TC,
+    instruction_index_in_block: usize,
     instruction: &IndexedInstruction,
 ) {
     let instruction_index = instruction.index;
@@ -298,7 +299,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let tp = outputs[0].tp;
                     compiler.negate(ops, lp, tp, r_out, value);
                 }
-                InstructionType::Call => {
+                InstructionType::CallFunction => {
                     assert_eq!(inputs.len() >= 1, true);
                     assert_eq!(outputs.len() <= 1, true);
                     let address = compiler.to_imm_or_reg(&inputs[0]);
@@ -306,9 +307,18 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                         .iter()
                         .map(|i| compiler.to_imm_or_reg(i))
                         .collect::<Vec<_>>();
-                    let return_tp = outputs.get(0).map(|o| o.tp);
                     let r_out = output_regs[0];
-                    compiler.call(ops, lp, address, return_tp, r_out, args);
+                    let allocations = compiler.get_allocations();
+
+                    let active_volatile_regs = allocations
+                        .lifetimes
+                        .get_active_at_index(compiler.get_func(), block_index, instruction_index_in_block)
+                        .iter()
+                        .map(|v| allocations.get(v).unwrap())
+                        .filter(|r| r.is_volatile())
+                        .collect::<Vec<_>>();
+
+                    compiler.call_function(ops, lp, address, active_volatile_regs, r_out, args);
                 }
             }
         }
@@ -615,12 +625,12 @@ pub trait Compiler<'a, Ops> {
     /// Compile an IR negate instruction
     fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
     /// Compile an IR call instruction
-    fn call(
+    fn call_function(
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
         address: ConstOrReg,
-        return_tp: Option<DataType>,
+        active_volatile_regs: Vec<Register>,
         r_out: Option<Register>,
         args: Vec<ConstOrReg>,
     );
@@ -660,8 +670,8 @@ pub fn compile(func: &mut IRFunction) -> CompiledFunction {
         block
             .instructions
             .iter()
-            .map(|i| &compiler.get_func().instructions[*i])
-            .for_each(|instruction| compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, instruction))
+            .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
+            .for_each(|(i_in_block, instruction)| compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, *i_in_block, instruction))
     }
     compiler.epilogue(&mut ops);
     compiler.emit_literal_pool(&mut ops, lp);

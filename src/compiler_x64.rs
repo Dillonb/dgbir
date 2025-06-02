@@ -498,12 +498,12 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         todo!()
     }
 
-    fn call(
+    fn call_function(
         &self,
         _ops: &mut Ops,
         _lp: &mut LiteralPool,
         _address: ConstOrReg,
-        _return_tp: Option<DataType>,
+        _active_volatile_regs: Vec<Register>,
         _r_out: Option<Register>,
         _args: Vec<ConstOrReg>,
     ) {

@@ -121,7 +121,7 @@ pub enum InstructionType {
     SquareRoot,
     AbsoluteValue,
     Negate,
-    Call,
+    CallFunction,
 }
 
 #[derive(Debug, Clone, Copy)]

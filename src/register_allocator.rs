@@ -518,6 +518,30 @@ pub struct Lifetimes {
     all_usages: HashMap<Value, Vec<Usage>>,
 }
 
+impl Lifetimes {
+    pub fn get_active_at_index(&self, func: &IRFunction, block_index: usize, instruction_index_in_block: usize) -> Vec<Value> {
+        self.last_used
+            .iter()
+            .filter_map(|(value, last_usage)| {
+                let first_usage = value.into_usage(func);
+
+                let first_used_before = first_usage.block_index < block_index
+                    || (first_usage.block_index == block_index && first_usage.instruction_index_in_block <= instruction_index_in_block);
+
+                let last_used_after = last_usage.block_index > block_index
+                    || (last_usage.block_index == block_index && last_usage.instruction_index_in_block >= instruction_index_in_block);
+
+                if first_used_before && last_used_after {
+                    Some(*value)
+                } else {
+                    None
+                }
+
+            })
+            .collect()
+    }
+}
+
 fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
     let mut last_used = HashMap::new();
     let mut all_usages: HashMap<Value, Vec<Usage>> = HashMap::new();

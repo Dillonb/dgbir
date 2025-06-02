@@ -194,7 +194,7 @@ impl IRFunction {
         self.append(block_handle, InstructionType::Negate, vec![value], vec![OutputSlot { tp: result_tp }])
     }
 
-    pub fn call(
+    pub fn call_function(
         &mut self,
         block_handle: &IRBlockHandle,
         address: InputSlot,
@@ -203,7 +203,7 @@ impl IRFunction {
     ) -> InstructionOutput {
         self.append(
             block_handle,
-            InstructionType::Call,
+            InstructionType::CallFunction,
             std::iter::once(address).chain(args).collect(),
             vec![OutputSlot { tp: return_tp }],
         )

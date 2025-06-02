@@ -639,7 +639,7 @@ fn call_external_function() {
     let block = func.new_block(vec![DataType::U32]);
 
     let input = block.input(0);
-    let call_result = func.call(&block, const_ptr(add_ten as usize), DataType::U32, vec![input]);
+    let call_result = func.call_function(&block, const_ptr(add_ten as usize), DataType::U32, vec![input]);
     func.ret(&block, Some(call_result.val()));
 
     println!("{}", func);

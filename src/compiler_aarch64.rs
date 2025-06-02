@@ -622,22 +622,21 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         todo!()
     }
 
-    fn call(
+    fn call_function(
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
         address: ConstOrReg,
-        _return_tp: Option<DataType>,
+        active_volatile_regs: Vec<Register>,
         r_out: Option<Register>,
         args: Vec<ConstOrReg>,
     ) {
-        // TODO: also need to save all active non-scratch regs that are marked volatile by the ABI
-        // Get it from self.allocations.lifetimes
         let active_regs = self
             .scratch_regs
             .active_regs()
             .into_iter()
             .chain(iter::once(reg_constants::LR))
+            .chain(active_volatile_regs.into_iter())
             .collect::<Vec<_>>();
 
         let stack_bytes_needed = active_regs.iter().map(|r| r.size()).sum::<usize>();
