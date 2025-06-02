@@ -236,6 +236,16 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::LeftShift => todo!(),
         InstructionType::RightShift => todo!(),
         InstructionType::Convert => todo!(),
+        InstructionType::And => todo!(),
+        InstructionType::Or => todo!(),
+        InstructionType::Not => todo!(),
+        InstructionType::Xor => todo!(),
+        InstructionType::Subtract => todo!(),
+        InstructionType::Multiply => todo!(),
+        InstructionType::Divide => todo!(),
+        InstructionType::SquareRoot => todo!(),
+        InstructionType::AbsoluteValue => todo!(),
+        InstructionType::Negate => todo!(),
     }
 }
 

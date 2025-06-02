@@ -401,4 +401,100 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     fn convert(&self, _ops: &mut Ops, _r_out: Register, _input: ConstOrReg, _from_tp: DataType, _to_tp: DataType) {
         todo!()
     }
+
+    fn and(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_out: Register,
+        _a: ConstOrReg,
+        _b: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn or(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_out: Register,
+        _a: ConstOrReg,
+        _b: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn not(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _a: ConstOrReg) {
+        todo!()
+    }
+
+    fn xor(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_out: Register,
+        _a: ConstOrReg,
+        _b: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn subtract(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_out: Register,
+        _minuend: ConstOrReg,
+        _subtrahend: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn multiply(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_out: Register,
+        _a: ConstOrReg,
+        _b: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn divide(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_quotient: Option<Register>,
+        _r_remainder: Option<Register>,
+        _dividend: ConstOrReg,
+        _divisor: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn square_root(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
+        todo!()
+    }
+
+    fn absolute_value(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _r_out: Register,
+        _value: ConstOrReg,
+    ) {
+        todo!()
+    }
+
+    fn negate(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
+        todo!()
+    }
 }

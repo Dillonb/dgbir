@@ -111,6 +111,16 @@ pub enum InstructionType {
     SpillToStack,
     LoadFromStack,
     Convert,
+    And,
+    Or,
+    Not,
+    Xor,
+    Subtract,
+    Multiply,
+    Divide,
+    SquareRoot,
+    AbsoluteValue,
+    Negate,
 }
 
 #[derive(Debug, Clone, Copy)]

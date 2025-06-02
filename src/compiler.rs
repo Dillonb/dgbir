@@ -211,6 +211,93 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let to_tp = outputs[0].tp;
                     compiler.convert(ops, r_out, input, from_tp, to_tp);
                 }
+                InstructionType::And => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.and(ops, lp, tp, r_out, a, b);
+                }
+                InstructionType::Or => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.or(ops, lp, tp, r_out, a, b);
+                }
+                InstructionType::Not => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.not(ops, lp, tp, r_out, a);
+                }
+                InstructionType::Xor => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.xor(ops, lp, tp, r_out, a, b);
+                }
+                InstructionType::Subtract => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let minuend = compiler.to_imm_or_reg(&inputs[0]);
+                    let subtrahend = compiler.to_imm_or_reg(&inputs[1]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.subtract(ops, lp, tp, r_out, minuend, subtrahend);
+                }
+                InstructionType::Multiply => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.multiply(ops, lp, tp, r_out, a, b);
+                }
+                InstructionType::Divide => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 2);
+                    let dividend = compiler.to_imm_or_reg(&inputs[0]);
+                    let divisor = compiler.to_imm_or_reg(&inputs[1]);
+                    let r_quotient = output_regs[0];
+                    let r_remainder = output_regs[1];
+                    let tp = outputs[0].tp;
+                    compiler.divide(ops, lp, tp, r_quotient, r_remainder, dividend, divisor);
+                }
+                InstructionType::SquareRoot => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let value = compiler.to_imm_or_reg(&inputs[0]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.square_root(ops, lp, tp, r_out, value);
+                }
+                InstructionType::AbsoluteValue => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let value = compiler.to_imm_or_reg(&inputs[0]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.absolute_value(ops, lp, tp, r_out, value);
+                }
+                InstructionType::Negate => {
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(outputs.len(), 1);
+                    let value = compiler.to_imm_or_reg(&inputs[0]);
+                    let r_out = output_regs[0].unwrap();
+                    let tp = outputs[0].tp;
+                    compiler.negate(ops, lp, tp, r_out, value);
+                }
             }
         }
         Instruction::Branch {
@@ -470,6 +557,51 @@ pub trait Compiler<'a, Ops> {
     fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
     /// Compile an IR convert instruction
     fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType);
+    /// Compile an IR bitwise AND instruction
+    fn and(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
+    /// Compile an IR bitwise OR instruction
+    fn or(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
+    /// Compile an IR bitwise NOT instruction
+    fn not(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg);
+    /// Compile an IR bitwise XOR instruction
+    fn xor(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
+    /// Compile an IR subtract instruction
+    fn subtract(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_out: Register,
+        minuend: ConstOrReg,
+        subtrahend: ConstOrReg,
+    );
+    /// Compile an IR multiply instruction
+    fn multiply(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+    );
+    /// Compile an IR divide instruction
+    fn divide(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_quotient: Option<Register>,
+        r_remainder: Option<Register>,
+        dividend: ConstOrReg,
+        divisor: ConstOrReg,
+    );
+    /// Compile an IR square root instruction
+    fn square_root(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
+    /// Compile an IR absolute value instruction
+    fn absolute_value(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
+    /// Compile an IR negate instruction
+    fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
 }
 
 pub struct CompiledFunction {
