@@ -654,3 +654,6 @@ fn call_external_function() {
     assert_eq!(f(1), 11);
     assert_eq!(f(2), 12);
 }
+
+// TODO: test for calling a function when a volatile reg is active. Both from the scratch regs
+// struct and from a normal allocated register (like any SSE register on x64)
