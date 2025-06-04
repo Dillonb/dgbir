@@ -456,7 +456,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             match (tp, n) {
                 (DataType::U8, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lsr W(r_out as u32), W(r_n as u32), amount & 0b111
+                        ; and WSP(r_out as u32), W(r_n as u32), 0xFF
+                        ; lsr W(r_out as u32), W(r_out as u32), amount & 0b111
                     );
                 }
                 (DataType::S8, ConstOrReg::GPR(r_n)) => {
@@ -470,7 +471,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 }
                 (DataType::U16, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lsr W(r_out as u32), W(r_n as u32), amount & 0b1111
+                        ; and WSP(r_out as u32), W(r_n as u32), 0xFFFF
+                        ; lsr W(r_out as u32), W(r_out as u32), amount & 0b1111
                     );
                 }
                 (DataType::S16, ConstOrReg::GPR(r_n)) => {
