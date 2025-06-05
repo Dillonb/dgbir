@@ -671,7 +671,9 @@ pub fn compile(func: &mut IRFunction) -> CompiledFunction {
             .instructions
             .iter()
             .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
-            .for_each(|(i_in_block, instruction)| compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, *i_in_block, instruction))
+            .for_each(|(i_in_block, instruction)| {
+                compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, *i_in_block, instruction)
+            })
     }
     compiler.epilogue(&mut ops);
     compiler.emit_literal_pool(&mut ops, lp);
