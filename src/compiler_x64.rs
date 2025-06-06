@@ -398,8 +398,21 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         todo!("Implement right shift operation")
     }
 
-    fn convert(&self, _ops: &mut Ops, _r_out: Register, _input: ConstOrReg, _from_tp: DataType, _to_tp: DataType) {
-        todo!()
+    fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
+        match (r_out, to_tp, input, from_tp) {
+            (Register::GPR(r_out), DataType::U64, ConstOrReg::GPR(r_in), DataType::U32) => {
+                dynasm!(ops
+                    // Mov r32 -> r32 zero-extends
+                    ; mov Rd(r_out as u8), Rd(r_in as u8)
+                );
+            }
+            (Register::GPR(r_out), DataType::S64, ConstOrReg::GPR(r_in), DataType::S32) => {
+                dynasm!(ops
+                    ; movsx Rq(r_out as u8), Rd(r_in as u8)
+                );
+            }
+            _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
+        }
     }
 
     fn and(
