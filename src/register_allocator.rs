@@ -8,8 +8,8 @@ use std::{
 use crate::{
     abi::get_registers,
     ir::{
-        const_ptr, Constant, DataType, IRFunction, IndexedInstruction, InputSlot, Instruction, InstructionType,
-        OutputSlot,
+        const_ptr, Constant, DataType, IRFunction, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction,
+        InstructionType, OutputSlot,
     },
 };
 
@@ -149,7 +149,7 @@ pub enum Value {
 
 impl Value {
     /// Get the "first usage" of this value
-    fn into_usage(&self, func: &IRFunction) -> Usage {
+    fn into_usage(&self, func: &IRFunctionInternal) -> Usage {
         match self {
             Value::InstructionOutput {
                 block_index,
@@ -316,7 +316,7 @@ impl InputSlot {
         }
     }
 
-    pub fn to_value(self, func: &IRFunction) -> Option<Value> {
+    pub fn to_value(self, func: &IRFunctionInternal) -> Option<Value> {
         match self {
             InputSlot::InstructionOutput {
                 instruction_index,
@@ -356,7 +356,7 @@ impl InputSlot {
 }
 
 struct IRFunctionValueIterator<'a> {
-    pub function: &'a IRFunction,
+    pub function: &'a IRFunctionInternal,
     block_index: usize,
     block_input_index: usize,
     instruction_index: usize,
@@ -465,7 +465,7 @@ struct Usage {
 }
 
 impl Usage {
-    fn recalculate_index_in_block(&self, func: &IRFunction) -> Self {
+    fn recalculate_index_in_block(&self, func: &IRFunctionInternal) -> Self {
         Usage {
             block_index: self.block_index,
             instruction_index: self.instruction_index,
@@ -521,7 +521,7 @@ pub struct Lifetimes {
 impl Lifetimes {
     pub fn get_active_at_index(
         &self,
-        func: &IRFunction,
+        func: &IRFunctionInternal,
         block_index: usize,
         instruction_index_in_block: usize,
     ) -> Vec<Value> {
@@ -548,7 +548,7 @@ impl Lifetimes {
     }
 }
 
-fn calculate_lifetimes(func: &IRFunction) -> Lifetimes {
+fn calculate_lifetimes(func: &IRFunctionInternal) -> Lifetimes {
     let mut last_used = HashMap::new();
     let mut all_usages: HashMap<Value, Vec<Usage>> = HashMap::new();
     let mut interference = HashMap::new();
@@ -665,7 +665,7 @@ impl Display for Register {
     }
 }
 
-impl IRFunction {
+impl IRFunctionInternal {
     pub fn new_sized_stack_location(&mut self, bytes_needed: usize) -> usize {
         // Align the stack to this data type
         self.stack_bytes_used += bytes_needed - (self.stack_bytes_used % bytes_needed);
@@ -802,7 +802,8 @@ impl RegisterAllocations {
 /// Allocates registers for the given function. This will modify the function to spill values as
 /// needed. Also calculates which callee-saved registers are needed and reserves space on the stack
 /// for them.
-pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
+pub fn alloc_for(func: &IRFunction) -> RegisterAllocations {
+    let mut func = func.func.borrow_mut();
     let mut done = false;
     let mut allocations = HashMap::new();
     while !done {
@@ -848,7 +849,7 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
                     .flat_map(|iv| {
                         lifetimes.all_usages[iv]
                             .iter()
-                            .find(|u| u >= &&value.into_usage(func))
+                            .find(|u| u >= &&value.into_usage(&func))
                             .map(|u| (*u, *iv))
                     })
                     // Find the one with the farthest out next usage
@@ -858,7 +859,7 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
                     panic!("Couldn't find a value to spill!");
                 }
                 let (to_spill_next_used, _to_spill) = to_spill.unwrap();
-                if to_spill_next_used == value.into_usage(func) {
+                if to_spill_next_used == value.into_usage(&func) {
                     panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
                 }
                 break;
@@ -869,7 +870,7 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
             done = true;
         } else {
             let (to_spill_next_used, to_spill) = to_spill.unwrap();
-            let to_spill_first_usage = to_spill.into_usage(func);
+            let to_spill_first_usage = to_spill.into_usage(&func);
 
             let final_usage_pre_spill = lifetimes.all_usages[&to_spill]
                 .iter()
@@ -899,7 +900,7 @@ pub fn alloc_for(func: &mut IRFunction) -> RegisterAllocations {
         })
         .collect::<Vec<_>>();
 
-    let lifetimes = calculate_lifetimes(func);
+    let lifetimes = calculate_lifetimes(&func);
     RegisterAllocations {
         allocations,
         callee_saved,

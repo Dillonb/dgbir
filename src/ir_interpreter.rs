@@ -252,6 +252,7 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
 
 pub fn interpret_func(func: &IRFunction, args: Vec<Constant>) -> Option<Constant> {
     func.validate();
+    let func = func.func.borrow();
     let mut block_index: usize = 0;
     let mut pc: usize = 0;
     let mut returned = false;

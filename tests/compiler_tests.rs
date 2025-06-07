@@ -24,24 +24,24 @@ fn validate<T: std::fmt::Display + std::fmt::Debug + std::cmp::PartialEq>(result
 #[should_panic(expected = "Unclosed block")]
 fn unclosed_block() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
+    let func = IRFunction::new(context);
     let block = func.new_block(vec![DataType::U32]);
-    func.add(&block, DataType::U32, block.input(0), const_u32(1));
+    block.add(DataType::U32, block.input(0), const_u32(1));
     // No return statement, block is unclosed
     println!("{}", func);
     println!("Compiling...");
-    compile(&mut func);
+    compile(&func);
 }
 
 #[test]
 fn compiler_identityfunc() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::U32]);
-    func.ret(&block, Some(block.input(0)));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::U32]);
+    block.ret(Some(block.input(0)));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -54,13 +54,13 @@ fn compiler_identityfunc() {
 #[test]
 fn compiler_addone() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::U32]);
-    let add_result = func.add(&block, DataType::U32, block.input(0), const_u32(1));
-    func.ret(&block, Some(add_result.val()));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::U32]);
+    let add_result = block.add(DataType::U32, block.input(0), const_u32(1));
+    block.ret(Some(add_result.val()));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -73,12 +73,12 @@ fn compiler_addone() {
 #[test]
 fn compiler_identityfunc_f32() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::F32]);
-    func.ret(&block, Some(block.input(0)));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::F32]);
+    block.ret(Some(block.input(0)));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -91,13 +91,13 @@ fn compiler_identityfunc_f32() {
 #[test]
 fn compiler_addone_f32() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::F32]);
-    let add_result = func.add(&block, DataType::F32, block.input(0), const_f32(1.0));
-    func.ret(&block, Some(add_result.val()));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::F32]);
+    let add_result = block.add(DataType::F32, block.input(0), const_f32(1.0));
+    block.ret(Some(add_result.val()));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     println!("{}", disassemble(&compiled.code, f as u64));
@@ -110,13 +110,13 @@ fn compiler_addone_f32() {
 #[test]
 fn compiler_add_f32_to_self() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::F32]);
-    let add_result = func.add(&block, DataType::F32, block.input(0), block.input(0));
-    func.ret(&block, Some(add_result.val()));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::F32]);
+    let add_result = block.add(DataType::F32, block.input(0), block.input(0));
+    block.ret(Some(add_result.val()));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     println!("{}", disassemble(&compiled.code, f as u64));
@@ -131,28 +131,28 @@ fn constant_shifts_8() {
     let results: Vec<u64> = vec![0; 16];
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::Ptr, DataType::U8]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::U8]);
     let result_ptr = block.input(0);
     let input = block.input(1);
     let mut index = 0;
     for tp in vec![DataType::U8, DataType::S8] {
         for const_shift_amount in vec![0, 1, 6, 8] {
-            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
-            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+            let left_result = block.left_shift(tp, input, const_u32(const_shift_amount));
+            let right_result = block.right_shift(tp, input, const_u32(const_shift_amount));
 
             // Write the entire 64 bit register even though we only did a 32 bit shift to ensure
             // the behavior is consistent
-            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
+            block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
             index += 1;
-            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
+            block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
             index += 1;
         }
     }
 
-    func.ret(&block, None);
+    block.ret(None);
 
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(usize, u8) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     // println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -221,28 +221,28 @@ fn constant_shifts_16() {
     let results: Vec<u64> = vec![0; 16];
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::Ptr, DataType::U16]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::U16]);
     let result_ptr = block.input(0);
     let input = block.input(1);
     let mut index = 0;
     for tp in vec![DataType::U16, DataType::S16] {
         for const_shift_amount in vec![0, 1, 6, 32] {
-            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
-            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+            let left_result = block.left_shift(tp, input, const_u32(const_shift_amount));
+            let right_result = block.right_shift(tp, input, const_u32(const_shift_amount));
 
             // Write the entire 64 bit register even though we only did a 32 bit shift to ensure
             // the behavior is consistent
-            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
+            block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
             index += 1;
-            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
+            block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
             index += 1;
         }
     }
 
-    func.ret(&block, None);
+    block.ret(None);
 
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(usize, u16) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -311,28 +311,28 @@ fn constant_shifts_32() {
     let results: Vec<u64> = vec![0; 16];
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::Ptr, DataType::U32]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::U32]);
     let result_ptr = block.input(0);
     let input = block.input(1);
     let mut index = 0;
     for tp in vec![DataType::U32, DataType::S32] {
         for const_shift_amount in vec![0, 1, 6, 32] {
-            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
-            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+            let left_result = block.left_shift(tp, input, const_u32(const_shift_amount));
+            let right_result = block.right_shift(tp, input, const_u32(const_shift_amount));
 
             // Write the entire 64 bit register even though we only did a 32 bit shift to ensure
             // the behavior is consistent
-            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
+            block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), left_result.val());
             index += 1;
-            func.write_ptr(&block, DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
+            block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), right_result.val());
             index += 1;
         }
     }
 
-    func.ret(&block, None);
+    block.ret(None);
 
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(usize, u32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     f(results.as_ptr() as usize, 2);
@@ -400,26 +400,26 @@ fn constant_shifts_64() {
     let results: Vec<u64> = vec![0; 20];
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::Ptr, DataType::U64]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::U64]);
     let result_ptr = block.input(0);
     let input = block.input(1);
     let mut index = 0;
     for tp in vec![DataType::U64, DataType::S64] {
         for const_shift_amount in vec![0, 1, 6, 32, 64] {
-            let left_result = func.left_shift(&block, tp, input, const_u32(const_shift_amount));
-            let right_result = func.right_shift(&block, tp, input, const_u32(const_shift_amount));
+            let left_result = block.left_shift(tp, input, const_u32(const_shift_amount));
+            let right_result = block.right_shift(tp, input, const_u32(const_shift_amount));
 
-            func.write_ptr(&block, tp, result_ptr, index * size_of::<u64>(), left_result.val());
+            block.write_ptr(tp, result_ptr, index * size_of::<u64>(), left_result.val());
             index += 1;
-            func.write_ptr(&block, tp, result_ptr, index * size_of::<u64>(), right_result.val());
+            block.write_ptr(tp, result_ptr, index * size_of::<u64>(), right_result.val());
             index += 1;
         }
     }
 
-    func.ret(&block, None);
+    block.ret(None);
 
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(usize, u64) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     println!("{}", disassemble(&compiled.code, f as u64));
 
@@ -497,62 +497,55 @@ fn compiler_same_results_as_interpreter() {
     }
     fn get_function() -> IRFunction {
         let context = IRContext::new();
-        let mut func = IRFunction::new(context);
-        let first_block = func.new_block(vec![DataType::Ptr]);
+        let func = IRFunction::new(context);
+        let mut first_block = func.new_block(vec![DataType::Ptr]);
         let result_ptr = first_block.input(0);
-        let block = func.new_block(vec![]);
+        let mut block = func.new_block(vec![]);
 
-        let add_result = func.add(&first_block, DataType::U32, const_u32(1), const_u32(1));
-        let add2_result = func.add(&first_block, DataType::U32, add_result.val(), const_u32(1));
-        let add3_result = func.add(&first_block, DataType::U32, add2_result.val(), add_result.val());
-        let add4_result = func.add(&first_block, DataType::U32, add3_result.val(), const_u32(1));
+        let add_result = first_block.add(DataType::U32, const_u32(1), const_u32(1));
+        let add2_result = first_block.add(DataType::U32, add_result.val(), const_u32(1));
+        let add3_result = first_block.add(DataType::U32, add2_result.val(), add_result.val());
+        let add4_result = first_block.add(DataType::U32, add3_result.val(), const_u32(1));
 
-        func.jump(&first_block, block.call(vec![]));
+        first_block.jump(block.call(vec![]));
 
         // Very high register pressure
-        let r1 = func.add(&block, DataType::U32, add4_result.val(), const_u32(1));
-        let r2 = func.add(&block, DataType::U32, add4_result.val(), const_u32(1));
-        let r3 = func.add(&block, DataType::U32, add4_result.val(), const_u32(1));
-        let r4 = func.add(&block, DataType::U32, add4_result.val(), const_u32(1));
-        let r5 = func.add(&block, DataType::U32, add4_result.val(), const_u32(1));
-        let r6 = func.add(&block, DataType::U32, add4_result.val(), const_u32(1));
-        let r7 = func.add(&block, DataType::U32, r6.val(), r5.val());
-        let r8 = func.add(&block, DataType::U32, r7.val(), r4.val());
-        let r9 = func.add(&block, DataType::U32, r8.val(), r3.val());
-        let r10 = func.add(&block, DataType::U32, r9.val(), r2.val());
-        let r11 = func.add(&block, DataType::U32, r10.val(), r1.val());
-        let nearly_final_result = func.add(&block, DataType::U32, r11.val(), add4_result.val());
-        func.write_ptr(
-            &block,
-            DataType::U32,
-            result_ptr,
-            offset_of!(ResultStruct, pre_loop),
-            nearly_final_result.val(),
-        );
+        let r1 = block.add(DataType::U32, add4_result.val(), const_u32(1));
+        let r2 = block.add(DataType::U32, add4_result.val(), const_u32(1));
+        let r3 = block.add(DataType::U32, add4_result.val(), const_u32(1));
+        let r4 = block.add(DataType::U32, add4_result.val(), const_u32(1));
+        let r5 = block.add(DataType::U32, add4_result.val(), const_u32(1));
+        let r6 = block.add(DataType::U32, add4_result.val(), const_u32(1));
+        let r7 = block.add(DataType::U32, r6.val(), r5.val());
+        let r8 = block.add(DataType::U32, r7.val(), r4.val());
+        let r9 = block.add(DataType::U32, r8.val(), r3.val());
+        let r10 = block.add(DataType::U32, r9.val(), r2.val());
+        let r11 = block.add(DataType::U32, r10.val(), r1.val());
+        let nearly_final_result = block.add(DataType::U32, r11.val(), add4_result.val());
+        block.write_ptr(DataType::U32, result_ptr, offset_of!(ResultStruct, pre_loop), nearly_final_result.val());
 
         // Use a loop to add ten to the final result
-        let loop_block = func.new_block(vec![DataType::U32, DataType::U32]);
-        func.jump(&block, loop_block.call(vec![const_u32(0), nearly_final_result.val()]));
+        let mut loop_block = func.new_block(vec![DataType::U32, DataType::U32]);
+        block.jump(loop_block.call(vec![const_u32(0), nearly_final_result.val()]));
 
         // Add 1 to both the counter and the running total
-        let loop_counter = func.add(&loop_block, DataType::U32, loop_block.input(0), const_u32(1));
-        let running_total = func.add(&loop_block, DataType::U32, loop_block.input(1), const_u32(1));
+        let loop_counter = loop_block.add(DataType::U32, loop_block.input(0), const_u32(1));
+        let running_total = loop_block.add(DataType::U32, loop_block.input(1), const_u32(1));
 
-        let loop_again = func.compare(&loop_block, loop_counter.val(), CompareType::LessThanUnsigned, const_u32(10));
-        let ret_block = func.new_block(vec![DataType::U32]);
-        func.branch(
-            &loop_block,
+        let loop_again = loop_block.compare(loop_counter.val(), CompareType::LessThanUnsigned, const_u32(10));
+        let mut ret_block = func.new_block(vec![DataType::U32]);
+        loop_block.branch(
             loop_again.val(),
             loop_block.call(vec![loop_counter.val(), running_total.val()]),
             ret_block.call(vec![running_total.val()]),
         );
 
-        func.write_ptr(&ret_block, DataType::U32, result_ptr, offset_of!(ResultStruct, post_loop), ret_block.input(0));
-        func.ret(&ret_block, Some(ret_block.input(0)));
+        ret_block.write_ptr(DataType::U32, result_ptr, offset_of!(ResultStruct, post_loop), ret_block.input(0));
+        ret_block.ret(Some(ret_block.input(0)));
 
         return func;
     }
-    let mut func = get_function();
+    let func = get_function();
 
     let r = ResultStruct {
         pre_loop: 0,
@@ -565,7 +558,7 @@ fn compiler_same_results_as_interpreter() {
     println!("Result: {:?}", r);
 
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
 
     let f: extern "C" fn(usize) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
@@ -587,13 +580,13 @@ fn compiler_same_results_as_interpreter() {
 #[test]
 fn convert_u32_u64() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::U32]);
-    let converted = func.convert(&block, DataType::U64, block.input(0));
-    func.ret(&block, Some(converted.val()));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::U32]);
+    let converted = block.convert(DataType::U64, block.input(0));
+    block.ret(Some(converted.val()));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     println!("{}", disassemble(&compiled.code, f as u64));
@@ -609,13 +602,13 @@ fn convert_u32_u64() {
 #[test]
 fn convert_s32_s64() {
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::S32]);
-    let converted = func.convert(&block, DataType::S64, block.input(0));
-    func.ret(&block, Some(converted.val()));
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::S32]);
+    let converted = block.convert(DataType::S64, block.input(0));
+    block.ret(Some(converted.val()));
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(i32) -> i64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     println!("{}", disassemble(&compiled.code, f as u64));
@@ -635,16 +628,16 @@ fn call_external_function() {
     }
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![DataType::U32]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::U32]);
 
     let input = block.input(0);
-    let call_result = func.call_function(&block, const_ptr(add_ten as usize), DataType::U32, vec![input]);
-    func.ret(&block, Some(call_result.val()));
+    let call_result = block.call_function(const_ptr(add_ten as usize), DataType::U32, vec![input]);
+    block.ret(Some(call_result.val()));
 
     println!("{}", func);
     println!("Compiling...");
-    let compiled = compile(&mut func);
+    let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
     println!("{}", disassemble(&compiled.code, f as u64));

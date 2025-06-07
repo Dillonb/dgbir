@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, rc::Rc};
 
 use ordered_float::OrderedFloat;
 
@@ -218,10 +218,15 @@ pub struct IRContext {
 }
 
 #[derive(Debug)]
-pub struct IRFunction {
+pub struct IRFunctionInternal {
     pub stack_bytes_used: usize,
     pub blocks: Vec<IRBasicBlock>,
     pub instructions: Vec<IndexedInstruction>,
+}
+
+#[derive(Debug)]
+pub struct IRFunction {
+    pub func: Rc<RefCell<IRFunctionInternal>>,
 }
 
 #[derive(Debug)]
@@ -235,6 +240,7 @@ pub struct IRBasicBlock {
 pub struct IRBlockHandle {
     pub index: usize,
     pub inputs: Vec<DataType>,
+    func: Rc<RefCell<IRFunctionInternal>>,
 }
 
 impl IRBlockHandle {
@@ -264,31 +270,39 @@ impl IRContext {
 impl IRFunction {
     pub fn new(_context: RefCell<IRContext>) -> Self {
         IRFunction {
-            blocks: Vec::new(),
-            instructions: Vec::new(),
-            stack_bytes_used: 0,
+            func: Rc::new(RefCell::new(IRFunctionInternal {
+                blocks: Vec::new(),
+                instructions: Vec::new(),
+                stack_bytes_used: 0,
+            })),
         }
     }
 
-    pub fn new_block(&mut self, inputs: Vec<DataType>) -> IRBlockHandle {
-        let index = self.blocks.len();
-        self.blocks.push(IRBasicBlock {
+    pub fn new_block(&self, inputs: Vec<DataType>) -> IRBlockHandle {
+        let index = self.func.borrow().blocks.len();
+        self.func.borrow_mut().blocks.push(IRBasicBlock {
             is_closed: false,
             index,
             inputs: inputs.clone(),
             instructions: Vec::new(),
         });
-        return IRBlockHandle { index, inputs };
+        return IRBlockHandle {
+            index,
+            inputs,
+            func: self.func.clone(),
+        };
     }
 
     pub fn validate(&self) {
-        for block in &self.blocks {
+        for block in &self.func.borrow().blocks {
             if !block.is_closed {
                 panic!("Unclosed block: block_{}", block.index);
             }
         }
     }
+}
 
+impl IRFunctionInternal {
     pub fn append_obj(&mut self, block_handle: &IRBlockHandle, instruction: Instruction) -> usize {
         let block = &mut self.blocks[block_handle.index];
         if block.is_closed {

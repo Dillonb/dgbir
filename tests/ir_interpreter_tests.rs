@@ -5,13 +5,13 @@ fn write_ptr() {
     let r: u32 = 0;
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
+    let func = IRFunction::new(context);
 
-    let block = func.new_block(vec![]);
+    let mut block = func.new_block(vec![]);
 
-    func.write_ptr(&block, DataType::U32, const_ptr(&r as *const u32 as usize), 0, const_u32(1));
+    block.write_ptr(DataType::U32, const_ptr(&r as *const u32 as usize), 0, const_u32(1));
 
-    func.ret(&block, None);
+    block.ret(None);
     println!("{}", func);
     interpret_func(&func, vec![]);
     assert_eq!(r, 1);
@@ -22,15 +22,15 @@ fn add_write_ptr() {
     let r: u32 = 0;
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![]);
 
-    let add_result = func.add(&block, DataType::U32, const_u32(1), const_u32(1));
-    let add2_result = func.add(&block, DataType::U32, add_result.val(), const_u32(1));
-    let add3_result = func.add(&block, DataType::U32, add2_result.val(), add_result.val());
+    let add_result = block.add(DataType::U32, const_u32(1), const_u32(1));
+    let add2_result = block.add(DataType::U32, add_result.val(), const_u32(1));
+    let add3_result = block.add(DataType::U32, add2_result.val(), add_result.val());
 
-    func.write_ptr(&block, DataType::U32, const_ptr(&r as *const u32 as usize), 0, add3_result.val());
-    func.ret(&block, None);
+    block.write_ptr(DataType::U32, const_ptr(&r as *const u32 as usize), 0, add3_result.val());
+    block.ret(None);
     println!("{}", func);
     interpret_func(&func, vec![]);
     assert_eq!(r, 5);
@@ -41,11 +41,11 @@ fn write_float_ptr() {
     let r: f32 = 0.0;
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![]);
 
-    func.write_ptr(&block, DataType::F32, const_ptr(&r as *const f32 as usize), 0, const_f32(1.0));
-    func.ret(&block, None);
+    block.write_ptr(DataType::F32, const_ptr(&r as *const f32 as usize), 0, const_f32(1.0));
+    block.ret(None);
 
     println!("{}", func);
 
@@ -59,16 +59,16 @@ fn add_write_float_ptr() {
     let res_2: u32 = 0;
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
-    let block = func.new_block(vec![]);
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![]);
 
-    let add_result = func.add(&block, DataType::F32, const_f32(1.0), const_u32(1));
-    let add_result_2 = func.add(&block, DataType::U32, const_u32(1), const_f32(1.0));
+    let add_result = block.add(DataType::F32, const_f32(1.0), const_u32(1));
+    let add_result_2 = block.add(DataType::U32, const_u32(1), const_f32(1.0));
 
-    func.write_ptr(&block, DataType::F32, const_ptr(&res_1 as *const f32 as usize), 0, add_result.val());
+    block.write_ptr(DataType::F32, const_ptr(&res_1 as *const f32 as usize), 0, add_result.val());
 
-    func.write_ptr(&block, DataType::U32, const_ptr(&res_2 as *const u32 as usize), 0, add_result_2.val());
-    func.ret(&block, None);
+    block.write_ptr(DataType::U32, const_ptr(&res_2 as *const u32 as usize), 0, add_result_2.val());
+    block.ret(None);
 
     println!("{}", func);
 
@@ -89,29 +89,28 @@ fn test_conditional_branch_loop() {
      */
 
     let context = IRContext::new();
-    let mut func = IRFunction::new(context);
+    let func = IRFunction::new(context);
 
-    let entry_block = func.new_block(vec![]);
-    let loop_block = func.new_block(vec![DataType::U32]);
+    let mut entry_block = func.new_block(vec![]);
+    let mut loop_block = func.new_block(vec![DataType::U32]);
     // TODO: rename "call" to something that makes it clear we're not appending a call instruction
     // to the block, we're calling the block
-    func.jump(&entry_block, loop_block.call(vec![const_u32(0)]));
+    entry_block.jump(loop_block.call(vec![const_u32(0)]));
 
-    let running_sum = func.add(&loop_block, DataType::U32, loop_block.input(0), const_u32(1));
+    let running_sum = loop_block.add(DataType::U32, loop_block.input(0), const_u32(1));
 
-    let compare = func.compare(&loop_block, running_sum.val(), CompareType::LessThanUnsigned, const_u32(10));
+    let compare = loop_block.compare(running_sum.val(), CompareType::LessThanUnsigned, const_u32(10));
 
-    let exit_block = func.new_block(vec![DataType::U32]);
-    func.branch(
-        &loop_block,
+    let mut exit_block = func.new_block(vec![DataType::U32]);
+    loop_block.branch(
         compare.val(),
         loop_block.call(vec![running_sum.val()]),
         exit_block.call(vec![running_sum.val()]),
     );
 
-    func.write_ptr(&exit_block, DataType::U32, const_ptr(&res as *const u32 as usize), 0, exit_block.input(0));
+    exit_block.write_ptr(DataType::U32, const_ptr(&res as *const u32 as usize), 0, exit_block.input(0));
 
-    func.ret(&exit_block, Some(exit_block.input(0)));
+    exit_block.ret(Some(exit_block.input(0)));
 
     println!("{}", func);
     interpret_func(&func, vec![]);

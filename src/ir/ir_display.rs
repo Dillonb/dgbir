@@ -106,6 +106,13 @@ impl Display for IRBasicBlock {
 
 impl Display for IRFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Forward to IRFunctionInternal formatter
+        self.func.borrow().fmt(f)
+    }
+}
+
+impl Display for IRFunctionInternal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.blocks
             .iter()
             .map(|block| {
