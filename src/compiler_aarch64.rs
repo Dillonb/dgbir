@@ -80,9 +80,9 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn prologue(&self, ops: &mut Ops) {
         // Setup stack
-        if self.get_func().stack_bytes_used > 0 {
+        if self.func.stack_bytes_used > 0 {
             dynasm!(ops
-                ; sub sp, sp, self.get_func().stack_bytes_used.try_into().unwrap()
+                ; sub sp, sp, self.func.stack_bytes_used.try_into().unwrap()
             )
         }
 
@@ -92,13 +92,13 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; str X(*r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
+                        ; str X(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
                     )
                 }
                 Register::SIMD(r) => {
                     assert_eq!(reg.size(), 16);
                     dynasm!(ops
-                        ; str Q(*r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
+                        ; str Q(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     );
                 }
             }
@@ -232,22 +232,22 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; ldr X(r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
+                        ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as u32]
                     )
                 }
                 Register::SIMD(r) => {
                     assert_eq!(reg.size(), 16);
                     dynasm!(ops
-                        ; ldr Q(r as u32), [sp, self.get_func().get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
+                        ; ldr Q(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     )
                 }
             }
         }
 
         // Fix sp
-        if self.get_func().stack_bytes_used > 0 {
+        if self.func.stack_bytes_used > 0 {
             dynasm!(ops
-                ; add sp, sp, self.get_func().stack_bytes_used.try_into().unwrap()
+                ; add sp, sp, self.func.stack_bytes_used.try_into().unwrap()
             );
         }
         dynasm!(ops
@@ -389,7 +389,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         match (&to_spill, &stack_offset, tp) {
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
-                    ; str W(*r), [sp, self.get_func().get_stack_offset_for_location(*offset, DataType::U32) as u32]
+                    ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
             _ => todo!(
@@ -405,7 +405,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         match (r_out, &stack_offset, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [sp, self.get_func().get_stack_offset_for_location(*offset, DataType::U32) as u32]
+                    ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
             _ => todo!(
