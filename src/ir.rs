@@ -190,6 +190,10 @@ impl InstructionOutput {
     }
 }
 
+pub fn const_u16(value: u16) -> InputSlot {
+    InputSlot::Constant(Constant::U16(value))
+}
+
 pub fn const_u32(value: u32) -> InputSlot {
     InputSlot::Constant(Constant::U32(value))
 }

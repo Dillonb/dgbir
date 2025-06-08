@@ -31,6 +31,18 @@ impl IRBlockHandle {
         return InstructionOutput { outputs: vec![] };
     }
 
+    pub fn load_ptr(&mut self, tp: DataType, ptr: InputSlot, offset: usize) -> InstructionOutput {
+        self.append(
+            InstructionType::LoadPtr,
+            vec![
+                ptr,
+                InputSlot::Constant(Constant::U64(offset as u64)),
+            ],
+            vec![OutputSlot { tp }],
+        );
+        return InstructionOutput { outputs: vec![] };
+    }
+
     pub fn compare(&mut self, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::Compare,
