@@ -39,8 +39,7 @@ impl IRBlockHandle {
                 InputSlot::Constant(Constant::U64(offset as u64)),
             ],
             vec![OutputSlot { tp }],
-        );
-        return InstructionOutput { outputs: vec![] };
+        )
     }
 
     pub fn compare(&mut self, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
