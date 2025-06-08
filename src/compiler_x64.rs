@@ -1,7 +1,7 @@
 use crate::{
     abi::{get_return_value_registers, get_scratch_registers},
     compiler::{Compiler, ConstOrReg, LiteralPool},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, IRFunctionInternal},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
