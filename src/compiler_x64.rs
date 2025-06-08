@@ -1,7 +1,9 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     abi::{get_return_value_registers, get_scratch_registers},
     compiler::{Compiler, ConstOrReg, LiteralPool},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunction},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunction, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
@@ -22,26 +24,27 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         ops.new_dynamic_label()
     }
 
-    fn new(ops: &mut Ops, func: &'a mut IRFunction) -> Self {
+    fn new(ops: &mut Ops, func: &'a IRFunction) -> Self {
         let allocations = alloc_for(func);
+        let mut func_internal = func.func.borrow_mut();
 
-        println!("Function after allocation:\n{}", func);
+        println!("Function after allocation:\n{}", func_internal);
 
         // Stack bytes used: aligned to 16 bytes
         // Note: x64 is stupid, and the CALL instruction leaves the stack pointer misaligned.
         // Take this into account.
-        let misalignment = (func.stack_bytes_used + 8) % 16;
+        let misalignment = (func_internal.stack_bytes_used + 8) % 16;
         let correction = if misalignment == 0 { 0 } else { 16 - misalignment };
-        let stack_bytes_used = func.stack_bytes_used + correction;
+        let stack_bytes_used = func_internal.stack_bytes_used + correction;
         println!(
             "Function uses {} bytes of stack, misaligned by {}, corrected to {}",
-            func.stack_bytes_used, misalignment, stack_bytes_used
+            func_internal.stack_bytes_used, misalignment, stack_bytes_used
         );
-        func.stack_bytes_used = stack_bytes_used;
+        func_internal.stack_bytes_used = stack_bytes_used;
 
         let entrypoint = ops.offset();
 
-        let block_labels = func.blocks.iter().map(|_| ops.new_dynamic_label()).collect();
+        let block_labels = func_internal.blocks.iter().map(|_| ops.new_dynamic_label()).collect();
 
         X64Compiler {
             entrypoint,
@@ -53,10 +56,11 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     }
 
     fn prologue(&self, ops: &mut Ops) {
+        let func = self.get_func().borrow();
         // Setup stack
-        if self.get_func().stack_bytes_used > 0 {
+        if func.stack_bytes_used > 0 {
             dynasm!(ops
-                ; sub rsp, self.get_func().stack_bytes_used.try_into().unwrap()
+                ; sub rsp, func.stack_bytes_used.try_into().unwrap()
             )
         }
 
@@ -65,8 +69,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             match reg {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
-                    let ofs = self
-                        .get_func()
+                    let ofs = func
                         .get_stack_offset_for_location(*stack_location as u64, DataType::U64)
                         as i32;
                     dynasm!(ops
@@ -141,8 +144,8 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         );
     }
 
-    fn get_func(&self) -> &IRFunction {
-        self.func
+    fn get_func(&self) -> &Rc<RefCell<IRFunctionInternal>> {
+        &self.func.func
     }
 
     fn get_allocations(&self) -> &RegisterAllocations {
@@ -182,6 +185,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     }
 
     fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>) {
+        let func = self.func.func.borrow();
         if let Some(v) = value {
             let retval_reg = *get_return_value_registers()
                 .iter()
@@ -198,7 +202,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; mov Rq(r as u8), [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
+                        ; mov Rq(r as u8), [rsp + func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
                     )
                 }
                 Register::SIMD(_) => todo!("Restoring saved SIMD register from stack"),
@@ -206,9 +210,9 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
         }
 
         // Fix sp
-        if self.func.stack_bytes_used > 0 {
+        if func.stack_bytes_used > 0 {
             dynasm!(ops
-                ; add rsp, self.func.stack_bytes_used.try_into().unwrap()
+                ; add rsp, func.stack_bytes_used.try_into().unwrap()
             );
         }
         dynasm!(ops
@@ -345,15 +349,16 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     }
 
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_location: ConstOrReg, tp: DataType) {
+        let func = self.func.func.borrow();
         match (&to_spill, &stack_location, tp) {
             (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U32) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32) as i32;
+                let offset = func.get_stack_offset_for_location(*location, DataType::U32) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rd(*r as u8)
                 )
             }
             (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::Ptr) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::Ptr) as i32;
+                let offset = func.get_stack_offset_for_location(*location, DataType::Ptr) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rq(*r as u8)
                 )
@@ -368,15 +373,16 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
     }
 
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_location: ConstOrReg, tp: DataType) {
+        let func = self.func.func.borrow();
         match (r_out, &stack_location, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32) => {
-                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                let offset = func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rd(r_out as u8), [rsp + offset]
                 )
             }
             (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr) => {
-                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                let offset = func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rq(r_out as u8), [rsp + offset]
                 )
