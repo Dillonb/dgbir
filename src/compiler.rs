@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
 use dynasmrt::{AssemblyOffset, ExecutableBuffer};
 use ordered_float::OrderedFloat;
@@ -314,7 +312,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
 
                     let active_volatile_regs = allocations
                         .lifetimes
-                        .get_active_at_index(&compiler.get_func().borrow(), block_index, instruction_index_in_block)
+                        .get_active_at_index(&compiler.get_func(), block_index, instruction_index_in_block)
                         .iter()
                         .map(|v| allocations.get(v).unwrap())
                         .filter(|r| r.is_volatile())
@@ -357,7 +355,7 @@ pub trait Compiler<'a, Ops> {
     fn to_imm_or_reg(&self, s: &InputSlot) -> ConstOrReg {
         match *s {
             InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => {
-                match self.get_allocations().allocations[&s.to_value(&self.get_func().borrow()).unwrap()] {
+                match self.get_allocations().allocations[&s.to_value(&self.get_func()).unwrap()] {
                     Register::GPR(r) => ConstOrReg::GPR(r as u32),
                     Register::SIMD(r) => ConstOrReg::SIMD(r as u32),
                 }
@@ -453,7 +451,7 @@ pub trait Compiler<'a, Ops> {
             .iter()
             .enumerate()
             .map(|(input_index, arg)| {
-                let data_type = self.get_func().borrow().blocks[target.block_index].inputs[input_index];
+                let data_type = self.get_func().blocks[target.block_index].inputs[input_index];
 
                 let in_block_value = Value::BlockInput {
                     block_index: target.block_index,
@@ -485,7 +483,7 @@ pub trait Compiler<'a, Ops> {
 
         let arg_regs = get_function_argument_registers();
         let mut allocated_arg_regs = HashSet::new();
-        self.get_func().borrow().blocks[0]
+        self.get_func().blocks[0]
             .inputs
             .iter()
             .enumerate()
@@ -511,7 +509,7 @@ pub trait Compiler<'a, Ops> {
 
     // Functions that must be overridden by the different architecture bacends
     /// Creates a new Compiler object and sets up the function for compilation.
-    fn new(ops: &mut Ops, func: &'a IRFunction) -> Self;
+    fn new(ops: &mut Ops, func: &'a mut IRFunctionInternal) -> Self;
     /// Emit the function prologue.
     fn prologue(&self, ops: &mut Ops);
     /// Emit the function epilogue.
@@ -527,7 +525,7 @@ pub trait Compiler<'a, Ops> {
     fn on_new_block_begin(&self, ops: &mut Ops, block_index: usize);
 
     /// Gets the func object this Compiler is compiling
-    fn get_func(&self) -> &Rc<RefCell<IRFunctionInternal>>;
+    fn get_func(&self) -> &IRFunctionInternal;
     /// Gets all the register allocations for this function
     fn get_allocations(&self) -> &RegisterAllocations;
     /// Gets an offset to the entry point of this function
@@ -657,24 +655,24 @@ pub fn compile(func: &IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "aarch64")]
     let mut ops = dynasmrt::aarch64::Assembler::new().unwrap();
 
+    let mut func = func.func.borrow_mut();
+
     #[cfg(target_arch = "aarch64")]
-    let compiler = compiler_aarch64::Aarch64Compiler::new(&mut ops, func);
+    let compiler = compiler_aarch64::Aarch64Compiler::new(&mut ops, &mut func);
     #[cfg(target_arch = "x86_64")]
-    let compiler = compiler_x64::X64Compiler::new(&mut ops, func);
+    let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
     let mut lp = LiteralPool::new();
 
     compiler.prologue(&mut ops);
     compiler.handle_function_arguments(&mut ops, &mut lp);
 
-    let func = compiler.get_func().borrow();
-
-    for (block_index, block) in compiler.get_func().borrow().blocks.iter().enumerate() {
+    for (block_index, block) in compiler.get_func().blocks.iter().enumerate() {
         compiler.on_new_block_begin(&mut ops, block_index);
         block
             .instructions
             .iter()
-            .map(|i_in_block| (i_in_block, &func.instructions[*i_in_block]))
+            .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
             .for_each(|(i_in_block, instruction)| {
                 compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, *i_in_block, instruction)
             })

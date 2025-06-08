@@ -8,8 +8,8 @@ use std::{
 use crate::{
     abi::get_registers,
     ir::{
-        const_ptr, Constant, DataType, IRFunction, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction,
-        InstructionType, OutputSlot,
+        const_ptr, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction, InstructionType,
+        OutputSlot,
     },
 };
 
@@ -802,8 +802,7 @@ impl RegisterAllocations {
 /// Allocates registers for the given function. This will modify the function to spill values as
 /// needed. Also calculates which callee-saved registers are needed and reserves space on the stack
 /// for them.
-pub fn alloc_for(func: &IRFunction) -> RegisterAllocations {
-    let mut func = func.func.borrow_mut();
+pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
     let mut done = false;
     let mut allocations = HashMap::new();
     while !done {
