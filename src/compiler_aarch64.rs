@@ -381,10 +381,15 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     ) {
         match (r_out, ptr, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(ptr), DataType::U32) => {
-                let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_address.r(), ptr + offset);
+                let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [X(r_address.r())]
+                    ; ldr W(r_out as u32), [X(r_ptr.r()), offset as u32]
+                );
+            }
+            (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U64) => {
+                dynasm!(ops
+                    ; ldr W(r_out as u32), [X(r_ptr), offset as u32]
                 );
             }
             _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
@@ -405,17 +410,17 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
 
-                load_64_bit_constant(ops, lp, r_address.r(), ptr + offset);
+                load_64_bit_constant(ops, lp, r_address.r(), ptr);
                 load_32_bit_constant(ops, lp, r_value.r(), value);
                 dynasm!(ops
-                    ; str W(r_value.r()), [X(r_address.r())]
+                    ; str W(r_value.r()), [X(r_address.r()), offset as u32]
                 );
             }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
                 let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_address.r(), ptr + offset);
+                load_64_bit_constant(ops, lp, r_address.r(), ptr);
                 dynasm!(ops
-                    ; str W(r_value as u32), [X(r_address.r())]
+                    ; str W(r_value as u32), [X(r_address.r()), offset as u32]
                 );
             }
             (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
