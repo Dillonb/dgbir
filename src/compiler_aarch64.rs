@@ -291,6 +291,20 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     )
                 }
             }
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
+                if c < 4096 {
+                    dynasm!(ops
+                        ; add XSP(r_out as u32), XSP(r), c
+                    )
+                } else {
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    let literal = Self::add_literal(ops, lp, Constant::U32(c));
+                    dynasm!(ops
+                        ; ldr X(r_temp.r()), =>literal
+                        ; add X(r_out as u32), X(r), X(r_temp.r())
+                    )
+                }
+            }
             (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
                     ; add W(r_out as u32), W(r1), W(r2)
@@ -452,6 +466,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64) => {
+                dynasm!(ops
+                    ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
+                )
+            }
             _ => todo!(
                 "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
                 to_spill,
@@ -466,6 +485,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
                     ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
+                )
+            }
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64) => {
+                dynasm!(ops
+                    ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
             }
             _ => todo!(
