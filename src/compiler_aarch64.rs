@@ -274,8 +274,17 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         match (tp, r_out, a, b) {
-            (DataType::U32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
+            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
                 load_32_bit_constant(ops, lp, r_out as u32, c1 + c2);
+            }
+            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::S16(c2)) => {
+                load_32_bit_constant(ops, lp, r_out as u32, (c1 as u32).wrapping_add_signed(c2.into()));
+            }
+            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
+                load_32_bit_constant(ops, lp, r_out as u32, (c1 as u32).wrapping_add(c2.into()));
+            }
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::S16(c2)) => {
+                load_64_bit_constant(ops, lp, r_out as u32, (c1 as u64).wrapping_add_signed(c2 as i64));
             }
             (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
                 if c < 4096 {
@@ -305,7 +314,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     )
                 }
             }
-            (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
                     ; add W(r_out as u32), W(r1), W(r2)
                 )
@@ -342,46 +351,69 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
+        fn set_reg_by_flags(ops: &mut Ops, cmp_type: CompareType, r_out: usize) {
+            // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/A64-General-Instructions/CSET
+            // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/Condition-Codes/Condition-code-suffixes-and-related-flags?lang=en
+            match cmp_type {
+                CompareType::LessThanUnsigned => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), lo // unsigned "lower"
+                    )
+                }
+                CompareType::Equal => todo!("Compare with type Equal"),
+                CompareType::NotEqual => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), ne // "not equal"
+                    )
+                }
+                CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
+                CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
+                CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
+                CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
+                CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
+                CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
+                CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
+            }
+        }
+
         match (a, b) {
             (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
                     ; cmp X(r1 as u32), X(r2 as u32)
-                )
+                );
+                set_reg_by_flags(ops, cmp_type, r_out);
             }
             (ConstOrReg::GPR(r1), ConstOrReg::U32(c2)) => {
                 if c2 < 4096 {
                     dynasm!(ops
                         ; cmp XSP(r1 as u32), c2
-                    )
+                    );
+                    set_reg_by_flags(ops, cmp_type, r_out);
                 } else {
                     todo!("Too big a constant here, load it to a temp and compare")
+                }
+            }
+            (ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
+                match cmp_type {
+                    CompareType::Equal => todo!("Compare constants with type Equal"),
+                    CompareType::NotEqual => {
+                        dynasm!(ops
+                            ; mov W(r_out as u32), (c1 != c2) as u32
+                        )
+                    },
+                    CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
+                    CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
+                    CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
+                    CompareType::GreaterThanOrEqualSigned => todo!("Compare constants with type GreaterThanOrEqualSigned"),
+                    CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
+                    CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
+                    CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
+                    CompareType::GreaterThanOrEqualUnsigned => todo!("Compare constants with type GreaterThanOrEqualUnsigned"),
                 }
             }
             _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, cmp_type, b),
         }
 
-        // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/A64-General-Instructions/CSET
-        // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/Condition-Codes/Condition-code-suffixes-and-related-flags?lang=en
-        match cmp_type {
-            CompareType::LessThanUnsigned => {
-                dynasm!(ops
-                    ; cset W(r_out as u32), lo // unsigned "lower"
-                )
-            }
-            CompareType::Equal => todo!("Compare with type Equal"),
-            CompareType::NotEqual => {
-                dynasm!(ops
-                    ; cset W(r_out as u32), ne // "not equal"
-                )
-            }
-            CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
-            CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
-            CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
-            CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
-            CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
-            CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
-            CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
-        }
     }
 
     fn load_ptr(
@@ -451,6 +483,13 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(value), DataType::U64) => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), value);
+                dynasm!(ops
+                    ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
+                );
+            }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(value), DataType::U64) => {
+                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_value.r(), value as u64);
                 dynasm!(ops
                     ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
