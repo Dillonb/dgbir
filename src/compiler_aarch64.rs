@@ -18,6 +18,7 @@ fn load_64_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u6
             ; movz X(reg), value as u32
         );
     } else {
+        // TODO: check if the value can fit in a U16, U32, etc and zero extend when loading
         let literal = Aarch64Compiler::add_literal(ops, lp, Constant::U64(value));
         println!("Loading using literal pool");
         dynasm!(ops
@@ -36,6 +37,20 @@ fn load_32_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u3
         dynasm!(ops
             ; ldr W(reg), =>literal
         );
+    }
+}
+
+fn load_signed_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: i64) {
+    if value >= 0 {
+        load_64_bit_constant(ops, lp, reg, value as u64);
+    } else if value > i32::MIN.into() {
+        let literal = Aarch64Compiler::add_literal(ops, lp, Constant::S32(value as i32));
+        dynasm!(ops
+            ; ldrsw X(reg), =>literal
+        );
+    } else {
+        // We need to load the full 64 bits anyway, so just use the 64-bit load
+        load_64_bit_constant(ops, lp, reg, value as u64);
     }
 }
 
@@ -120,7 +135,9 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
                 load_32_bit_constant(ops, lp, r_to as u32, c);
             }
-            (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
+            (ConstOrReg::U64(c), Register::GPR(r)) => {
+                load_64_bit_constant(ops, lp, r as u32, c);
+            }
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
                     ; mov X(r_to as u32), X(r_from as u32)
@@ -290,6 +307,22 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; fadd S(r_out as u32), S(r_out as u32), S(r)
                 )
             }
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(c)) => {
+                if c < 4096 && c > 0 {
+                    dynasm!(ops
+                        ; add XSP(r_out as u32), XSP(r), c as u32
+                    )
+                } else {
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_signed_constant(ops, lp, r_temp.r(), c as i64);
+                    dynasm!(ops
+                        ; add X(r_out as u32), X(r), X(r_temp.r())
+                    )
+                }
+            }
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::U64(c1), ConstOrReg::U32(c2)) => {
+                load_64_bit_constant(ops, lp, r_out as u32, c1 + c2 as u64);
+            }
             _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
         }
     }
@@ -313,6 +346,8 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, cmp_type, b),
         }
 
+        // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/A64-General-Instructions/CSET
+        // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/Condition-Codes/Condition-code-suffixes-and-related-flags?lang=en
         match cmp_type {
             CompareType::LessThanUnsigned => {
                 dynasm!(ops
@@ -320,7 +355,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 )
             }
             CompareType::Equal => todo!("Compare with type Equal"),
-            CompareType::NotEqual => todo!("Compare with type NotEqual"),
+            CompareType::NotEqual => {
+                dynasm!(ops
+                    ; cset W(r_out as u32), ne // "not equal"
+                )
+            }
             CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
             CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
             CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
@@ -333,14 +372,23 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn load_ptr(
         &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _r_out: Register,
-        _tp: DataType,
-        _ptr: ConstOrReg,
-        _offset: u64,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        tp: DataType,
+        ptr: ConstOrReg,
+        offset: u64,
     ) {
-        todo!("load_ptr")
+        match (r_out, ptr, tp) {
+            (Register::GPR(r_out), ConstOrReg::U64(ptr), DataType::U32) => {
+                let r_address = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_address.r(), ptr + offset);
+                dynasm!(ops
+                    ; ldr W(r_out as u32), [X(r_address.r())]
+                );
+            }
+            _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
+        }
     }
 
     fn write_ptr(
@@ -379,6 +427,13 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64) => {
                 dynasm!(ops
                     ; str X(r_value as u32), [X(r_ptr as u32), offset as u32]
+                );
+            }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(value), DataType::U64) => {
+                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_value.r(), value);
+                dynasm!(ops
+                    ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
@@ -528,28 +583,29 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
     }
 
-    fn and(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _a: ConstOrReg,
-        _b: ConstOrReg,
-    ) {
-        todo!()
+    fn and(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+        match (tp, r_out, a, b) {
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
+                load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 & c2 as u64);
+            }
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(c)) => {
+                // TODO: if the const is small enough, use an and immediate
+                load_32_bit_constant(ops, lp, r_out as u32, c as u32);
+                dynasm!(ops
+                    ; and X(r_out as u32), X(r), X(r_out as u32)
+                );
+            }
+            _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
+        }
     }
 
-    fn or(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _a: ConstOrReg,
-        _b: ConstOrReg,
-    ) {
-        todo!()
+    fn or(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+        match (tp, r_out, a, b) {
+            (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
+                load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 | c2 as u64);
+            }
+            _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
+        }
     }
 
     fn not(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _a: ConstOrReg) {
@@ -683,6 +739,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
         }
 
         if let Some(to) = r_out {
+            println!("Moving return value from {} to {}", get_return_value_registers()[0], to);
             self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
         }
 

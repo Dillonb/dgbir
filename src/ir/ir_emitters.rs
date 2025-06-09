@@ -34,10 +34,7 @@ impl IRBlockHandle {
     pub fn load_ptr(&mut self, tp: DataType, ptr: InputSlot, offset: usize) -> InstructionOutput {
         self.append(
             InstructionType::LoadPtr,
-            vec![
-                ptr,
-                InputSlot::Constant(Constant::U64(offset as u64)),
-            ],
+            vec![ptr, InputSlot::Constant(Constant::U64(offset as u64))],
             vec![OutputSlot { tp }],
         )
     }
@@ -123,13 +120,14 @@ impl IRBlockHandle {
     pub fn call_function(
         &mut self,
         address: InputSlot,
-        return_tp: DataType,
+        return_tp: Option<DataType>,
         args: Vec<InputSlot>,
     ) -> InstructionOutput {
         self.append(
             InstructionType::CallFunction,
             std::iter::once(address).chain(args).collect(),
-            vec![OutputSlot { tp: return_tp }],
+            // vec![OutputSlot { tp: return_tp }],
+            return_tp.map(|tp| OutputSlot { tp }).into_iter().collect(),
         )
     }
 }

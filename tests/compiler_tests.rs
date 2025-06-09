@@ -632,7 +632,7 @@ fn call_external_function() {
     let mut block = func.new_block(vec![DataType::U32]);
 
     let input = block.input(0);
-    let call_result = block.call_function(const_ptr(add_ten as usize), DataType::U32, vec![input]);
+    let call_result = block.call_function(const_ptr(add_ten as usize), Some(DataType::U32), vec![input]);
     block.ret(Some(call_result.val()));
 
     println!("{}", func);

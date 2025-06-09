@@ -202,6 +202,10 @@ pub fn const_u32(value: u32) -> InputSlot {
     InputSlot::Constant(Constant::U32(value))
 }
 
+pub fn const_u64(value: u64) -> InputSlot {
+    InputSlot::Constant(Constant::U64(value))
+}
+
 pub fn const_f32(value: f32) -> InputSlot {
     InputSlot::Constant(Constant::F32(OrderedFloat(value)))
 }

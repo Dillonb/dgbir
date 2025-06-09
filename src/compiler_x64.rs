@@ -65,7 +65,10 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             match reg {
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
-                    let ofs = self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32;
+                    let ofs = self
+                        .func
+                        .get_stack_offset_for_location(*stack_location as u64, DataType::U64)
+                        as i32;
                     dynasm!(ops
                         ; mov [rsp + ofs], Rq(*r as u8)
                     )

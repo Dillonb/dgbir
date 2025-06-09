@@ -18,6 +18,8 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum ConstOrReg {
+    U16(u16),
+    S16(i16),
     U32(u32),
     U64(u64),
     F32(OrderedFloat<f32>),
@@ -30,6 +32,8 @@ impl ConstOrReg {
         match self {
             ConstOrReg::GPR(r) => Some(Register::GPR(*r as usize)),
             ConstOrReg::SIMD(r) => Some(Register::SIMD(*r as usize)),
+            ConstOrReg::U16(_) => None,
+            ConstOrReg::S16(_) => None,
             ConstOrReg::U32(_) => None,
             ConstOrReg::U64(_) => None,
             ConstOrReg::F32(_) => None,
@@ -38,6 +42,8 @@ impl ConstOrReg {
 
     pub fn to_u64_const(&self) -> Option<u64> {
         match self {
+            ConstOrReg::U16(c) => Some(*c as u64),
+            ConstOrReg::S16(c) => Some(*c as u64),
             ConstOrReg::U32(c) => Some(*c as u64),
             ConstOrReg::U64(c) => Some(*c),
             ConstOrReg::F32(_) => None,
@@ -46,16 +52,27 @@ impl ConstOrReg {
         }
     }
 
+    // Can this type go into this register?
     pub fn is_same_type_as(&self, other: &Register) -> bool {
         match (self, other) {
-            (ConstOrReg::U32(_), Register::GPR(_)) => true,
-            (ConstOrReg::U32(_), Register::SIMD(_)) => false,
-            (ConstOrReg::U64(_), Register::GPR(_)) => true,
-            (ConstOrReg::U64(_), Register::SIMD(_)) => false,
-            (ConstOrReg::F32(_), Register::GPR(_)) => false,
-            (ConstOrReg::F32(_), Register::SIMD(_)) => true,
             (ConstOrReg::GPR(_), Register::GPR(_)) => true,
             (ConstOrReg::GPR(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::U16(_), Register::GPR(_)) => true,
+            (ConstOrReg::U16(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::S16(_), Register::GPR(_)) => true,
+            (ConstOrReg::S16(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::U32(_), Register::GPR(_)) => true,
+            (ConstOrReg::U32(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::U64(_), Register::GPR(_)) => true,
+            (ConstOrReg::U64(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::F32(_), Register::GPR(_)) => false,
+            (ConstOrReg::F32(_), Register::SIMD(_)) => true,
+
             (ConstOrReg::SIMD(_), Register::GPR(_)) => false,
             (ConstOrReg::SIMD(_), Register::SIMD(_)) => true,
         }
@@ -307,7 +324,7 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                         .iter()
                         .map(|i| compiler.to_imm_or_reg(i))
                         .collect::<Vec<_>>();
-                    let r_out = output_regs[0];
+                    let r_out = output_regs.get(0).map(|r| *r).flatten();
                     let allocations = compiler.get_allocations();
 
                     let active_volatile_regs = allocations
@@ -364,8 +381,8 @@ pub trait Compiler<'a, Ops> {
                 Constant::U32(c) => ConstOrReg::U32(c),
                 Constant::U8(_) => todo!(),
                 Constant::S8(_) => todo!(),
-                Constant::U16(_) => todo!(),
-                Constant::S16(_) => todo!(),
+                Constant::U16(c) => ConstOrReg::U16(c),
+                Constant::S16(c) => ConstOrReg::S16(c),
                 Constant::S32(_) => todo!(),
                 Constant::U64(c) => ConstOrReg::U64(c),
                 Constant::S64(_) => todo!(),
