@@ -42,10 +42,22 @@ impl ConstOrReg {
 
     pub fn to_u64_const(&self) -> Option<u64> {
         match self {
-            ConstOrReg::U16(c) => Some(*c as u64),
-            ConstOrReg::S16(c) => Some(*c as u64),
-            ConstOrReg::U32(c) => Some(*c as u64),
+            ConstOrReg::U16(c) => (*c).try_into().ok(),
+            ConstOrReg::S16(c) => (*c).try_into().ok(),
+            ConstOrReg::U32(c) => (*c).try_into().ok(),
             ConstOrReg::U64(c) => Some(*c),
+            ConstOrReg::F32(_) => None,
+            ConstOrReg::GPR(_) => None,
+            ConstOrReg::SIMD(_) => None,
+        }
+    }
+
+    pub fn to_s64_const(&self) -> Option<i64> {
+        match self {
+            ConstOrReg::U16(c) => (*c).try_into().ok(),
+            ConstOrReg::S16(c) => (*c).try_into().ok(),
+            ConstOrReg::U32(c) => (*c).try_into().ok(),
+            ConstOrReg::U64(c) => (*c).try_into().ok(),
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
             ConstOrReg::SIMD(_) => None,

@@ -27,6 +27,20 @@ fn load_64_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u6
     }
 }
 
+fn load_64_bit_signed_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: i64) {
+    if value >= 0 {
+        load_64_bit_constant(ops, lp, reg, value as u64);
+    } else if value > i32::MIN.into() {
+        let literal = Aarch64Compiler::add_literal(ops, lp, Constant::S32(value as i32));
+        dynasm!(ops
+            ; ldrsw X(reg), =>literal
+        );
+    } else {
+        // We need to load the full 64 bits anyway, so just use the 64-bit load
+        load_64_bit_constant(ops, lp, reg, value as u64);
+    }
+}
+
 fn load_32_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u32) {
     if value <= 0xFFFF {
         dynasm!(ops
@@ -286,30 +300,35 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::S16(c2)) => {
                 load_64_bit_constant(ops, lp, r_out as u32, (c1 as u64).wrapping_add_signed(c2 as i64));
             }
-            (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
-                if c < 4096 {
-                    dynasm!(ops
-                        ; add WSP(r_out as u32), WSP(r), c
-                    )
-                } else {
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    let literal = Self::add_literal(ops, lp, Constant::U32(c));
-                    dynasm!(ops
-                        ; ldr W(r_temp.r()), =>literal
-                        ; add W(r_out as u32), W(r), W(r_temp.r())
-                    )
-                }
-            }
-            (DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(c)) => {
+            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::U16(_)) => {
+                let c = b.to_u64_const().unwrap();
                 if c < 4096 {
                     dynasm!(ops
                         ; add WSP(r_out as u32), WSP(r), c as u32
                     )
                 } else {
                     let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    let literal = Self::add_literal(ops, lp, Constant::U16(c));
+                    load_64_bit_constant(ops, lp, r_temp.r(), c);
                     dynasm!(ops
-                        ; ldr W(r_temp.r()), =>literal
+                        ; add W(r_out as u32), W(r), W(r_temp.r())
+                    )
+                }
+            }
+            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(_)) => {
+                let c = b.to_s64_const().unwrap();
+                if c < 4096 {
+                    dynasm!(ops
+                        ; add WSP(r_out as u32), WSP(r), c as u32
+                    )
+                } else if c < 0 && c > -4096 {
+                    let c = c.abs() as u64;
+                    dynasm!(ops
+                        ; sub WSP(r_out as u32), WSP(r), c as u32
+                    );
+                } else {
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_64_bit_signed_constant(ops, lp, r_temp.r(), c);
+                    dynasm!(ops
                         ; add W(r_out as u32), W(r), W(r_temp.r())
                     )
                 }
@@ -374,7 +393,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                         ; cset W(r_out as u32), lo // unsigned "lower"
                     )
                 }
-                CompareType::Equal => todo!("Compare with type Equal"),
+                CompareType::Equal => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), eq // "equal"
+                    )
+                },
                 CompareType::NotEqual => {
                     dynasm!(ops
                         ; cset W(r_out as u32), ne // "not equal"
