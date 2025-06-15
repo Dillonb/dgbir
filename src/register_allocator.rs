@@ -813,57 +813,60 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
         let lifetimes = calculate_lifetimes(&func);
 
         for value in func.value_iter() {
-            let interference = lifetimes.interference.get(&value);
+            if !lifetimes.all_usages.get(&value).map(|usages| usages.is_empty()).unwrap_or(true) {
 
-            let mut found_reg = false;
-            for reg in get_registers()
-                .iter()
-                .filter(|r| r.can_hold_datatype(value.data_type()))
-            {
-                // Check if the register is already allocated to an interfering value
-                let already_allocated = interference.is_some()
+                let interference = lifetimes.interference.get(&value);
+
+                let mut found_reg = false;
+                for reg in get_registers()
+                    .iter()
+                    .filter(|r| r.can_hold_datatype(value.data_type()))
+                {
+                    // Check if the register is already allocated to an interfering value
+                    let already_allocated = interference.is_some()
                     && interference
                         .unwrap()
                         .iter()
                         .flat_map(|iv| allocations.get(iv))
                         .any(|r| r == reg);
-                if !already_allocated {
-                    allocations.insert(value, *reg);
-                    found_reg = true;
+                    if !already_allocated {
+                        allocations.insert(value, *reg);
+                        found_reg = true;
+                        break;
+                    }
+                }
+
+                if !found_reg {
+                    to_spill = interference
+                        .unwrap() // If we couldn't find a register, there must be interference
+                        .iter()
+                        // Limit to only values that have been allocated to registers, and only to
+                        // registers that can hold the datatype of the value we're allocating
+                        .filter(|iv| {
+                            allocations
+                                .get(iv)
+                                .map(|r| r.can_hold_datatype(value.data_type()))
+                                .is_some()
+                        })
+                        // Pair each interfering value with its next usage
+                        .flat_map(|iv| {
+                            lifetimes.all_usages[iv]
+                                .iter()
+                                .find(|u| u >= &&value.into_usage(&func))
+                                .map(|u| (*u, *iv))
+                        })
+                        // Find the one with the farthest out next usage
+                        .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))
+                        .clone();
+                    if to_spill.is_none() {
+                        panic!("Couldn't find a value to spill!");
+                    }
+                    let (to_spill_next_used, _to_spill) = to_spill.unwrap();
+                    if to_spill_next_used == value.into_usage(&func) {
+                        panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
+                    }
                     break;
                 }
-            }
-
-            if !found_reg {
-                to_spill = interference
-                    .unwrap() // If we couldn't find a register, there must be interference
-                    .iter()
-                    // Limit to only values that have been allocated to registers, and only to
-                    // registers that can hold the datatype of the value we're allocating
-                    .filter(|iv| {
-                        allocations
-                            .get(iv)
-                            .map(|r| r.can_hold_datatype(value.data_type()))
-                            .is_some()
-                    })
-                    // Pair each interfering value with its next usage
-                    .flat_map(|iv| {
-                        lifetimes.all_usages[iv]
-                            .iter()
-                            .find(|u| u >= &&value.into_usage(&func))
-                            .map(|u| (*u, *iv))
-                    })
-                    // Find the one with the farthest out next usage
-                    .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))
-                    .clone();
-                if to_spill.is_none() {
-                    panic!("Couldn't find a value to spill!");
-                }
-                let (to_spill_next_used, _to_spill) = to_spill.unwrap();
-                if to_spill_next_used == value.into_usage(&func) {
-                    panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
-                }
-                break;
             }
         }
 

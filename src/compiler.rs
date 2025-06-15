@@ -157,17 +157,19 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
-                    let r_out = output_regs[0].unwrap();
-                    compiler.add(ops, lp, tp, r_out, a, b);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.add(ops, lp, tp, *r_out, a, b);
+                    });
                 }
                 InstructionType::Compare => {
                     assert_eq!(inputs.len(), 3);
                     assert_eq!(outputs.len(), 1);
-                    let r_out = expect_gpr(output_regs[0].unwrap());
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let cmp_type = expect_constant_cmp_type(&inputs[1]);
                     let b = compiler.to_imm_or_reg(&inputs[2]);
-                    compiler.compare(ops, r_out, a, cmp_type, b);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.compare(ops, expect_gpr(*r_out), a, cmp_type, b);
+                    });
                 }
                 InstructionType::LoadPtr => {
                     assert_eq!(inputs.len(), 2);
@@ -175,8 +177,9 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     let ptr = compiler.to_imm_or_reg(&inputs[0]);
                     let offset = expect_constant_u64(&inputs[1]);
                     let tp = outputs[0].tp;
-                    let r_out = output_regs[0].unwrap();
-                    compiler.load_ptr(ops, lp, r_out, tp, ptr, offset);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.load_ptr(ops, lp, *r_out, tp, ptr, offset);
+                    });
                 }
                 InstructionType::WritePtr => {
                     assert_eq!(inputs.len(), 4);
@@ -197,90 +200,100 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                 InstructionType::LoadFromStack => {
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
-                    let r_out = output_regs[0].unwrap();
                     let stack_offset = compiler.to_imm_or_reg(&inputs[0]);
                     let tp = outputs[0].tp;
-                    compiler.load_from_stack(ops, r_out, stack_offset, tp);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.load_from_stack(ops, *r_out, stack_offset, tp);
+                    });
                 }
                 InstructionType::LeftShift => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
-                    let r_out = expect_gpr(output_regs[0].unwrap());
                     let n = compiler.to_imm_or_reg(&inputs[0]);
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
-                    compiler.left_shift(ops, r_out, n, amount, tp);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.left_shift(ops, expect_gpr(*r_out), n, amount, tp);
+                    });
                 }
                 InstructionType::RightShift => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
-                    let r_out = expect_gpr(output_regs[0].unwrap());
                     let n = compiler.to_imm_or_reg(&inputs[0]);
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
-                    compiler.right_shift(ops, r_out, n, amount, tp);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.right_shift(ops, expect_gpr(*r_out), n, amount, tp);
+                    });
                 }
                 InstructionType::Convert => {
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
-                    let r_out = output_regs[0].unwrap();
                     let input = compiler.to_imm_or_reg(&inputs[0]);
                     let from_tp = inputs[0].tp();
                     let to_tp = outputs[0].tp;
-                    compiler.convert(ops, r_out, input, from_tp, to_tp);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.convert(ops, *r_out, input, from_tp, to_tp);
+                    })
                 }
                 InstructionType::And => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.and(ops, lp, tp, r_out, a, b);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.and(ops, lp, tp, *r_out, a, b);
+                    });
                 }
                 InstructionType::Or => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.or(ops, lp, tp, r_out, a, b);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.or(ops, lp, tp, *r_out, a, b);
+                    });
                 }
                 InstructionType::Not => {
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.not(ops, lp, tp, r_out, a);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.not(ops, lp, tp, *r_out, a);
+                    });
                 }
                 InstructionType::Xor => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.xor(ops, lp, tp, r_out, a, b);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.xor(ops, lp, tp, *r_out, a, b);
+                    });
                 }
                 InstructionType::Subtract => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let minuend = compiler.to_imm_or_reg(&inputs[0]);
                     let subtrahend = compiler.to_imm_or_reg(&inputs[1]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.subtract(ops, lp, tp, r_out, minuend, subtrahend);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.subtract(ops, lp, tp, *r_out, minuend, subtrahend);
+                    });
                 }
                 InstructionType::Multiply => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.multiply(ops, lp, tp, r_out, a, b);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.multiply(ops, lp, tp, *r_out, a, b);
+                    });
                 }
                 InstructionType::Divide => {
                     assert_eq!(inputs.len(), 2);
@@ -296,25 +309,28 @@ fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
                     let value = compiler.to_imm_or_reg(&inputs[0]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.square_root(ops, lp, tp, r_out, value);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.square_root(ops, lp, tp, *r_out, value);
+                    });
                 }
                 InstructionType::AbsoluteValue => {
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
                     let value = compiler.to_imm_or_reg(&inputs[0]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.absolute_value(ops, lp, tp, r_out, value);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.absolute_value(ops, lp, tp, *r_out, value);
+                    });
                 }
                 InstructionType::Negate => {
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
                     let value = compiler.to_imm_or_reg(&inputs[0]);
-                    let r_out = output_regs[0].unwrap();
                     let tp = outputs[0].tp;
-                    compiler.negate(ops, lp, tp, r_out, value);
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.negate(ops, lp, tp, *r_out, value);
+                    });
                 }
                 InstructionType::CallFunction => {
                     assert_eq!(inputs.len() >= 1, true);
