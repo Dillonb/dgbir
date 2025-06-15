@@ -656,6 +656,8 @@ pub trait Compiler<'a, Ops> {
 pub struct CompiledFunction {
     pub entrypoint: AssemblyOffset,
     pub code: ExecutableBuffer,
+    // TODO: maybe only include this for debug builds?
+    pub allocations: RegisterAllocations,
 }
 
 impl CompiledFunction {
@@ -700,5 +702,7 @@ pub fn compile(func: &IRFunction) -> CompiledFunction {
     return CompiledFunction {
         entrypoint: compiler.get_entrypoint(),
         code: ops.finalize().unwrap(),
+        // TODO: maybe only include this for debug builds?
+        allocations: compiler.get_allocations().clone(),
     };
 }

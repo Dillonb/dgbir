@@ -1,5 +1,9 @@
 use std::fmt::Display;
 
+use itertools::Itertools;
+
+use crate::register_allocator::{Lifetimes, Usage, Value};
+
 use super::*;
 
 impl Display for DataType {
@@ -138,5 +142,38 @@ impl Display for IRFunctionInternal {
             .collect::<Vec<String>>()
             .join("\n\n")
             .fmt(f)
+    }
+}
+
+/*
+    #[allow(dead_code)] // Maybe I'll need this later
+    last_used: HashMap<Value, Usage>,
+    interference: HashMap<Value, Vec<Value>>,
+    /// A list of all usages of a value. Guaranteed to be sorted.
+    all_usages: HashMap<Value, Vec<Usage>>,
+*/
+
+impl Display for Lifetimes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn display_usages(usages: &[Usage]) -> String {
+            usages
+                .iter()
+                .map(|usage| format!("\t\t{}", usage))
+                .join("\n")
+        }
+        fn display_values(interferences: &[Value]) -> String {
+            interferences
+                .iter()
+                .map(|value| format!("{}", value))
+                .join(", ")
+        }
+        let values = self.last_used
+            .keys()
+            .chain(self.interference.keys())
+            .chain(self.all_usages.keys())
+            .unique()
+            .map(|value| format!("{}\n\tUsed at:\n{}\n\tInterference: {}", value, display_usages(&self.all_usages[value]), display_values(&self.interference[value])));
+
+        write!(f, "Lifetimes:\n{}", values.collect::<Vec<String>>().join("\n\n"))
     }
 }

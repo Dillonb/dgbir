@@ -458,7 +458,7 @@ impl Display for Value {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-struct Usage {
+pub struct Usage {
     block_index: usize,
     instruction_index: usize,
     instruction_index_in_block: usize,
@@ -510,12 +510,13 @@ impl Display for Usage {
     }
 }
 
+#[derive(Clone)]
 pub struct Lifetimes {
     #[allow(dead_code)] // Maybe I'll need this later
-    last_used: HashMap<Value, Usage>,
-    interference: HashMap<Value, Vec<Value>>,
+    pub last_used: HashMap<Value, Usage>,
+    pub interference: HashMap<Value, Vec<Value>>,
     /// A list of all usages of a value. Guaranteed to be sorted.
-    all_usages: HashMap<Value, Vec<Usage>>,
+    pub all_usages: HashMap<Value, Vec<Usage>>,
 }
 
 impl Lifetimes {
@@ -788,6 +789,7 @@ impl IRFunctionInternal {
     }
 }
 
+#[derive(Clone)]
 pub struct RegisterAllocations {
     pub allocations: HashMap<Value, Register>,
     pub callee_saved: Vec<(Register, usize)>,
