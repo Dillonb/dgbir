@@ -300,6 +300,20 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     )
                 }
             }
+            (DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(c)) => {
+                if c < 4096 {
+                    dynasm!(ops
+                        ; add WSP(r_out as u32), WSP(r), c as u32
+                    )
+                } else {
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    let literal = Self::add_literal(ops, lp, Constant::U16(c));
+                    dynasm!(ops
+                        ; ldr W(r_temp.r()), =>literal
+                        ; add W(r_out as u32), W(r), W(r_temp.r())
+                    )
+                }
+            }
             (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
                 if c < 4096 {
                     dynasm!(ops
@@ -330,7 +344,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; fadd S(r_out as u32), S(r_out as u32), S(r)
                 )
             }
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(c)) => {
+            (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(c)) => {
                 if c < 4096 && c > 0 {
                     dynasm!(ops
                         ; add XSP(r_out as u32), XSP(r), c as u32
@@ -395,7 +409,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             }
             (ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
                 match cmp_type {
-                    CompareType::Equal => todo!("Compare constants with type Equal"),
+                    CompareType::Equal => {
+                        dynasm!(ops
+                            ; mov W(r_out as u32), (c1 == c2) as u32
+                        )
+                    },
                     CompareType::NotEqual => {
                         dynasm!(ops
                             ; mov W(r_out as u32), (c1 != c2) as u32
