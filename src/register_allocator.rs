@@ -53,6 +53,13 @@ impl Register {
         }
     }
 
+    pub fn expect_gpr(&self) -> usize {
+        match self {
+            Register::GPR(r) => *r,
+            _ => panic!("Expected GPR, found {:?}", self),
+        }
+    }
+
     pub fn is_simd(&self) -> bool {
         match self {
             Register::SIMD(_) => true,
@@ -813,8 +820,12 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
         let lifetimes = calculate_lifetimes(&func);
 
         for value in func.value_iter() {
-            if !lifetimes.all_usages.get(&value).map(|usages| usages.is_empty()).unwrap_or(true) {
-
+            if !lifetimes
+                .all_usages
+                .get(&value)
+                .map(|usages| usages.is_empty())
+                .unwrap_or(true)
+            {
                 let interference = lifetimes.interference.get(&value);
 
                 let mut found_reg = false;
@@ -824,11 +835,11 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
                 {
                     // Check if the register is already allocated to an interfering value
                     let already_allocated = interference.is_some()
-                    && interference
-                        .unwrap()
-                        .iter()
-                        .flat_map(|iv| allocations.get(iv))
-                        .any(|r| r == reg);
+                        && interference
+                            .unwrap()
+                            .iter()
+                            .flat_map(|iv| allocations.get(iv))
+                            .any(|r| r == reg);
                     if !already_allocated {
                         allocations.insert(value, *reg);
                         found_reg = true;

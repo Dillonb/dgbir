@@ -54,20 +54,6 @@ fn load_32_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u3
     }
 }
 
-fn load_signed_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: i64) {
-    if value >= 0 {
-        load_64_bit_constant(ops, lp, reg, value as u64);
-    } else if value > i32::MIN.into() {
-        let literal = Aarch64Compiler::add_literal(ops, lp, Constant::S32(value as i32));
-        dynasm!(ops
-            ; ldrsw X(reg), =>literal
-        );
-    } else {
-        // We need to load the full 64 bits anyway, so just use the 64-bit load
-        load_64_bit_constant(ops, lp, reg, value as u64);
-    }
-}
-
 pub struct Aarch64Compiler<'a> {
     scratch_regs: RegPool,
     func: &'a IRFunctionInternal,
@@ -176,6 +162,12 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     dynasm!(ops
                         ; =>label
                         ; .u32 c
+                    );
+                }
+                Constant::S32(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .i32 c
                     );
                 }
                 Constant::U64(c) => {
@@ -287,99 +279,116 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
-        match (tp, r_out, a, b) {
-            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
-                load_32_bit_constant(ops, lp, r_out as u32, c1 + c2);
+        if a.is_const() && b.is_const() {
+            match tp {
+                DataType::U32 => load_32_bit_constant(
+                    ops,
+                    lp,
+                    r_out.expect_gpr() as u32,
+                    a.to_u64_const().unwrap() as u32 + b.to_u64_const().unwrap() as u32,
+                ),
+                DataType::S32 => {
+                    let result =
+                        (a.to_s64_const().unwrap() as i32).wrapping_add(b.to_s64_const().unwrap() as i32) as i64;
+                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr() as u32, result);
+                }
+                DataType::U64 => load_64_bit_constant(
+                    ops,
+                    lp,
+                    r_out.expect_gpr() as u32,
+                    a.to_u64_const().unwrap() + b.to_u64_const().unwrap(),
+                ),
+                _ => todo!("Unsupported Add operation with result type {} and constants: {:?} + {:?}", tp, a, b),
             }
-            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::S16(c2)) => {
-                load_32_bit_constant(ops, lp, r_out as u32, (c1 as u32).wrapping_add_signed(c2.into()));
-            }
-            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
-                load_32_bit_constant(ops, lp, r_out as u32, (c1 as u32).wrapping_add(c2.into()));
-            }
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::S16(c2)) => {
-                load_64_bit_constant(ops, lp, r_out as u32, (c1 as u64).wrapping_add_signed(c2 as i64));
-            }
-            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::U16(_)) => {
-                let c = b.to_u64_const().unwrap();
-                if c < 4096 {
+            return;
+        } else {
+            match (tp, r_out, a, b) {
+                (
+                    DataType::U32 | DataType::S32,
+                    Register::GPR(r_out),
+                    ConstOrReg::GPR(r),
+                    ConstOrReg::U32(_) | ConstOrReg::U16(_),
+                ) => {
+                    let c = b.to_u64_const().unwrap();
+                    if c < 4096 {
+                        dynasm!(ops
+                            ; add WSP(r_out as u32), WSP(r), c as u32
+                        )
+                    } else {
+                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                        load_64_bit_constant(ops, lp, r_temp.r(), c);
+                        dynasm!(ops
+                            ; add W(r_out as u32), W(r), W(r_temp.r())
+                        )
+                    }
+                }
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(_)) => {
+                    let c = b.to_s64_const().unwrap();
+                    if c > 0 && c < 4096 {
+                        dynasm!(ops
+                            ; add WSP(r_out as u32), WSP(r), c as u32
+                        )
+                    } else if c < 0 && c > -4096 {
+                        let c = c.abs() as u64;
+                        dynasm!(ops
+                            ; sub WSP(r_out as u32), WSP(r), c as u32
+                        );
+                    } else {
+                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                        load_64_bit_signed_constant(ops, lp, r_temp.r(), c);
+                        dynasm!(ops
+                            ; add W(r_out as u32), W(r), W(r_temp.r())
+                        )
+                    }
+                }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
+                    if c < 4096 {
+                        dynasm!(ops
+                            ; add XSP(r_out as u32), XSP(r), c
+                        )
+                    } else {
+                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                        let literal = Self::add_literal(ops, lp, Constant::U32(c));
+                        dynasm!(ops
+                            ; ldr X(r_temp.r()), =>literal
+                            ; add X(r_out as u32), X(r), X(r_temp.r())
+                        )
+                    }
+                }
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                     dynasm!(ops
-                        ; add WSP(r_out as u32), WSP(r), c as u32
-                    )
-                } else {
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_64_bit_constant(ops, lp, r_temp.r(), c);
-                    dynasm!(ops
-                        ; add W(r_out as u32), W(r), W(r_temp.r())
+                        ; add W(r_out as u32), W(r1), W(r2)
                     )
                 }
-            }
-            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(_)) => {
-                let c = b.to_s64_const().unwrap();
-                if c < 4096 {
+                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
                     dynasm!(ops
-                        ; add WSP(r_out as u32), WSP(r), c as u32
-                    )
-                } else if c < 0 && c > -4096 {
-                    let c = c.abs() as u64;
-                    dynasm!(ops
-                        ; sub WSP(r_out as u32), WSP(r), c as u32
-                    );
-                } else {
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_64_bit_signed_constant(ops, lp, r_temp.r(), c);
-                    dynasm!(ops
-                        ; add W(r_out as u32), W(r), W(r_temp.r())
+                        ; fadd S(r_out as u32), S(r1), S(r2)
                     )
                 }
-            }
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
-                if c < 4096 {
+                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
                     dynasm!(ops
-                        ; add XSP(r_out as u32), XSP(r), c
-                    )
-                } else {
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    let literal = Self::add_literal(ops, lp, Constant::U32(c));
-                    dynasm!(ops
-                        ; ldr X(r_temp.r()), =>literal
-                        ; add X(r_out as u32), X(r), X(r_temp.r())
+                        ; fmov S(r_out as u32), *c
+                        ; fadd S(r_out as u32), S(r_out as u32), S(r)
                     )
                 }
-            }
-            (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
-                dynasm!(ops
-                    ; add W(r_out as u32), W(r1), W(r2)
-                )
-            }
-            (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
-                dynasm!(ops
-                    ; fadd S(r_out as u32), S(r1), S(r2)
-                )
-            }
-            (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
-                dynasm!(ops
-                    ; fmov S(r_out as u32), *c
-                    ; fadd S(r_out as u32), S(r_out as u32), S(r)
-                )
-            }
-            (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(c)) => {
-                if c < 4096 && c > 0 {
-                    dynasm!(ops
-                        ; add XSP(r_out as u32), XSP(r), c as u32
-                    )
-                } else {
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_signed_constant(ops, lp, r_temp.r(), c as i64);
-                    dynasm!(ops
-                        ; add X(r_out as u32), X(r), X(r_temp.r())
-                    )
+                (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(c)) => {
+                    if c < 4096 && c > 0 {
+                        dynasm!(ops
+                            ; add XSP(r_out as u32), XSP(r), c as u32
+                        )
+                    } else {
+                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                        load_64_bit_signed_constant(ops, lp, r_temp.r(), c as i64);
+                        dynasm!(ops
+                            ; add X(r_out as u32), X(r), X(r_temp.r())
+                        )
+                    }
                 }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::U64(c1), ConstOrReg::U32(c2)) => {
+                    load_64_bit_constant(ops, lp, r_out as u32, c1 + c2 as u64);
+                }
+                _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
             }
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::U64(c1), ConstOrReg::U32(c2)) => {
-                load_64_bit_constant(ops, lp, r_out as u32, c1 + c2 as u64);
-            }
-            _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
         }
     }
 
@@ -397,7 +406,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     dynasm!(ops
                         ; cset W(r_out as u32), eq // "equal"
                     )
-                },
+                }
                 CompareType::NotEqual => {
                     dynasm!(ops
                         ; cset W(r_out as u32), ne // "not equal"
@@ -420,41 +429,41 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                 );
                 set_reg_by_flags(ops, cmp_type, r_out);
             }
-            (ConstOrReg::GPR(r1), ConstOrReg::U32(c2)) => {
-                if c2 < 4096 {
+            (ConstOrReg::GPR(r), c) if c.is_const() => {
+                let c = c.to_u64_const().unwrap();
+                if c < 4096 {
                     dynasm!(ops
-                        ; cmp XSP(r1 as u32), c2
+                        ; cmp XSP(r as u32), c as u32
                     );
                     set_reg_by_flags(ops, cmp_type, r_out);
                 } else {
                     todo!("Too big a constant here, load it to a temp and compare")
                 }
             }
-            (ConstOrReg::U32(c1), ConstOrReg::U32(c2)) => {
-                match cmp_type {
-                    CompareType::Equal => {
-                        dynasm!(ops
-                            ; mov W(r_out as u32), (c1 == c2) as u32
-                        )
-                    },
-                    CompareType::NotEqual => {
-                        dynasm!(ops
-                            ; mov W(r_out as u32), (c1 != c2) as u32
-                        )
-                    },
-                    CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
-                    CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
-                    CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
-                    CompareType::GreaterThanOrEqualSigned => todo!("Compare constants with type GreaterThanOrEqualSigned"),
-                    CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
-                    CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
-                    CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
-                    CompareType::GreaterThanOrEqualUnsigned => todo!("Compare constants with type GreaterThanOrEqualUnsigned"),
+            (c1, c2) if c1.is_const() && c2.is_const() => match cmp_type {
+                CompareType::Equal => {
+                    dynasm!(ops
+                        ; mov W(r_out as u32), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as u32
+                    )
                 }
-            }
+                CompareType::NotEqual => {
+                    dynasm!(ops
+                        ; mov W(r_out as u32), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as u32
+                    )
+                }
+                CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
+                CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
+                CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
+                CompareType::GreaterThanOrEqualSigned => todo!("Compare constants with type GreaterThanOrEqualSigned"),
+                CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
+                CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
+                CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
+                CompareType::GreaterThanOrEqualUnsigned => {
+                    todo!("Compare constants with type GreaterThanOrEqualUnsigned")
+                }
+            },
             _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, cmp_type, b),
         }
-
     }
 
     fn load_ptr(
@@ -476,7 +485,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             }
             (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U64) => {
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [X(r_ptr), offset as u32]
+                    ; ldr X(r_out as u32), [X(r_ptr), offset as u32]
                 );
             }
             _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
@@ -528,9 +537,9 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(value), DataType::U64) => {
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(_) | ConstOrReg::S32(_), DataType::U64) => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_value.r(), value as u64);
+                load_64_bit_constant(ops, lp, r_value.r(), value.to_u64_const().unwrap());
                 dynasm!(ops
                     ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
@@ -541,12 +550,12 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
 
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType) {
         match (&to_spill, &stack_offset, tp) {
-            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32) => {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
-            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64) => {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64 | DataType::S64) => {
                 dynasm!(ops
                     ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
@@ -567,7 +576,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
                     ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64) => {
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64 | DataType::S64) => {
                 dynasm!(ops
                     ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
@@ -709,11 +718,15 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn or(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
-        match (tp, r_out, a, b) {
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
-                load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 | c2 as u64);
+        let a_const = a.to_u64_const();
+        let b_const = b.to_u64_const();
+        if a_const.is_some() && b_const.is_some() {
+            let result = a_const.unwrap() | b_const.unwrap();
+            load_64_bit_constant(ops, lp, r_out.expect_gpr() as u32, result);
+        } else {
+            match (tp, r_out, a, b) {
+                _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
             }
-            _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
         }
     }
 

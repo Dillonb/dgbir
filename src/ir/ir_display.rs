@@ -156,23 +156,25 @@ impl Display for IRFunctionInternal {
 impl Display for Lifetimes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn display_usages(usages: &[Usage]) -> String {
-            usages
-                .iter()
-                .map(|usage| format!("\t\t{}", usage))
-                .join("\n")
+            usages.iter().map(|usage| format!("\t\t{}", usage)).join("\n")
         }
         fn display_values(interferences: &[Value]) -> String {
-            interferences
-                .iter()
-                .map(|value| format!("{}", value))
-                .join(", ")
+            interferences.iter().map(|value| format!("{}", value)).join(", ")
         }
-        let values = self.last_used
+        let values = self
+            .last_used
             .keys()
             .chain(self.interference.keys())
             .chain(self.all_usages.keys())
             .unique()
-            .map(|value| format!("{}\n\tUsed at:\n{}\n\tInterference: {}", value, display_usages(&self.all_usages[value]), display_values(&self.interference[value])));
+            .map(|value| {
+                format!(
+                    "{}\n\tUsed at:\n{}\n\tInterference: {}",
+                    value,
+                    display_usages(&self.all_usages[value]),
+                    display_values(&self.interference[value])
+                )
+            });
 
         write!(f, "Lifetimes:\n{}", values.collect::<Vec<String>>().join("\n\n"))
     }

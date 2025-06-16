@@ -21,6 +21,7 @@ pub enum ConstOrReg {
     U16(u16),
     S16(i16),
     U32(u32),
+    S32(i32),
     U64(u64),
     F32(OrderedFloat<f32>),
     GPR(u32),
@@ -35,6 +36,7 @@ impl ConstOrReg {
             ConstOrReg::U16(_) => None,
             ConstOrReg::S16(_) => None,
             ConstOrReg::U32(_) => None,
+            ConstOrReg::S32(_) => None,
             ConstOrReg::U64(_) => None,
             ConstOrReg::F32(_) => None,
         }
@@ -42,13 +44,27 @@ impl ConstOrReg {
 
     pub fn to_u64_const(&self) -> Option<u64> {
         match self {
-            ConstOrReg::U16(c) => (*c).try_into().ok(),
-            ConstOrReg::S16(c) => (*c).try_into().ok(),
-            ConstOrReg::U32(c) => (*c).try_into().ok(),
+            ConstOrReg::U16(c) => Some(*c as u64),
+            ConstOrReg::S16(c) => Some(*c as u64),
+            ConstOrReg::U32(c) => Some(*c as u64),
+            ConstOrReg::S32(c) => Some(*c as u64),
             ConstOrReg::U64(c) => Some(*c),
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
             ConstOrReg::SIMD(_) => None,
+        }
+    }
+
+    pub fn is_const(&self) -> bool {
+        match self {
+            ConstOrReg::U16(_) => true,
+            ConstOrReg::S16(_) => true,
+            ConstOrReg::U32(_) => true,
+            ConstOrReg::S32(_) => true,
+            ConstOrReg::U64(_) => true,
+            ConstOrReg::F32(_) => true,
+            ConstOrReg::GPR(_) => false,
+            ConstOrReg::SIMD(_) => false,
         }
     }
 
@@ -57,6 +73,7 @@ impl ConstOrReg {
             ConstOrReg::U16(c) => (*c).try_into().ok(),
             ConstOrReg::S16(c) => (*c).try_into().ok(),
             ConstOrReg::U32(c) => (*c).try_into().ok(),
+            ConstOrReg::S32(c) => (*c).try_into().ok(),
             ConstOrReg::U64(c) => (*c).try_into().ok(),
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
@@ -78,6 +95,9 @@ impl ConstOrReg {
 
             (ConstOrReg::U32(_), Register::GPR(_)) => true,
             (ConstOrReg::U32(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::S32(_), Register::GPR(_)) => true,
+            (ConstOrReg::S32(_), Register::SIMD(_)) => false,
 
             (ConstOrReg::U64(_), Register::GPR(_)) => true,
             (ConstOrReg::U64(_), Register::SIMD(_)) => false,
@@ -406,12 +426,12 @@ pub trait Compiler<'a, Ops> {
                 }
             }
             InputSlot::Constant(constant) => match constant {
-                Constant::U32(c) => ConstOrReg::U32(c),
                 Constant::U8(_) => todo!(),
                 Constant::S8(_) => todo!(),
                 Constant::U16(c) => ConstOrReg::U16(c),
                 Constant::S16(c) => ConstOrReg::S16(c),
-                Constant::S32(_) => todo!(),
+                Constant::U32(c) => ConstOrReg::U32(c),
+                Constant::S32(c) => ConstOrReg::S32(c),
                 Constant::U64(c) => ConstOrReg::U64(c),
                 Constant::S64(_) => todo!(),
                 Constant::F32(c) => ConstOrReg::F32(c),
