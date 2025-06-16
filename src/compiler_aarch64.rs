@@ -135,6 +135,9 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
                 load_32_bit_constant(ops, lp, r_to as u32, c);
             }
+            (ConstOrReg::S32(c), Register::GPR(r_to)) => {
+                load_64_bit_signed_constant(ops, lp, r_to as u32, c.into());
+            }
             (ConstOrReg::U64(c), Register::GPR(r)) => {
                 load_64_bit_constant(ops, lp, r as u32, c);
             }
