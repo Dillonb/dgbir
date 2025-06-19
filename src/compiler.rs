@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use dynasmrt::{AssemblyOffset, ExecutableBuffer};
+use dynasmrt::aarch64::Aarch64Relocation;
+use dynasmrt::relocations::Relocation;
+use dynasmrt::{AssemblyOffset, DynamicLabel, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use ordered_float::OrderedFloat;
 
 use crate::abi::get_function_argument_registers;
@@ -15,6 +17,13 @@ use crate::{
     },
     register_allocator::{Register, RegisterAllocations, Value},
 };
+
+// A custom trait that acts as a generic assembler interface. Works with both VecAssembler and
+// Assembler.
+pub trait GenericAssembler<R: Relocation>: DynasmApi + DynasmLabelApi<Relocation = R> {
+    type R;
+    fn new_dynamic_label(&mut self) -> DynamicLabel;
+}
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum ConstOrReg {
@@ -160,7 +169,7 @@ pub fn expect_gpr(register: Register) -> usize {
     }
 }
 
-fn compile_instruction<'a, Ops, TC: Compiler<'a, Ops>>(
+fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler<'a, R, Ops>>(
     ops: &mut Ops,
     lp: &mut LiteralPool,
     compiler: &TC,
@@ -412,7 +421,7 @@ impl LiteralPool {
     }
 }
 
-pub trait Compiler<'a, Ops> {
+pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Get a new dynamic label.
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel;
 
@@ -714,6 +723,46 @@ impl CompiledFunction {
     }
 }
 
+fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R, Ops>>(ops: &mut Ops, compiler: &C) {
+    let mut lp = LiteralPool::new();
+
+    compiler.prologue(ops);
+    compiler.handle_function_arguments(ops, &mut lp);
+
+    for (block_index, block) in compiler.get_func().blocks.iter().enumerate() {
+        compiler.on_new_block_begin(ops, block_index);
+        block
+            .instructions
+            .iter()
+            .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
+            .for_each(|(i_in_block, instruction)| {
+                compile_instruction(ops, &mut lp, compiler, *i_in_block, instruction);
+            })
+    }
+    compiler.epilogue(ops);
+    compiler.emit_literal_pool(ops, lp);
+}
+
+pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> Vec<u8> {
+    func.validate();
+    #[cfg(target_arch = "x86_64")]
+    let mut ops = dynasmrt::x64::Assembler::new().unwrap();
+    // TODO fix above for x86_64
+    #[cfg(target_arch = "aarch64")]
+    let mut ops = dynasmrt::VecAssembler::<Aarch64Relocation>::new(baseaddr);
+
+    let mut func = func.func.borrow_mut();
+
+    #[cfg(target_arch = "aarch64")]
+    let compiler = compiler_aarch64::Aarch64Compiler::new(&mut ops, &mut func);
+    #[cfg(target_arch = "x86_64")]
+    let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
+
+    compile_common(&mut ops, &compiler);
+
+    return ops.finalize().unwrap();
+}
+
 /// Compile an IR function into machine code
 pub fn compile(func: &IRFunction) -> CompiledFunction {
     func.validate();
@@ -729,23 +778,7 @@ pub fn compile(func: &IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    let mut lp = LiteralPool::new();
-
-    compiler.prologue(&mut ops);
-    compiler.handle_function_arguments(&mut ops, &mut lp);
-
-    for (block_index, block) in compiler.get_func().blocks.iter().enumerate() {
-        compiler.on_new_block_begin(&mut ops, block_index);
-        block
-            .instructions
-            .iter()
-            .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
-            .for_each(|(i_in_block, instruction)| {
-                compile_instruction::<_, _>(&mut ops, &mut lp, &compiler, *i_in_block, instruction)
-            })
-    }
-    compiler.epilogue(&mut ops);
-    compiler.emit_literal_pool(&mut ops, lp);
+    compile_common(&mut ops, &compiler);
 
     return CompiledFunction {
         entrypoint: compiler.get_entrypoint(),

@@ -1,17 +1,34 @@
-use std::{collections::HashMap, iter};
+use std::{collections::HashMap, iter, marker::PhantomData};
 
 use crate::{
     abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
-    compiler::{Compiler, ConstOrReg, LiteralPool},
+    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
-use dynasmrt::{aarch64::Aarch64Relocation, dynasm, AssemblyOffset, DynasmApi, DynasmLabelApi};
+use dynasmrt::{aarch64::Aarch64Relocation, dynasm, Assembler, AssemblyOffset, VecAssembler};
 
-type Ops = dynasmrt::Assembler<Aarch64Relocation>;
+impl GenericAssembler<Aarch64Relocation> for Assembler<Aarch64Relocation> {
+    type R = Aarch64Relocation;
+    fn new_dynamic_label(&mut self) -> dynasmrt::DynamicLabel {
+        self.new_dynamic_label()
+    }
+}
 
-fn load_64_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u64) {
+impl GenericAssembler<Aarch64Relocation> for VecAssembler<Aarch64Relocation> {
+    type R = Aarch64Relocation;
+    fn new_dynamic_label(&mut self) -> dynasmrt::DynamicLabel {
+        self.new_dynamic_label()
+    }
+}
+
+fn load_64_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    reg: u32,
+    value: u64,
+) {
     println!("Loading 64-bit constant: 0x{:X}", value);
     if value <= 0xFFFF {
         dynasm!(ops
@@ -27,7 +44,12 @@ fn load_64_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u6
     }
 }
 
-fn load_64_bit_signed_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: i64) {
+fn load_64_bit_signed_constant<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    reg: u32,
+    value: i64,
+) {
     if value >= 0 {
         load_64_bit_constant(ops, lp, reg, value as u64);
     } else if value > i32::MIN.into() {
@@ -41,7 +63,12 @@ fn load_64_bit_signed_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, va
     }
 }
 
-fn load_32_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u32) {
+fn load_32_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    reg: u32,
+    value: u32,
+) {
     if value <= 0xFFFF {
         dynasm!(ops
             ; movz W(reg), value
@@ -54,15 +81,16 @@ fn load_32_bit_constant(ops: &mut Ops, lp: &mut LiteralPool, reg: u32, value: u3
     }
 }
 
-pub struct Aarch64Compiler<'a> {
+pub struct Aarch64Compiler<'a, Ops> {
     scratch_regs: RegPool,
     func: &'a IRFunctionInternal,
     allocations: RegisterAllocations,
     entrypoint: dynasmrt::AssemblyOffset,
     block_labels: Vec<dynasmrt::DynamicLabel>,
+    phantom: PhantomData<Ops>,
 }
 
-impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
+impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocation, Ops> for Aarch64Compiler<'a, Ops> {
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
         ops.new_dynamic_label()
     }
@@ -90,6 +118,7 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
             func,
             allocations,
             block_labels,
+            phantom: PhantomData,
         }
     }
 
@@ -396,7 +425,11 @@ impl<'a> Compiler<'a, Ops> for Aarch64Compiler<'a> {
     }
 
     fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
-        fn set_reg_by_flags(ops: &mut Ops, cmp_type: CompareType, r_out: usize) {
+        fn set_reg_by_flags<Ops: GenericAssembler<Aarch64Relocation>>(
+            ops: &mut Ops,
+            cmp_type: CompareType,
+            r_out: usize,
+        ) {
             // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/A64-General-Instructions/CSET
             // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/Condition-Codes/Condition-code-suffixes-and-related-flags?lang=en
             match cmp_type {
