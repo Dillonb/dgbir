@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
-    abi::{get_return_value_registers, get_scratch_registers},
+    abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers},
     compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
@@ -593,15 +593,73 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         todo!()
     }
 
-    fn call_function(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _address: ConstOrReg,
-        _active_volatile_regs: Vec<Register>,
-        _r_out: Option<Register>,
-        _args: Vec<ConstOrReg>,
-    ) {
-        todo!()
+    fn call_function(&self, ops: &mut Ops, lp: &mut LiteralPool, address: ConstOrReg, active_volatile_regs: Vec<Register>, r_out: Option<Register>, args: Vec<ConstOrReg>) {
+        let active_regs = self
+            .scratch_regs
+            .active_regs()
+            .into_iter()
+            .chain(active_volatile_regs.into_iter())
+            .collect::<Vec<_>>();
+
+        let stack_bytes_needed = active_regs.iter().map(|r| r.size()).sum::<usize>();
+        let misalignment = stack_bytes_needed % 16;
+        let stack_bytes_needed = stack_bytes_needed + misalignment;
+
+        dynasm!(ops
+            ; sub rsp, stack_bytes_needed as i32 // Allocate stack space for the call
+        );
+
+        let mut stack_offsets = HashMap::new();
+        let mut stack_offset = 0;
+        for reg in active_regs.iter() {
+            stack_offsets.insert(reg, stack_offset);
+            match reg {
+                Register::GPR(r) => {
+                    dynasm!(ops
+                        ; mov [rsp + stack_offset], Rq(*r as u8)
+                    );
+                }
+                Register::SIMD(_r) => todo!(),
+            }
+            stack_offset += reg.size() as i32;
+        }
+
+        // Move the arguments into place
+        let moves = args
+            .into_iter()
+            .zip(get_function_argument_registers().into_iter())
+            .collect::<HashMap<ConstOrReg, Register>>();
+        self.move_regs_multi(ops, lp, moves);
+
+        match address {
+            ConstOrReg::U64(ptr) => {
+                let temp_reg = self.scratch_regs.borrow::<register_type::GPR>();
+                // load_64_bit_constant(ops, lp, temp_reg.r(), ptr);
+                dynasm!(ops
+                    ; mov Rq(temp_reg.r() as u8), QWORD ptr as i64
+                    ; call Rq(temp_reg.r() as u8)
+                );
+            }
+            _ => todo!("Unsupported call to: {:?}", address),
+        }
+
+        if let Some(to) = r_out {
+            println!("Moving return value from {} to {}", get_return_value_registers()[0], to);
+            self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
+        }
+
+        for reg in active_regs.iter() {
+            match reg {
+                Register::GPR(r) => {
+                    dynasm!(ops
+                        ; mov Rq(*r as u8), [rsp + stack_offsets[reg]]
+                    );
+                }
+                Register::SIMD(_r) => todo!(),
+            }
+        }
+        dynasm!(ops
+            ; add rsp, stack_bytes_needed as i32 // Deallocate stack space for the call
+        );
     }
 }
