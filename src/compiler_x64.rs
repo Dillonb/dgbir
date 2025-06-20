@@ -419,6 +419,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov DWORD [Rq(r_ptr as u8) + offset as i32], Rd(r_value as u8)
                 );
             }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64) => {
+                dynasm!(ops
+                    ; mov QWORD [Rq(r_ptr as u8) + offset as i32], Rq(r_value as u8)
+                );
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -469,12 +474,98 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn left_shift(&self, _ops: &mut Ops, _r_out: usize, _n: ConstOrReg, _amount: ConstOrReg, _tp: DataType) {
-        todo!("Implement left shift operation")
+    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
+        if let Some(amount) = amount.to_u64_const() {
+            let amount = amount as u32;
+            match (tp, n) {
+                (DataType::U8 | DataType::S8, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; movzx Rd(r_out as u8), Rb(r_n as u8) // zero out all but the lower 8 bits
+                        ; shl Rb(r_out as u8), amount as i8 & 0b111
+                    );
+                }
+                (DataType::U16 | DataType::S16, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; movzx Rd(r_out as u8), Rw(r_n as u8) // zero out all but the lower 16 bits
+                        ; shl Rw(r_out as u8), amount as i8 & 0b1111
+                    );
+                }
+                (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; mov Rd(r_out as u8), Rd(r_n as u8)
+                        ; shl Rd(r_out as u8), amount as i8 & 0b11111
+                    );
+                }
+                (DataType::U64 | DataType::S64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; mov Rq(r_out as u8), Rq(r_n as u8)
+                        ; shl Rq(r_out as u8), amount as i8 & 0b111111
+                    );
+                }
+                _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
+            }
+        } else if let Some(r_amount) = amount.to_reg() {
+            todo!("LeftShift with register amount: {:?} << {:?}", n, r_amount);
+        }
     }
 
-    fn right_shift(&self, _ops: &mut Ops, _r_out: usize, _n: ConstOrReg, _amount: ConstOrReg, _tp: DataType) {
-        todo!("Implement right shift operation")
+    fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
+        if let Some(amount) = amount.to_u64_const() {
+            let amount = amount as u32;
+            match (tp, n) {
+                (DataType::U8, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; movzx Rd(r_out as u8), Rb(r_n as u8)
+                        ; shr Rb(r_out as u8), amount as i8 & 0b111
+                    );
+                }
+                (DataType::S8, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; movzx Rd(r_out as u8), Rb(r_n as u8)
+                        ; sar Rb(r_out as u8), amount as i8 & 0b111
+                    );
+                }
+                (DataType::U16, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; movzx Rd(r_out as u8), Rw(r_n as u8)
+                        ; shr Rw(r_out as u8), amount as i8 & 0b1111
+                    );
+                }
+                (DataType::S16, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; movzx Rd(r_out as u8), Rw(r_n as u8)
+                        ; sar Rw(r_out as u8), amount as i8 & 0b1111
+                    );
+                }
+                (DataType::U32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; mov Rd(r_out as u8), Rd(r_n as u8)
+                        ; shr Rd(r_out as u8), amount as i8 & 0b11111
+                    );
+                }
+                (DataType::S32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; mov Rd(r_out as u8), Rd(r_n as u8)
+                        ; sar Rd(r_out as u8), amount as i8 & 0b11111
+                    );
+                }
+                (DataType::U64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; mov Rq(r_out as u8), Rq(r_n as u8)
+                        ; shr Rq(r_out as u8), amount as i8 & 0b111111
+                    );
+                }
+                (DataType::S64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; mov Rq(r_out as u8), Rq(r_n as u8)
+                        ; sar Rq(r_out as u8), amount as i8 & 0b111111
+                    );
+                }
+                _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
+            }
+        } else if let Some(r_amount) = amount.to_reg() {
+            todo!("RightShift with register amount: {:?} >> {:?}", n, r_amount);
+        }
     }
 
     fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
