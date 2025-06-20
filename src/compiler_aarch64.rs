@@ -744,18 +744,26 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     }
 
     fn and(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
-        match (tp, r_out, a, b) {
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
-                load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 & c2 as u64);
+        if a.is_const() && b.is_const() {
+            let result = a.to_u64_const().unwrap() & b.to_u64_const().unwrap();
+            match tp {
+                DataType::U32 => load_32_bit_constant(ops, lp, r_out.expect_gpr() as u32, result as u32),
+                _ => todo!("Unsupported AND operation with constants: {:?} & {:?} with type {:?}", a, b, tp),
             }
-            (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(c)) => {
-                // TODO: if the const is small enough, use an and immediate
-                load_32_bit_constant(ops, lp, r_out as u32, c as u32);
-                dynasm!(ops
+        } else {
+            match (tp, r_out, a, b) {
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
+                    load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 & c2 as u64);
+                }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(c)) => {
+                    // TODO: if the const is small enough, use an and immediate
+                    load_32_bit_constant(ops, lp, r_out as u32, c as u32);
+                    dynasm!(ops
                     ; and X(r_out as u32), X(r), X(r_out as u32)
                 );
+                }
+                _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
             }
-            _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
         }
     }
 
