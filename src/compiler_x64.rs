@@ -1,23 +1,38 @@
+use std::marker::PhantomData;
+
 use crate::{
     abi::{get_return_value_registers, get_scratch_registers},
-    compiler::{Compiler, ConstOrReg, LiteralPool},
+    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
-use dynasmrt::{dynasm, x64::X64Relocation, DynasmApi, DynasmLabelApi};
+use dynasmrt::{dynasm, x64::X64Relocation, Assembler, VecAssembler};
 
-type Ops = dynasmrt::Assembler<X64Relocation>;
+impl GenericAssembler<X64Relocation> for Assembler<X64Relocation> {
+    type R = X64Relocation;
+    fn new_dynamic_label(&mut self) -> dynasmrt::DynamicLabel {
+        self.new_dynamic_label()
+    }
+}
 
-pub struct X64Compiler<'a> {
+impl GenericAssembler<X64Relocation> for VecAssembler<X64Relocation> {
+    type R = X64Relocation;
+    fn new_dynamic_label(&mut self) -> dynasmrt::DynamicLabel {
+        self.new_dynamic_label()
+    }
+}
+
+pub struct X64Compiler<'a, Ops> {
     scratch_regs: RegPool,
     func: &'a IRFunctionInternal,
     allocations: RegisterAllocations,
     entrypoint: dynasmrt::AssemblyOffset,
     block_labels: Vec<dynasmrt::DynamicLabel>,
+    phantom: PhantomData<Ops>,
 }
 
-impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
+impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> for X64Compiler<'a, Ops> {
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
         ops.new_dynamic_label()
     }
@@ -49,6 +64,7 @@ impl<'a> Compiler<'a, Ops> for X64Compiler<'a> {
             func,
             allocations,
             block_labels,
+            phantom: PhantomData,
         }
     }
 

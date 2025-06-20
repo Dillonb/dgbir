@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
+#[cfg(target_arch = "aarch64")]
 use dynasmrt::aarch64::Aarch64Relocation;
+
 use dynasmrt::relocations::Relocation;
+use dynasmrt::x64::X64Relocation;
 use dynasmrt::{AssemblyOffset, DynamicLabel, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use ordered_float::OrderedFloat;
 
@@ -746,7 +749,7 @@ fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R
 pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> Vec<u8> {
     func.validate();
     #[cfg(target_arch = "x86_64")]
-    let mut ops = dynasmrt::x64::Assembler::new().unwrap();
+    let mut ops = dynasmrt::VecAssembler::<X64Relocation>::new(baseaddr);
     // TODO fix above for x86_64
     #[cfg(target_arch = "aarch64")]
     let mut ops = dynasmrt::VecAssembler::<Aarch64Relocation>::new(baseaddr);
