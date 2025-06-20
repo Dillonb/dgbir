@@ -122,7 +122,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; mov Rq(r_to as u8), QWORD c as i64
                 )
-            },
+            }
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
                     ; mov Rq(r_to as u8), Rq(r_from as u8)
@@ -300,7 +300,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         );
                     }
                 }
-                (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::S16(_)) => {
+                (
+                    DataType::U64 | DataType::S64,
+                    Register::GPR(r_out),
+                    ConstOrReg::GPR(r),
+                    ConstOrReg::U32(_) | ConstOrReg::S16(_),
+                ) => {
                     let c = b.to_u64_const().unwrap() as i64;
                     dynasm!(ops
                         ; mov Rq(r_out as u8), Rq(r as u8)
@@ -399,12 +404,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; sete Rb(r_out as u8)
                 );
-            },
+            }
             CompareType::NotEqual => {
                 dynasm!(ops
                     ; setne Rb(r_out as u8)
                 );
-            },
+            }
             CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
             CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
             CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
@@ -493,8 +498,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; mov QWORD [Rq(r_ptr as u8) + offset as i32], Rq(r_temp.r() as u8)
                     );
                 }
-                dynasm!(ops
-                )
+                dynasm!(ops)
             }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
@@ -657,15 +661,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn and(
-        &self,
-        ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        tp: DataType,
-        r_out: Register,
-        a: ConstOrReg,
-        b: ConstOrReg,
-    ) {
+    fn and(&self, ops: &mut Ops, _lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         let a_const = a.to_u64_const();
         let b_const = b.to_u64_const();
         if a_const.is_some() && b_const.is_some() {

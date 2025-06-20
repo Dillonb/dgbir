@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(target_arch = "aarch64")]
 use dynasmrt::aarch64::Aarch64Relocation;
+use dynasmrt::relocations::Relocation;
 #[cfg(target_arch = "x86_64")]
 use dynasmrt::x64::X64Relocation;
-use dynasmrt::relocations::Relocation;
 use dynasmrt::{AssemblyOffset, DynamicLabel, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use ordered_float::OrderedFloat;
 

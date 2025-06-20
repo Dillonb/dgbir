@@ -759,8 +759,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     // TODO: if the const is small enough, use an and immediate
                     load_32_bit_constant(ops, lp, r_out as u32, c as u32);
                     dynasm!(ops
-                    ; and X(r_out as u32), X(r), X(r_out as u32)
-                );
+                        ; and X(r_out as u32), X(r), X(r_out as u32)
+                    );
                 }
                 _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
             }
