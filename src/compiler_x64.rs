@@ -240,7 +240,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     dynasm!(ops
                         ; mov Rd(r_out.expect_gpr() as u8), result as i32
                     )
-                },
+                }
                 DataType::S32 => {
                     let result = (a.to_s64_const().unwrap() as i32).wrapping_add(b.to_s64_const().unwrap() as i32);
                     dynasm!(ops
@@ -253,18 +253,22 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     dynasm!(ops
                         ; mov Rq(r_out.expect_gpr() as u8), QWORD result as i64
                     )
-                },
+                }
                 _ => todo!("Unsupported Add operation with result type {} and constants: {:?} + {:?}", tp, a, b),
             }
             return;
         } else {
             match (tp, r_out, a, b) {
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::S16(_)) => {
+                (
+                    DataType::U32 | DataType::S32,
+                    Register::GPR(r_out),
+                    ConstOrReg::GPR(r),
+                    ConstOrReg::U32(_) | ConstOrReg::S16(_),
+                ) => {
                     let c = b.to_u64_const().unwrap() as i64;
                     dynasm!(ops
                         ; mov Rd(r_out as u8), Rd(r as u8)
                     );
-
 
                     if c >= i32::MIN as i64 && c <= i32::MAX as i64 {
                         dynasm!(ops
@@ -285,14 +289,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                             ; movsx Rq(r_out as u8), Rd(r_out as u8)
                         );
                     }
-
                 }
                 (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::S16(_)) => {
                     let c = b.to_u64_const().unwrap() as i64;
                     dynasm!(ops
                         ; mov Rq(r_out as u8), Rq(r as u8)
                     );
-
 
                     if c >= i32::MIN as i64 && c <= i32::MAX as i64 {
                         dynasm!(ops
@@ -684,7 +686,15 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         todo!()
     }
 
-    fn call_function(&self, ops: &mut Ops, lp: &mut LiteralPool, address: ConstOrReg, active_volatile_regs: Vec<Register>, r_out: Option<Register>, args: Vec<ConstOrReg>) {
+    fn call_function(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        address: ConstOrReg,
+        active_volatile_regs: Vec<Register>,
+        r_out: Option<Register>,
+        args: Vec<ConstOrReg>,
+    ) {
         let active_regs = self
             .scratch_regs
             .active_regs()
