@@ -105,6 +105,25 @@ impl RegPool {
         }
     }
 
+    pub fn reserve<T: RegPoolRegister>(&self, reg: Register) -> BorrowedReg<T> {
+        let mut pool = self.pool.borrow_mut();
+
+        if *pool.regs.get(&reg).unwrap_or(&false) {
+            panic!("Register already allocated!");
+        }
+
+        // If a register is not in the pool, whatever, this pool won't allocate it anyway.
+        if pool.regs.contains_key(&reg) {
+            pool.regs.insert(reg, true);
+        }
+
+        BorrowedReg {
+            reg,
+            pool_reg: T::new(reg.index() as u32),
+            pool: self.pool.clone(), // Increment refcount
+        }
+    }
+
     pub fn active_regs(&self) -> Vec<Register> {
         let pool = self.pool.borrow();
         pool.regs
@@ -129,6 +148,9 @@ impl<T: RegPoolRegister> BorrowedReg<T> {
 
 impl<T: RegPoolRegister> Drop for BorrowedReg<T> {
     fn drop(&mut self) {
-        self.pool.borrow_mut().regs.insert(self.reg, false);
+        let mut pool = self.pool.borrow_mut();
+        if pool.regs.contains_key(&self.reg) {
+           pool.regs.insert(self.reg, false);
+        }
     }
 }

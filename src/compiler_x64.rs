@@ -105,14 +105,24 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     }
 
     fn move_to_reg(&self, ops: &mut Ops, _lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
+        println!("move_to_reg(): Moving {:?} to {:?}", from, to);
         match (from, to) {
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
                 dynasm!(ops
                     ; mov Rd(r_to as u8), c as i32
                 );
-                // It was a constant, so no need to remove the source
             }
-            (ConstOrReg::U64(_), Register::GPR(_)) => todo!("Moving {:?} to {}", from, to),
+            (ConstOrReg::S32(c), Register::GPR(r_to)) => {
+                dynasm!(ops
+                    ; mov Rd(r_to as u8), c as i32
+                    ; movsx Rq(r_to as u8), Rd(r_to as u8)
+                );
+            }
+            (ConstOrReg::U64(c), Register::GPR(r_to)) => {
+                dynasm!(ops
+                    ; mov Rq(r_to as u8), QWORD c as i64
+                )
+            },
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
                     ; mov Rq(r_to as u8), Rq(r_from as u8)
@@ -290,7 +300,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         );
                     }
                 }
-                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::S16(_)) => {
+                (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(_) | ConstOrReg::S16(_)) => {
                     let c = b.to_u64_const().unwrap() as i64;
                     dynasm!(ops
                         ; mov Rq(r_out as u8), Rq(r as u8)
@@ -309,7 +319,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         )
                     }
                 }
-                (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                     dynasm!(ops
                         ; mov Rd(r_out as u8), Rd(r1 as u8)
                         ; add Rd(r_out as u8), Rd(r2 as u8)
@@ -354,7 +364,29 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     todo!("Too big for i32, move to temp reg and compare")
                 }
             }
-            _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, cmp_type, b),
+            (c1, c2) if c1.is_const() && c2.is_const() => match cmp_type {
+                CompareType::Equal => {
+                    dynasm!(ops
+                        ; mov Rd(r_out as u8), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as i32
+                    )
+                }
+                CompareType::NotEqual => {
+                    dynasm!(ops
+                        ; mov Rd(r_out as u8), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as i32
+                    )
+                }
+                CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
+                CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
+                CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
+                CompareType::GreaterThanOrEqualSigned => todo!("Compare constants with type GreaterThanOrEqualSigned"),
+                CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
+                CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
+                CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
+                CompareType::GreaterThanOrEqualUnsigned => {
+                    todo!("Compare constants with type GreaterThanOrEqualUnsigned")
+                }
+            },
+            _ => todo!("Unsupported Compare operation: {:?} = {:?} <cmp> {:?}", r_out, a, b),
         }
 
         match cmp_type {
@@ -363,8 +395,16 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; setb Rb(r_out as u8)
                 );
             }
-            CompareType::Equal => todo!("Compare with type Equal"),
-            CompareType::NotEqual => todo!("Compare with type NotEqual"),
+            CompareType::Equal => {
+                dynasm!(ops
+                    ; sete Rb(r_out as u8)
+                );
+            },
+            CompareType::NotEqual => {
+                dynasm!(ops
+                    ; setne Rb(r_out as u8)
+                );
+            },
             CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
             CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
             CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
@@ -377,14 +417,28 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn load_ptr(
         &self,
-        _ops: &mut Ops,
+        ops: &mut Ops,
         _lp: &mut LiteralPool,
-        _r_out: Register,
-        _tp: DataType,
-        _ptr: ConstOrReg,
-        _offset: u64,
+        r_out: Register,
+        tp: DataType,
+        ptr: ConstOrReg,
+        offset: u64,
     ) {
-        todo!("load_ptr")
+        match (r_out, ptr, tp) {
+            (Register::GPR(r_out), ConstOrReg::U64(ptr), DataType::U32) => {
+                let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
+                dynasm!(ops
+                    ; mov Rq(r_ptr.r() as u8), QWORD ptr as i64
+                    ; mov Rd(r_out as u8), [Rq(r_ptr.r() as u8) + offset as i32]
+                );
+            }
+            (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U64) => {
+                dynasm!(ops
+                    ; mov Rq(r_out as u8), [Rq(r_ptr as u8) + offset as i32]
+                );
+            }
+            _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
+        }
     }
 
     fn write_ptr(
@@ -426,6 +480,22 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov QWORD [Rq(r_ptr as u8) + offset as i32], Rq(r_value as u8)
                 );
             }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(_) | ConstOrReg::S32(_), DataType::U64 | DataType::S64) => {
+                let c = value.to_u64_const().unwrap();
+                if c <= i32::MAX as u64 {
+                    dynasm!(ops
+                        ; mov QWORD [Rq(r_ptr as u8) + offset as i32], c as i32
+                    );
+                } else {
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    dynasm!(ops
+                        ; mov Rq(r_temp.r() as u8), QWORD c as i64
+                        ; mov QWORD [Rq(r_ptr as u8) + offset as i32], Rq(r_temp.r() as u8)
+                    );
+                }
+                dynasm!(ops
+                )
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -438,7 +508,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov [rsp + offset], Rd(*r as u8)
                 )
             }
-            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::Ptr) => {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::Ptr | DataType::U64 | DataType::S64) => {
                 let offset = self.func.get_stack_offset_for_location(*location, DataType::Ptr) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rq(*r as u8)
@@ -461,7 +531,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov Rd(r_out as u8), [rsp + offset]
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr) => {
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr | DataType::U64 | DataType::S64) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rq(r_out as u8), [rsp + offset]
@@ -589,14 +659,39 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn and(
         &self,
-        _ops: &mut Ops,
+        ops: &mut Ops,
         _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _a: ConstOrReg,
-        _b: ConstOrReg,
+        tp: DataType,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
     ) {
-        todo!()
+        let a_const = a.to_u64_const();
+        let b_const = b.to_u64_const();
+        if a_const.is_some() && b_const.is_some() {
+            let result = a_const.unwrap() & b_const.unwrap();
+            dynasm!(ops
+                ; mov Rq(r_out.expect_gpr() as u8), QWORD result as i64
+            );
+        } else {
+            match (tp, r_out, a, b) {
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(_)) => {
+                    let c = b.to_u64_const().unwrap();
+                    if c <= u32::MAX.into() {
+                        dynasm!(ops
+                            ; mov Rq(r_out as u8), Rq(r as u8)
+                            ; and Rq(r_out as u8), c as u32 as i32
+                        );
+                    } else {
+                        dynasm!(ops
+                            ; mov Rq(r_out as u8), QWORD c as i64
+                            ; and Rq(r_out as u8), Rq(r as u8)
+                        );
+                    }
+                }
+                _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
+            }
+        }
     }
 
     fn or(&self, ops: &mut Ops, _lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
@@ -730,6 +825,17 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             .into_iter()
             .zip(get_function_argument_registers().into_iter())
             .collect::<HashMap<ConstOrReg, Register>>();
+
+        // TODO: rework this so that the output of this is used as the input to `move_regs_multi`
+        // so I don't have to mark this as unused with the underscore.
+        let _reservations = moves
+            .values()
+            .map(|r| match r {
+                Register::GPR(_) => self.scratch_regs.reserve::<register_type::GPR>(*r),
+                Register::SIMD(_) => todo!("Reserving SIMD registers for arguments"),
+            })
+            .collect::<Vec<_>>();
+
         self.move_regs_multi(ops, lp, moves);
 
         match address {
