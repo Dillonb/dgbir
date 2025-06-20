@@ -351,7 +351,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         load_64_bit_constant(ops, lp, r_temp.r(), c);
                         dynasm!(ops
                             ; add W(r_out as u32), W(r), W(r_temp.r())
-                        )
+                        );
+                    }
+                    if tp == DataType::S32 {
+                        // Sign extend the result to 64 bits for S32
+                        dynasm!(ops
+                            ; sxtw X(r_out as u32), W(r_out as u32)
+                        );
                     }
                 }
                 (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(_)) => {
