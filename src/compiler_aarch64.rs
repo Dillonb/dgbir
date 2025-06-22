@@ -530,6 +530,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr X(r_out as u32), [X(r_ptr), offset as u32]
                 );
             }
+            (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U32) => {
+                dynasm!(ops
+                    ; ldr W(r_out as u32), [X(r_ptr), offset as u32]
+                );
+            }
             _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
         }
     }
@@ -726,7 +731,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
+    fn convert(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
         match (r_out, to_tp, input, from_tp) {
             (Register::GPR(r_out), DataType::U64, ConstOrReg::GPR(r_in), DataType::U32) => {
                 dynasm!(ops
@@ -738,6 +743,9 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 dynasm!(ops
                     ; sxtw X(r_out as u32), W(r_in as u32)
                 );
+            }
+            (Register::GPR(r_out), DataType::U32, ConstOrReg::U32(c), DataType::U32) => {
+                load_32_bit_constant(ops, lp, r_out as u32, c);
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
@@ -752,6 +760,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
         } else {
             match (tp, r_out, a, b) {
+                (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; and W(r_out as u32), W(r), W(r2)
+                    );
+                }
+                (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap() & 0xFFFFFFFF;
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_32_bit_constant(ops, lp, r_temp.r(), c as u32);
+                    dynasm!(ops
+                        ; and W(r_out as u32), W(r), W(r_temp.r())
+                    );
+                }
                 (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
                     load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 & c2 as u64);
                 }
@@ -775,13 +796,29 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             load_64_bit_constant(ops, lp, r_out.expect_gpr() as u32, result);
         } else {
             match (tp, r_out, a, b) {
+                (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; orr W(r_out as u32), W(r), W(r2)
+                    );
+                }
                 _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
             }
         }
     }
 
-    fn not(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _a: ConstOrReg) {
-        todo!()
+    fn not(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg) {
+        let r_out = r_out.expect_gpr();
+        if a.is_const() {
+            let result = !a.to_u64_const().unwrap();
+            match tp {
+                DataType::U32 => load_32_bit_constant(ops, lp, r_out as u32, result as u32),
+                DataType::S32 => load_64_bit_signed_constant(ops, lp, r_out as u32, result as i32 as i64),
+                DataType::U64 => load_64_bit_constant(ops, lp, r_out as u32, result),
+                _ => todo!("Unsupported NOT operation with constant: {:?} with type {:?}", a, tp),
+            }
+        } else {
+            todo!("Unsupported (non-const) NOT operation: {:?}", a);
+        }
     }
 
     fn xor(

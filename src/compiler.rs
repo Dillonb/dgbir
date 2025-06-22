@@ -277,7 +277,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let from_tp = inputs[0].tp();
                     let to_tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.convert(ops, *r_out, input, from_tp, to_tp);
+                        compiler.convert(ops, lp, *r_out, input, from_tp, to_tp);
                     })
                 }
                 InstructionType::And => {
@@ -655,7 +655,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR right shift instruction
     fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
     /// Compile an IR convert instruction
-    fn convert(&self, ops: &mut Ops, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType);
+    fn convert(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType);
     /// Compile an IR bitwise AND instruction
     fn and(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR bitwise OR instruction
