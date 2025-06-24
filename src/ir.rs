@@ -92,7 +92,7 @@ impl Constant {
 
 pub enum MultiplyType {
     Split,
-    Combined
+    Combined,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

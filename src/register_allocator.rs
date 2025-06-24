@@ -420,7 +420,6 @@ impl Iterator for IRFunctionValueIterator<'_> {
                         None
                     };
 
-
                     if v.is_some() {
                         return v;
                     }

@@ -644,7 +644,15 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn convert(&self, ops: &mut Ops, _lp: &mut LiteralPool, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
+    fn convert(
+        &self,
+        ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        r_out: Register,
+        input: ConstOrReg,
+        from_tp: DataType,
+        to_tp: DataType,
+    ) {
         match (r_out, to_tp, input, from_tp) {
             (Register::GPR(r_out), DataType::U64, ConstOrReg::GPR(r_in), DataType::U32) => {
                 dynasm!(ops

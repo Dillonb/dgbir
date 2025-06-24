@@ -460,7 +460,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
                 CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
                 CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
-                CompareType::GreaterThanOrEqualSigned => todo!("Compare constants with type GreaterThanOrEqualSigned"),
+                CompareType::GreaterThanOrEqualSigned => {
+                    dynasm!(ops
+                        ; mov W(r_out as u32), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap()) as u32
+                    )
+                },
                 CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
                 CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
                 CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
@@ -482,7 +486,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         offset: u64,
     ) {
         match (r_out, ptr, tp) {
-            (Register::GPR(r_out), ConstOrReg::U64(ptr), DataType::U32) => {
+            (Register::GPR(r_out), ConstOrReg::U64(ptr), DataType::U32 | DataType::S32) => {
                 let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
@@ -494,7 +498,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr X(r_out as u32), [X(r_ptr), offset as u32]
                 );
             }
-            (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U32) => {
+            (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; ldr W(r_out as u32), [X(r_ptr), offset as u32]
                 );
@@ -536,7 +540,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 dynasm!(ops
                     ; str W(r_value.r() as u32), [X(r_ptr), offset as u32]
                 );
-            },
+            }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
@@ -635,8 +639,25 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 }
                 _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
             }
-        } else if let Some(r_amount) = amount.to_reg() {
-            todo!("LeftShift with register amount: {:?} << {:?}", n, r_amount);
+        } else if let Some(Register::GPR(r_amount)) = amount.to_reg() {
+            match (tp, n) {
+                (DataType::U8, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for U8"),
+                (DataType::S8, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S8"),
+                (DataType::U16, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for U16"),
+                (DataType::S16, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S16"),
+                (DataType::U32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lslv W(r_out as u32), W(r_n as u32), W(r_amount as u32)
+                    );
+                }
+                (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S32"),
+                (DataType::U64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for U64"),
+                (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S64"),
+
+                _ => todo!("Unsupported DataType {} or unsupported register type for LeftShift operation with GPR amount: {:?} << {:?}", tp, n, r_amount),
+            }
+        } else {
+            panic!("RightShift amount must be a constant or a GPR, got: {:?}", amount);
         }
     }
 
@@ -696,12 +717,37 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 }
                 _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
             }
-        } else if let Some(r_amount) = amount.to_reg() {
-            todo!("RightShift with register amount: {:?} >> {:?}", n, r_amount);
+        } else if let Some(Register::GPR(r_amount)) = amount.to_reg() {
+            match (tp, n) {
+                (DataType::U8, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for U8"),
+                (DataType::S8, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S8"),
+                (DataType::U16, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for U16"),
+                (DataType::S16, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S16"),
+                (DataType::U32, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsrv W(r_out as u32), W(r_n as u32), W(r_amount as u32)
+                    );
+                }
+                (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S32"),
+                (DataType::U64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for U64"),
+                (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S64"),
+
+                _ => todo!("Unsupported DataType {} or unsupported register type for RightShift operation with GPR amount: {:?} >> {:?}", tp, n, r_amount),
+            }
+        } else {
+            panic!("RightShift amount must be a constant or a GPR, got: {:?}", amount);
         }
     }
 
-    fn convert(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType) {
+    fn convert(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        input: ConstOrReg,
+        from_tp: DataType,
+        to_tp: DataType,
+    ) {
         match (r_out, to_tp, input, from_tp) {
             (Register::GPR(r_out), DataType::U64, ConstOrReg::GPR(r_in), DataType::U32) => {
                 dynasm!(ops
@@ -808,28 +854,82 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn xor(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _a: ConstOrReg,
-        _b: ConstOrReg,
-    ) {
-        todo!()
+    fn xor(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+        let a_const = a.to_u64_const();
+        let b_const = b.to_u64_const();
+        if a_const.is_some() && b_const.is_some() {
+            let result = a_const.unwrap() ^ b_const.unwrap();
+            load_64_bit_constant(ops, lp, r_out.expect_gpr() as u32, result);
+        } else {
+            match (tp, r_out, a, b) {
+                (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; eor W(r_out as u32), W(r), W(r2)
+                    );
+                }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; eor X(r_out as u32), X(r), X(r2)
+                    );
+                }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
+                    load_64_bit_constant(ops, lp, r_out as u32, c.to_u64_const().unwrap());
+                    dynasm!(ops
+                        ; eor X(r_out as u32), X(r), X(r_out as u32)
+                    );
+                }
+                _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp),
+            }
+        }
     }
 
     fn subtract(
         &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _minuend: ConstOrReg,
-        _subtrahend: ConstOrReg,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_out: Register,
+        minuend: ConstOrReg,
+        subtrahend: ConstOrReg,
     ) {
-        todo!()
+        if minuend.is_const() && subtrahend.is_const() {
+            match tp {
+                DataType::U32 => load_32_bit_constant(
+                    ops,
+                    lp,
+                    r_out.expect_gpr() as u32,
+                    minuend.to_u64_const().unwrap() as u32 - subtrahend.to_u64_const().unwrap() as u32,
+                ),
+                DataType::S32 => {
+                    let result = (minuend.to_s64_const().unwrap() as i32)
+                        .wrapping_sub(subtrahend.to_s64_const().unwrap() as i32)
+                        as i64;
+                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr() as u32, result);
+                }
+                DataType::U64 => load_64_bit_constant(
+                    ops,
+                    lp,
+                    r_out.expect_gpr() as u32,
+                    minuend.to_u64_const().unwrap() - subtrahend.to_u64_const().unwrap(),
+                ),
+                _ => todo!(
+                    "Unsupported Sub operation with result type {} and constants: {:?} + {:?}",
+                    tp,
+                    minuend,
+                    subtrahend
+                ),
+            }
+            return;
+        } else {
+            match (tp, r_out, minuend, subtrahend) {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; sub W(r_out as u32), W(r1), W(r2)
+                    )
+                }
+                _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
+            }
+        }
     }
 
     fn multiply(
@@ -852,7 +952,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; lsr X(r_out_lo as u32), X(r_out_lo as u32), 32
                 );
             }
-            _ => todo!("Unsupported Multiply operation: {:?} * {:?} with result type {} ({} regs) and arg type {}", a, b, result_tp, output_regs.len(), arg_tp),
+            _ => todo!(
+                "Unsupported Multiply operation: {:?} * {:?} with result type {} ({} regs) and arg type {}",
+                a,
+                b,
+                result_tp,
+                output_regs.len(),
+                arg_tp
+            ),
         }
     }
 

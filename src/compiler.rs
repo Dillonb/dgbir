@@ -665,7 +665,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR right shift instruction
     fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
     /// Compile an IR convert instruction
-    fn convert(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: Register, input: ConstOrReg, from_tp: DataType, to_tp: DataType);
+    fn convert(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        input: ConstOrReg,
+        from_tp: DataType,
+        to_tp: DataType,
+    );
     /// Compile an IR bitwise AND instruction
     fn and(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR bitwise OR instruction
