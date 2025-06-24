@@ -335,41 +335,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             return;
         } else {
             match (tp, r_out, a, b) {
-                (
-                    DataType::U32 | DataType::S32,
-                    Register::GPR(r_out),
-                    ConstOrReg::GPR(r),
-                    ConstOrReg::U32(_) | ConstOrReg::U16(_),
-                ) => {
-                    let c = b.to_u64_const().unwrap();
-                    if c < 4096 {
-                        dynasm!(ops
-                            ; add WSP(r_out as u32), WSP(r), c as u32
-                        )
-                    } else {
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        load_64_bit_constant(ops, lp, r_temp.r(), c);
-                        dynasm!(ops
-                            ; add W(r_out as u32), W(r), W(r_temp.r())
-                        );
-                    }
-                    if tp == DataType::S32 {
-                        // Sign extend the result to 64 bits for S32
-                        dynasm!(ops
-                            ; sxtw X(r_out as u32), W(r_out as u32)
-                        );
-                    }
-                }
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(_)) => {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
                     let c = b.to_s64_const().unwrap();
                     if c > 0 && c < 4096 {
                         dynasm!(ops
                             ; add WSP(r_out as u32), WSP(r), c as u32
                         )
                     } else if c < 0 && c > -4096 {
-                        let c = c.abs() as u64;
+                        let c = c.abs() as u32;
                         dynasm!(ops
-                            ; sub WSP(r_out as u32), WSP(r), c as u32
+                            ; sub WSP(r_out as u32), WSP(r), c
                         );
                     } else {
                         let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
@@ -379,16 +354,21 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         )
                     }
                 }
-                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U32(c)) => {
-                    if c < 4096 {
+                (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
+                    let c = c.to_s64_const().unwrap();
+                    if c > 0 && c < 4096 {
                         dynasm!(ops
-                            ; add XSP(r_out as u32), XSP(r), c
+                            ; add XSP(r_out as u32), XSP(r), c as u32
                         )
+                    } else if c < 0 && c > -4096 {
+                        let c = c.abs() as u32;
+                        dynasm!(ops
+                            ; sub XSP(r_out as u32), XSP(r), c
+                        );
                     } else {
                         let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        let literal = Self::add_literal(ops, lp, Constant::U32(c));
+                        load_64_bit_constant(ops, lp, r_temp.r(), c as u64);
                         dynasm!(ops
-                            ; ldr X(r_temp.r()), =>literal
                             ; add X(r_out as u32), X(r), X(r_temp.r())
                         )
                     }
@@ -408,22 +388,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; fmov S(r_out as u32), *c
                         ; fadd S(r_out as u32), S(r_out as u32), S(r)
                     )
-                }
-                (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::S16(c)) => {
-                    if c < 4096 && c > 0 {
-                        dynasm!(ops
-                            ; add XSP(r_out as u32), XSP(r), c as u32
-                        )
-                    } else {
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        load_64_bit_signed_constant(ops, lp, r_temp.r(), c as i64);
-                        dynasm!(ops
-                            ; add X(r_out as u32), X(r), X(r_temp.r())
-                        )
-                    }
-                }
-                (DataType::U64, Register::GPR(r_out), ConstOrReg::U64(c1), ConstOrReg::U32(c2)) => {
-                    load_64_bit_constant(ops, lp, r_out as u32, c1 + c2 as u64);
                 }
                 _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
             }
