@@ -212,7 +212,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let cmp_type = expect_constant_cmp_type(&inputs[1]);
                     let b = compiler.to_imm_or_reg(&inputs[2]);
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.compare(ops, expect_gpr(*r_out), a, cmp_type, b);
+                        compiler.compare(ops, lp, expect_gpr(*r_out), a, cmp_type, b);
                     });
                 }
                 InstructionType::LoadPtr => {
@@ -635,7 +635,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR add instruction
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR compare instruction
-    fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
+    fn compare(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
     /// Compile an IR load pointer instruction
     fn load_ptr(
         &self,

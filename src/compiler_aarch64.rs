@@ -394,7 +394,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
+    fn compare(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
         fn set_reg_by_flags<Ops: GenericAssembler<Aarch64Relocation>>(
             ops: &mut Ops,
             cmp_type: CompareType,
@@ -418,7 +418,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; cset W(r_out as u32), ne // "not equal"
                     )
                 }
-                CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
+                CompareType::LessThanSigned => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), lt // signed "less than"
+                    )
+                },
                 CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
                 CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
                 CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
@@ -445,6 +449,15 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 } else {
                     todo!("Too big a constant here, load it to a temp and compare")
                 }
+            }
+            (c, ConstOrReg::GPR(r)) if c.is_const() => {
+                let c = c.to_u64_const().unwrap();
+                let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_temp.r(), c);
+                dynasm!(ops
+                    ; cmp XSP(r_temp.r()), X(r as u32)
+                );
+                set_reg_by_flags(ops, cmp_type, r_out);
             }
             (c1, c2) if c1.is_const() && c2.is_const() => match cmp_type {
                 CompareType::Equal => {
@@ -571,6 +584,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType) {
         match (&to_spill, &stack_offset, tp) {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U8 | DataType::S8) => {
+                dynasm!(ops
+                    ; strb W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8) as u32]
+                )
+            }
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
@@ -592,6 +610,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType) {
         match (r_out, &stack_offset, tp) {
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U8) => {
+                dynasm!(ops
+                    ; ldrb W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8) as u32]
+                )
+            }
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
                 dynasm!(ops
                     ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
@@ -944,6 +967,15 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     ) {
         match (result_tp, arg_tp, output_regs.len(), a, b) {
             (DataType::U64, DataType::U32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+                let r_out_hi = output_regs[0].unwrap().expect_gpr();
+                let r_out_lo = output_regs[1].unwrap().expect_gpr();
+                dynasm!(ops
+                    ; umull X(r_out_hi as u32), W(r_a as u32), W(r_b as u32)
+                    ; mov W(r_out_lo as u32), W(r_out_hi as u32)
+                    ; lsr X(r_out_lo as u32), X(r_out_lo as u32), 32
+                );
+            }
+            (DataType::S64, DataType::S32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
                 let r_out_hi = output_regs[0].unwrap().expect_gpr();
                 let r_out_lo = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
