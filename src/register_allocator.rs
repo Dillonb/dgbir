@@ -399,23 +399,27 @@ impl Iterator for IRFunctionValueIterator<'_> {
             match &instruction.instruction {
                 Instruction::Instruction { outputs, .. } => {
                     let v = if self.output_index < outputs.len() {
-                        Some(Value::InstructionOutput {
+                        let temp = Some(Value::InstructionOutput {
                             block_index: instruction.block_index,
                             instruction_index: instruction.index,
                             output_index: self.output_index,
                             data_type: outputs[self.output_index].tp,
-                        })
+                        });
+                        self.output_index += 1;
+                        return temp;
                     } else {
+                        // We're out of range for our outputs, move to the next instruction
+                        self.output_index = 0;
+                        self.instruction_index += 1;
+                        if self.instruction_index >= block.instructions.len() {
+                            self.block_index += 1;
+                            self.block_input_index = 0;
+                            self.instruction_index = 0;
+                        }
+
                         None
                     };
 
-                    self.output_index = 0;
-                    self.instruction_index += 1;
-                    if self.instruction_index >= block.instructions.len() {
-                        self.block_index += 1;
-                        self.block_input_index = 0;
-                        self.instruction_index = 0;
-                    }
 
                     if v.is_some() {
                         return v;
@@ -450,7 +454,7 @@ impl Display for Value {
                 if *output_index == 0 {
                     write!(f, "v{}(b{}):{}", instruction_index, block_index, data_type)
                 } else {
-                    write!(f, "v{}(b{})o{}:{}", instruction_index, block_index, output_index, data_type)
+                    write!(f, "v{}_{}(b{}):{}", instruction_index, output_index, block_index, data_type)
                 }
             }
             Value::BlockInput {

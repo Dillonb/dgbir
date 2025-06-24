@@ -271,10 +271,21 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     });
                 }
                 InstructionType::Convert => {
-                    assert_eq!(inputs.len(), 1);
                     assert_eq!(outputs.len(), 1);
+                    assert_eq!(inputs.len() > 0, true); // need at least one input
                     let input = compiler.to_imm_or_reg(&inputs[0]);
-                    let from_tp = inputs[0].tp();
+
+                    let from_tp = if inputs.len() == 2 {
+                        // If we have two arguments, the second argument is the data type to
+                        // convert from.
+                        expect_constant_data_type(&inputs[1])
+                    } else if inputs.len() == 1 {
+                        // Otherwise, use the input's own type
+                        inputs[0].tp()
+                    } else {
+                        panic!("Expected 1 or 2 inputs for convert instruction, got {}", inputs.len());
+                    };
+
                     let to_tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
                         compiler.convert(ops, lp, *r_out, input, from_tp, to_tp);
@@ -330,14 +341,13 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     });
                 }
                 InstructionType::Multiply => {
-                    assert_eq!(inputs.len(), 2);
-                    assert_eq!(outputs.len(), 1);
+                    assert_eq!(inputs.len(), 3);
+                    assert_eq!(outputs.len() == 1 || outputs.len() == 2, true);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
-                    let tp = outputs[0].tp;
-                    output_regs[0].iter().for_each(|r_out| {
-                        compiler.multiply(ops, lp, tp, *r_out, a, b);
-                    });
+                    let arg_tp = expect_constant_data_type(&inputs[2]);
+                    let result_tp = outputs[0].tp;
+                    compiler.multiply(ops, lp, result_tp, arg_tp, output_regs, a, b);
                 }
                 InstructionType::Divide => {
                     assert_eq!(inputs.len(), 2);
@@ -679,8 +689,9 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        tp: DataType,
-        r_out: Register,
+        result_tp: DataType,
+        arg_tp: DataType,
+        output_regs: Vec<Option<Register>>,
         a: ConstOrReg,
         b: ConstOrReg,
     );

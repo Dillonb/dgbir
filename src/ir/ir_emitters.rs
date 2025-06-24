@@ -68,14 +68,22 @@ impl IRBlockHandle {
             .append_obj(self, Instruction::Return { value: input });
     }
 
+    /// Converts a value to a specified data type. Uses the output of the input slot as the source
+    /// data type.
     pub fn convert(&mut self, tp: DataType, value: InputSlot) -> InstructionOutput {
         self.append(InstructionType::Convert, vec![value], vec![OutputSlot { tp }])
+    }
+
+    /// Converts a value from one data type to another. Takes a specific source data type. Useful
+    /// for sign extending values from instructions that output unsigned types.
+    pub fn convert_from(&mut self, from_tp: DataType, to_tp: DataType, value: InputSlot) -> InstructionOutput {
+        self.append(InstructionType::Convert, vec![value, InputSlot::Constant(Constant::DataType(from_tp))], vec![OutputSlot { tp: to_tp }])
     }
 
     pub fn and(&mut self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
         self.append(InstructionType::And, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }
-    // InstructionType::Or
+
     pub fn or(&mut self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
         self.append(InstructionType::Or, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }
@@ -92,8 +100,13 @@ impl IRBlockHandle {
         self.append(InstructionType::Subtract, vec![minuend, subtrahend], vec![OutputSlot { tp: result_tp }])
     }
 
-    pub fn multiply(&mut self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::Multiply, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
+    pub fn multiply(&mut self, result_tp: DataType, arg_type: DataType, mult_type: MultiplyType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
+        let slot = OutputSlot { tp: result_tp };
+        let outputs = match mult_type {
+            MultiplyType::Split => vec![slot, slot],
+            MultiplyType::Combined => vec![slot],
+        };
+        self.append(InstructionType::Multiply, vec![arg1, arg2, Constant::DataType(arg_type).to_inputslot()], outputs)
     }
 
     /// Divides two values and returns the quotient and remainder.
@@ -126,7 +139,6 @@ impl IRBlockHandle {
         self.append(
             InstructionType::CallFunction,
             std::iter::once(address).chain(args).collect(),
-            // vec![OutputSlot { tp: return_tp }],
             return_tp.map(|tp| OutputSlot { tp }).into_iter().collect(),
         )
     }

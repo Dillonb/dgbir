@@ -560,13 +560,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 );
             }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
-                let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_address.r(), ptr);
+                let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
-                    ; str W(r_value as u32), [X(r_address.r()), offset as u32]
+                    ; str W(r_value as u32), [X(r_ptr.r()), offset as u32]
                 );
             }
-            (ConstOrReg::GPR(_), ConstOrReg::U32(_), DataType::U32) => todo!(),
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(c_value), DataType::U32) => {
+                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_value.r(), c_value.into());
+                dynasm!(ops
+                    ; str W(r_value.r() as u32), [X(r_ptr), offset as u32]
+                );
+            },
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
@@ -765,6 +771,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; and W(r_out as u32), W(r), W(r2)
                     );
                 }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; and X(r_out as u32), X(r), X(r2)
+                    );
+                }
                 (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
                     let c = c.to_u64_const().unwrap() & 0xFFFFFFFF;
                     let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
@@ -776,9 +787,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::U64, Register::GPR(r_out), ConstOrReg::U32(c1), ConstOrReg::U16(c2)) => {
                     load_64_bit_constant(ops, lp, r_out as u32, c1 as u64 & c2 as u64);
                 }
-                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::U16(c)) => {
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap();
                     // TODO: if the const is small enough, use an and immediate
-                    load_32_bit_constant(ops, lp, r_out as u32, c as u32);
+                    load_64_bit_constant(ops, lp, r_out as u32, c);
                     dynasm!(ops
                         ; and X(r_out as u32), X(r), X(r_out as u32)
                     );
@@ -799,6 +811,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
                     dynasm!(ops
                         ; orr W(r_out as u32), W(r), W(r2)
+                    );
+                }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; orr X(r_out as u32), X(r), X(r2)
+                    );
+                }
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
+                    load_64_bit_constant(ops, lp, r_out as u32, c.to_u64_const().unwrap());
+                    dynasm!(ops
+                        ; orr X(r_out as u32), X(r), X(r_out as u32)
                     );
                 }
                 _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
@@ -847,14 +870,26 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn multiply(
         &self,
-        _ops: &mut Ops,
+        ops: &mut Ops,
         _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _a: ConstOrReg,
-        _b: ConstOrReg,
+        result_tp: DataType,
+        arg_tp: DataType,
+        output_regs: Vec<Option<Register>>,
+        a: ConstOrReg,
+        b: ConstOrReg,
     ) {
-        todo!()
+        match (result_tp, arg_tp, output_regs.len(), a, b) {
+            (DataType::U64, DataType::U32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+                let r_out_hi = output_regs[0].unwrap().expect_gpr();
+                let r_out_lo = output_regs[1].unwrap().expect_gpr();
+                dynasm!(ops
+                    ; umull X(r_out_hi as u32), W(r_a as u32), W(r_b as u32)
+                    ; mov W(r_out_lo as u32), W(r_out_hi as u32)
+                    ; lsr X(r_out_lo as u32), X(r_out_lo as u32), 32
+                );
+            }
+            _ => todo!("Unsupported Multiply operation: {:?} * {:?} with result type {} ({} regs) and arg type {}", a, b, result_tp, output_regs.len(), arg_tp),
+        }
     }
 
     fn divide(

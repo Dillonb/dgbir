@@ -84,6 +84,15 @@ impl Constant {
     pub fn size(&self) -> usize {
         self.get_type().size()
     }
+
+    pub fn to_inputslot(&self) -> InputSlot {
+        InputSlot::Constant(*self)
+    }
+}
+
+pub enum MultiplyType {
+    Split,
+    Combined
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
