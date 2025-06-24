@@ -38,6 +38,7 @@ pub enum ConstOrReg {
     F32(OrderedFloat<f32>),
     GPR(u32),
     SIMD(u32),
+    S64(i64),
 }
 
 impl ConstOrReg {
@@ -50,6 +51,7 @@ impl ConstOrReg {
             ConstOrReg::U32(_) => None,
             ConstOrReg::S32(_) => None,
             ConstOrReg::U64(_) => None,
+            ConstOrReg::S64(_) => None,
             ConstOrReg::F32(_) => None,
         }
     }
@@ -61,6 +63,7 @@ impl ConstOrReg {
             ConstOrReg::U32(c) => Some(*c as u64),
             ConstOrReg::S32(c) => Some(*c as u64),
             ConstOrReg::U64(c) => Some(*c),
+            ConstOrReg::S64(c) => Some(*c as u64),
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
             ConstOrReg::SIMD(_) => None,
@@ -74,6 +77,7 @@ impl ConstOrReg {
             ConstOrReg::U32(_) => true,
             ConstOrReg::S32(_) => true,
             ConstOrReg::U64(_) => true,
+            ConstOrReg::S64(_) => true,
             ConstOrReg::F32(_) => true,
             ConstOrReg::GPR(_) => false,
             ConstOrReg::SIMD(_) => false,
@@ -87,6 +91,7 @@ impl ConstOrReg {
             ConstOrReg::U32(c) => (*c).try_into().ok(),
             ConstOrReg::S32(c) => (*c).try_into().ok(),
             ConstOrReg::U64(c) => (*c).try_into().ok(),
+            ConstOrReg::S64(c) => Some(*c),
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
             ConstOrReg::SIMD(_) => None,
@@ -113,6 +118,9 @@ impl ConstOrReg {
 
             (ConstOrReg::U64(_), Register::GPR(_)) => true,
             (ConstOrReg::U64(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::S64(_), Register::GPR(_)) => true,
+            (ConstOrReg::S64(_), Register::SIMD(_)) => false,
 
             (ConstOrReg::F32(_), Register::GPR(_)) => false,
             (ConstOrReg::F32(_), Register::SIMD(_)) => true,
@@ -455,7 +463,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::U32(c) => ConstOrReg::U32(c),
                 Constant::S32(c) => ConstOrReg::S32(c),
                 Constant::U64(c) => ConstOrReg::U64(c),
-                Constant::S64(_) => todo!(),
+                Constant::S64(c) => ConstOrReg::S64(c),
                 Constant::F32(c) => ConstOrReg::F32(c),
                 Constant::F64(_) => todo!(),
                 Constant::Ptr(c) => ConstOrReg::U64(c as u64),

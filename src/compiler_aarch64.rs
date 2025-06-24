@@ -425,7 +425,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 },
                 CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
                 CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
-                CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
+                CompareType::GreaterThanOrEqualSigned => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), ge // signed "greater than or equal"
+                    )
+                },
                 CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
                 CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
                 CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
@@ -571,9 +575,9 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(_) | ConstOrReg::S32(_), DataType::U64) => {
+            (ConstOrReg::GPR(r_ptr), c, DataType::U64 | DataType::S64) if c.is_const() => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_value.r(), value.to_u64_const().unwrap());
+                load_64_bit_constant(ops, lp, r_value.r(), c.to_u64_const().unwrap());
                 dynasm!(ops
                     ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
@@ -857,6 +861,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; orr X(r_out as u32), X(r), X(r_out as u32)
                     );
                 }
+                (DataType::U64, Register::GPR(r_out), c, ConstOrReg::GPR(r)) if c.is_const() => {
+                    load_64_bit_constant(ops, lp, r_out as u32, c.to_u64_const().unwrap());
+                    dynasm!(ops
+                        ; orr X(r_out as u32), X(r), X(r_out as u32)
+                    );
+                }
                 _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
             }
         }
@@ -995,17 +1005,18 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn divide(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_quotient: Option<Register>,
-        _r_remainder: Option<Register>,
-        _dividend: ConstOrReg,
-        _divisor: ConstOrReg,
-    ) {
-        todo!()
+    fn divide(&self, ops: &mut Ops, _lp: &mut LiteralPool, tp: DataType, r_quotient: Option<Register>, r_remainder: Option<Register>, dividend: ConstOrReg, divisor: ConstOrReg) {
+        match (tp, dividend, divisor) {
+            (DataType::S32, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+                dynasm!(ops
+                    ; sdiv W(r_quotient as u32), W(r_dividend as u32), W(r_divisor as u32)
+                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
+                );
+            }
+            _ => todo!("Unsupported Divide operation: {:?} / {:?} with type {:?}", dividend, divisor, tp),
+        }
     }
 
     fn square_root(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
