@@ -85,7 +85,7 @@ impl Constant {
         self.get_type().size()
     }
 
-    pub fn to_inputslot(&self) -> InputSlot {
+    pub fn into_inputslot(&self) -> InputSlot {
         InputSlot::Constant(*self)
     }
 }

@@ -77,7 +77,7 @@ impl IRBlockHandle {
     /// Converts a value from one data type to another. Takes a specific source data type. Useful
     /// for sign extending values from instructions that output unsigned types.
     pub fn convert_from(&mut self, from_tp: DataType, to_tp: DataType, value: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::Convert, vec![value, InputSlot::Constant(Constant::DataType(from_tp))], vec![OutputSlot { tp: to_tp }])
+        self.append(InstructionType::Convert, vec![value, Constant::DataType(from_tp).into_inputslot()], vec![OutputSlot { tp: to_tp }])
     }
 
     pub fn and(&mut self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
@@ -106,7 +106,7 @@ impl IRBlockHandle {
             MultiplyType::Split => vec![slot, slot],
             MultiplyType::Combined => vec![slot],
         };
-        self.append(InstructionType::Multiply, vec![arg1, arg2, Constant::DataType(arg_type).to_inputslot()], outputs)
+        self.append(InstructionType::Multiply, vec![arg1, arg2, Constant::DataType(arg_type).into_inputslot()], outputs)
     }
 
     /// Divides two values and returns the quotient and remainder.
