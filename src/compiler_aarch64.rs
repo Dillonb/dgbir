@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter, marker::PhantomData};
+use std::{collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
     abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
@@ -1063,7 +1063,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             ; sub sp, sp, stack_bytes_needed as u32 // Allocate stack space for the call
         );
 
-        let mut stack_offsets = HashMap::new();
+        let mut stack_offsets = BTreeMap::new();
         let mut stack_offset = 0;
         for reg in active_regs.iter() {
             stack_offsets.insert(reg, stack_offset);
@@ -1082,7 +1082,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         let moves = args
             .into_iter()
             .zip(get_function_argument_registers().into_iter())
-            .collect::<HashMap<ConstOrReg, Register>>();
+            .collect::<BTreeMap<ConstOrReg, Register>>();
         self.move_regs_multi(ops, lp, moves);
 
         match address {

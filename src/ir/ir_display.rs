@@ -145,14 +145,6 @@ impl Display for IRFunctionInternal {
     }
 }
 
-/*
-    #[allow(dead_code)] // Maybe I'll need this later
-    last_used: HashMap<Value, Usage>,
-    interference: HashMap<Value, Vec<Value>>,
-    /// A list of all usages of a value. Guaranteed to be sorted.
-    all_usages: HashMap<Value, Vec<Usage>>,
-*/
-
 impl Display for Lifetimes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn display_usages(usages: &[Usage]) -> String {

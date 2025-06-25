@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 #[cfg(target_arch = "aarch64")]
 use dynasmrt::aarch64::Aarch64Relocation;
@@ -28,7 +28,7 @@ pub trait GenericAssembler<R: Relocation>: DynasmApi + DynasmLabelApi<Relocation
     fn new_dynamic_label(&mut self) -> DynamicLabel;
 }
 
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub enum ConstOrReg {
     U16(u16),
     S16(i16),
@@ -431,13 +431,13 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
 }
 
 pub struct LiteralPool {
-    pub literals: HashMap<Constant, dynasmrt::DynamicLabel>,
+    pub literals: BTreeMap<Constant, dynasmrt::DynamicLabel>,
 }
 
 impl LiteralPool {
     pub fn new() -> Self {
         Self {
-            literals: HashMap::new(),
+            literals: BTreeMap::new(),
         }
     }
 }
@@ -481,7 +481,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// - `moves` All moves in the format of from -> to
     /// - `do_move` Emit a move from the source to the target. When this lambda is called, it is
     ///            guaranteed to be safe to do the move.
-    fn move_regs_multi(&self, ops: &mut Ops, lp: &mut LiteralPool, mut moves: HashMap<ConstOrReg, Register>) {
+    fn move_regs_multi(&self, ops: &mut Ops, lp: &mut LiteralPool, mut moves: BTreeMap<ConstOrReg, Register>) {
         let mut pending_move_targets = HashSet::new();
         let mut pending_move_sources = HashSet::new();
 
@@ -557,7 +557,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 let block_arg_reg = self.get_allocations().get(&in_block_value).unwrap();
                 (self.to_imm_or_reg(&arg), block_arg_reg)
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         if moves.len() > 0 {
             self.move_regs_multi(ops, lp, moves);

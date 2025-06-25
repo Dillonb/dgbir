@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use register_type::RegPoolRegister;
 
@@ -63,7 +63,7 @@ pub struct RegPool {
 
 #[derive(Debug)]
 struct RegPoolInternal {
-    regs: HashMap<Register, bool>,
+    regs: BTreeMap<Register, bool>,
 }
 
 impl RegPoolInternal {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use crate::{
     abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers},
@@ -809,7 +809,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             ; sub rsp, stack_bytes_needed as i32 // Allocate stack space for the call
         );
 
-        let mut stack_offsets = HashMap::new();
+        let mut stack_offsets = BTreeMap::new();
         let mut stack_offset = 0;
         for reg in active_regs.iter() {
             stack_offsets.insert(reg, stack_offset);
@@ -828,7 +828,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         let moves = args
             .into_iter()
             .zip(get_function_argument_registers().into_iter())
-            .collect::<HashMap<ConstOrReg, Register>>();
+            .collect::<BTreeMap<ConstOrReg, Register>>();
 
         // TODO: rework this so that the output of this is used as the input to `move_regs_multi`
         // so I don't have to mark this as unused with the underscore.

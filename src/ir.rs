@@ -5,7 +5,7 @@ use ordered_float::OrderedFloat;
 mod ir_display;
 mod ir_emitters;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DataType {
     // None,
     U8,
@@ -44,7 +44,7 @@ impl DataType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Constant {
     U8(u8),
     S8(i8),
@@ -95,7 +95,7 @@ pub enum MultiplyType {
     Combined,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CompareType {
     Equal,
     NotEqual,
