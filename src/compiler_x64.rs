@@ -348,7 +348,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn compare(&self, ops: &mut Ops, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
+    fn compare(&self, ops: &mut Ops, _lp: &mut LiteralPool, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
         // First, zero the output register
         dynasm!(ops
             ; xor Rd(r_out as u8), Rd(r_out as u8)
@@ -745,8 +745,9 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         &self,
         _ops: &mut Ops,
         _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
+        _result_tp: DataType,
+        _arg_tp: DataType,
+        _output_regs: Vec<Option<Register>>,
         _a: ConstOrReg,
         _b: ConstOrReg,
     ) {
