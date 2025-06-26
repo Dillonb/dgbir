@@ -394,7 +394,15 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn compare(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg) {
+    fn compare(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: usize,
+        a: ConstOrReg,
+        cmp_type: CompareType,
+        b: ConstOrReg,
+    ) {
         fn set_reg_by_flags<Ops: GenericAssembler<Aarch64Relocation>>(
             ops: &mut Ops,
             cmp_type: CompareType,
@@ -422,14 +430,18 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     dynasm!(ops
                         ; cset W(r_out as u32), lt // signed "less than"
                     )
-                },
+                }
                 CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
-                CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
+                CompareType::LessThanOrEqualSigned => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), le // signed "less than or equal"
+                    )
+                }
                 CompareType::GreaterThanOrEqualSigned => {
                     dynasm!(ops
                         ; cset W(r_out as u32), ge // signed "greater than or equal"
                     )
-                },
+                }
                 CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
                 CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
                 CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
@@ -481,7 +493,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     dynasm!(ops
                         ; mov W(r_out as u32), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap()) as u32
                     )
-                },
+                }
                 CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
                 CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
                 CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
@@ -598,7 +610,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
-            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64 | DataType::S64) => {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
                 dynasm!(ops
                     ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
@@ -624,7 +636,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64 | DataType::S64) => {
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
                 dynasm!(ops
                     ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
@@ -1005,7 +1017,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn divide(&self, ops: &mut Ops, _lp: &mut LiteralPool, tp: DataType, r_quotient: Option<Register>, r_remainder: Option<Register>, dividend: ConstOrReg, divisor: ConstOrReg) {
+    fn divide(
+        &self,
+        ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        tp: DataType,
+        r_quotient: Option<Register>,
+        r_remainder: Option<Register>,
+        dividend: ConstOrReg,
+        divisor: ConstOrReg,
+    ) {
         match (tp, dividend, divisor) {
             (DataType::S32, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
                 let r_quotient = r_quotient.unwrap().expect_gpr();

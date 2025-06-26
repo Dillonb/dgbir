@@ -643,7 +643,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR add instruction
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
     /// Compile an IR compare instruction
-    fn compare(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, a: ConstOrReg, cmp_type: CompareType, b: ConstOrReg);
+    fn compare(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: usize,
+        a: ConstOrReg,
+        cmp_type: CompareType,
+        b: ConstOrReg,
+    );
     /// Compile an IR load pointer instruction
     fn load_ptr(
         &self,
