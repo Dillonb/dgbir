@@ -700,7 +700,15 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
+    fn right_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: usize,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+        tp: DataType,
+    ) {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             match (tp, n) {
@@ -738,6 +746,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     dynasm!(ops
                         ; lsr W(r_out as u32), W(r_n as u32), amount & 0b11111
                     );
+                }
+                (DataType::U32, c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap() as u32;
+                    let c = c >> (amount & 0b11111);
+                    load_32_bit_constant(ops, lp, r_out as u32, c);
                 }
                 (DataType::S32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
@@ -801,6 +814,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
             (Register::GPR(r_out), DataType::U32, ConstOrReg::U32(c), DataType::U32) => {
                 load_32_bit_constant(ops, lp, r_out as u32, c);
+            }
+            (Register::GPR(r_out), DataType::S64, c, DataType::S32) if c.is_const() => {
+                let c = (c.to_u64_const().unwrap() & 0xFFFFFFFF) as i32 as i64;
+                load_64_bit_signed_constant(ops, lp, r_out as u32, c);
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }

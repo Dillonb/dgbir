@@ -275,7 +275,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.right_shift(ops, expect_gpr(*r_out), n, amount, tp);
+                        compiler.right_shift(ops, lp, expect_gpr(*r_out), n, amount, tp);
                     });
                 }
                 InstructionType::Convert => {
@@ -679,7 +679,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR left shift instruction
     fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
     /// Compile an IR right shift instruction
-    fn right_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
+    fn right_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: usize,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+        tp: DataType,
+    );
     /// Compile an IR convert instruction
     fn convert(
         &self,
