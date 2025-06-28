@@ -331,7 +331,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ops,
                     lp,
                     r_out.expect_gpr() as u32,
-                    a.to_u64_const().unwrap() + b.to_u64_const().unwrap(),
+                    a.to_u64_const().unwrap().wrapping_add(b.to_u64_const().unwrap()),
                 ),
                 _ => todo!("Unsupported Add operation with result type {} and constants: {:?} + {:?}", tp, a, b),
             }
@@ -862,6 +862,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; sxtw X(r_out as u32), W(r_in as u32)
                     // Then shift arithmetic back to the original position
                     ; asr X(r_out as u32), X(r_out as u32), 24
+                );
+            }
+            (Register::GPR(r_out), DataType::S64, ConstOrReg::GPR(r_in), DataType::S16) => {
+                dynasm!(ops
+                    // Shift the sign bit into the 32 bit sign position
+                    ; lsl W(r_out as u32), W(r_in as u32), 16
+                    // Sign extend to 64 bits
+                    ; sxtw X(r_out as u32), W(r_in as u32)
+                    // Then shift arithmetic back to the original position
+                    ; asr X(r_out as u32), X(r_out as u32), 16
                 );
             }
             (Register::GPR(r_out), DataType::U32, ConstOrReg::U32(c), DataType::U32) => {
