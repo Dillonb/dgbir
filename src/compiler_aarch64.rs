@@ -464,10 +464,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     dynasm!(ops
                         ; cmp XSP(r as u32), c as u32
                     );
-                    set_reg_by_flags(ops, cmp_type, r_out);
                 } else {
-                    todo!("Too big a constant here, load it to a temp and compare")
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_64_bit_constant(ops, lp, r_temp.r(), c);
+                    dynasm!(ops
+                        ; cmp XSP(r as u32), X(r_temp.r() as u32)
+                    );
                 }
+                set_reg_by_flags(ops, cmp_type, r_out);
             }
             (c, ConstOrReg::GPR(r)) if c.is_const() => {
                 let c = c.to_u64_const().unwrap();
