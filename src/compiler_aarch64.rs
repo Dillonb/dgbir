@@ -811,7 +811,22 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::U64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for U64"),
                 (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S64"),
 
-                _ => todo!("Unsupported DataType {} or unsupported register type for RightShift operation with GPR amount: {:?} >> {:?}", tp, n, r_amount),
+                (DataType::U8,  c) if c.is_const() => todo!("RightShift const with GPR amount for U8"),
+                (DataType::S8,  c) if c.is_const() => todo!("RightShift const with GPR amount for S8"),
+                (DataType::U16, c) if c.is_const() => todo!("RightShift const with GPR amount for U16"),
+                (DataType::S16, c) if c.is_const() => todo!("RightShift const with GPR amount for S16"),
+                (DataType::U32, c) if c.is_const() => todo!("RightShift const with GPR amount for U32"),
+                (DataType::S32, c) if c.is_const() => todo!("RightShift const with GPR amount for S32"),
+                (DataType::U64, c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap();
+                    load_64_bit_constant(ops, lp, r_out as u32, c);
+                    dynasm!(ops
+                        ; lsrv X(r_out as u32), X(r_out as u32), X(r_amount as u32)
+                    );
+                },
+                (DataType::S64, c) if c.is_const() => todo!("RightShift const with GPR amount for S64"),
+
+                _ => todo!("Unsupported DataType {} or unsupported register type for RightShift operation with GPR amount: {:?} >> {:?}", tp, n, amount),
             }
         } else {
             panic!("RightShift amount must be a constant or a GPR, got: {:?}", amount);
@@ -837,6 +852,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (Register::GPR(r_out), DataType::S64, ConstOrReg::GPR(r_in), DataType::S32) => {
                 dynasm!(ops
                     ; sxtw X(r_out as u32), W(r_in as u32)
+                );
+            }
+            (Register::GPR(r_out), DataType::S64, ConstOrReg::GPR(r_in), DataType::S8) => {
+                dynasm!(ops
+                    // Shift the sign bit into the 32 bit sign position
+                    ; lsl W(r_out as u32), W(r_in as u32), 24
+                    // Sign extend to 64 bits
+                    ; sxtw X(r_out as u32), W(r_in as u32)
+                    // Then shift arithmetic back to the original position
+                    ; asr X(r_out as u32), X(r_out as u32), 24
                 );
             }
             (Register::GPR(r_out), DataType::U32, ConstOrReg::U32(c), DataType::U32) => {
@@ -1011,12 +1036,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             return;
         } else {
             match (tp, r_out, minuend, subtrahend) {
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r_minuend), ConstOrReg::GPR(r_subtrahend)) => {
+                (
+                    DataType::U32 | DataType::S32,
+                    Register::GPR(r_out),
+                    ConstOrReg::GPR(r_minuend),
+                    ConstOrReg::GPR(r_subtrahend),
+                ) => {
                     dynasm!(ops
                         ; sub W(r_out as u32), W(r_minuend), W(r_subtrahend)
                     )
                 }
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), c, ConstOrReg::GPR(r_subtrahend)) if c.is_const() => {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), c, ConstOrReg::GPR(r_subtrahend))
+                    if c.is_const() =>
+                {
                     let minuend = c.to_u64_const().unwrap() as u32;
                     let r_minuend = self.scratch_regs.borrow::<register_type::GPR>();
                     load_32_bit_constant(ops, lp, r_minuend.r(), minuend);
