@@ -170,6 +170,9 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (ConstOrReg::U64(c), Register::GPR(r)) => {
                 load_64_bit_constant(ops, lp, r as u32, c);
             }
+            (ConstOrReg::S64(c), Register::GPR(r)) => {
+                load_64_bit_signed_constant(ops, lp, r as u32, c);
+            }
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
                     ; mov X(r_to as u32), X(r_from as u32)
@@ -1050,6 +1053,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
                     ; sdiv W(r_quotient as u32), W(r_dividend as u32), W(r_divisor as u32)
+                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
+                );
+            }
+            (DataType::U32, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+                dynasm!(ops
+                    ; udiv W(r_quotient as u32), W(r_dividend as u32), W(r_divisor as u32)
                     ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
                 );
             }

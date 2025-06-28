@@ -554,6 +554,8 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                     data_type,
                 };
 
+                // TODO: if the argument is not used, this unwrap will fail.
+                // Need to remove this move if there's no target
                 let block_arg_reg = self.get_allocations().get(&in_block_value).unwrap();
                 (self.to_imm_or_reg(&arg), block_arg_reg)
             })
