@@ -339,7 +339,27 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         } else {
             match (tp, r_out, a, b) {
                 (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
-                    let c = b.to_s64_const().unwrap();
+                    let c = c.to_s64_const().unwrap();
+                    if c > 0 && c < 4096 {
+                        dynasm!(ops
+                            ; add WSP(r_out as u32), WSP(r), c as u32
+                        )
+                    } else if c < 0 && c > -4096 {
+                        let c = c.abs() as u32;
+                        dynasm!(ops
+                            ; sub WSP(r_out as u32), WSP(r), c
+                        );
+                    } else {
+                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                        load_64_bit_signed_constant(ops, lp, r_temp.r(), c);
+                        dynasm!(ops
+                            ; add W(r_out as u32), W(r), W(r_temp.r())
+                        )
+                    }
+                }
+                // Identical to above but the constant comes before the GPR
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), c, ConstOrReg::GPR(r)) if c.is_const() => {
+                    let c = c.to_s64_const().unwrap();
                     if c > 0 && c < 4096 {
                         dynasm!(ops
                             ; add WSP(r_out as u32), WSP(r), c as u32
