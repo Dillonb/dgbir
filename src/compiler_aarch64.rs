@@ -987,9 +987,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             return;
         } else {
             match (tp, r_out, minuend, subtrahend) {
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r_minuend), ConstOrReg::GPR(r_subtrahend)) => {
                     dynasm!(ops
-                        ; sub W(r_out as u32), W(r1), W(r2)
+                        ; sub W(r_out as u32), W(r_minuend), W(r_subtrahend)
+                    )
+                }
+                (DataType::U32 | DataType::S32, Register::GPR(r_out), c, ConstOrReg::GPR(r_subtrahend)) if c.is_const() => {
+                    let minuend = c.to_u64_const().unwrap() as u32;
+                    let r_minuend = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_32_bit_constant(ops, lp, r_minuend.r(), minuend);
+                    dynasm!(ops
+                        ; sub W(r_out as u32), W(r_minuend.r()), W(r_subtrahend)
                     )
                 }
                 _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
