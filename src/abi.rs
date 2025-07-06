@@ -140,7 +140,10 @@ pub fn get_registers() -> Vec<Register> {
         }
         #[cfg(target_os = "windows")]
         {
-            todo!("Preserved regs on x64 Windows")
+            vec![RBX, RBP, RDI, RSI, R12, R13, R14, R15,
+                // Callee-saved XMM registers not also used for function arguments
+                XMM6, XMM7, XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
+            ]
         }
     }
 }
@@ -166,7 +169,7 @@ pub fn get_scratch_registers() -> Vec<Register> {
         }
         #[cfg(target_os = "windows")]
         {
-            todo!("Scratch regs on x64 Windows")
+            vec![RAX, RCX, RDX, R8, R9, R10, R11, XMM0, XMM1, XMM2, XMM3, XMM4, XMM5]
         }
     }
 }
@@ -188,7 +191,7 @@ pub fn get_function_argument_registers() -> Vec<Register> {
         }
         #[cfg(target_os = "windows")]
         {
-            vec![RCX, RDX, R8, R9] // TODO SIMD registers
+            vec![RCX, RDX, R8, R9, XMM0, XMM1, XMM2, XMM3]
         }
     }
 }

@@ -93,6 +93,11 @@ impl Register {
                         // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
                         r == 0 || r == 7 || r == 6 || r == 2 || r == 1 || r == 8 || r == 9 || r == 10 || r == 11
                     }
+                    #[cfg(target_os = "windows")]
+                    {
+                        // RAX, RCX, RDX, R8, R9, R10, R11
+                        r == 0 || r == 1 || r == 2 || r == 8 || r == 9 || r == 10 || r == 11
+                    }
                 }
             }
             Register::SIMD(_r) => {
@@ -105,6 +110,10 @@ impl Register {
                     #[cfg(target_os = "linux")]
                     {
                         true // All SIMD registers are volatile in SYSTEM-V
+                    }
+                    #[cfg(target_os = "windows")]
+                    {
+                        _r <= 5 // XMM0-XMM5 are volatile in Windows
                     }
                 }
             }
