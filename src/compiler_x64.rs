@@ -610,7 +610,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     fn right_shift(
         &self,
         ops: &mut Ops,
-        lp: &mut LiteralPool,
+        _lp: &mut LiteralPool,
         r_out: usize,
         n: ConstOrReg,
         amount: ConstOrReg,
