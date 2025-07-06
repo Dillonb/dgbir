@@ -89,7 +89,16 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; mov [rsp + ofs], Rq(*r as u8)
                     )
                 }
-                Register::SIMD(_) => todo!("Saving a preserved SIMD register"),
+                Register::SIMD(r) => {
+                    assert_eq!(reg.size(), 16);
+                    let ofs = self
+                        .func
+                        .get_stack_offset_for_location(*stack_location as u64, DataType::U128)
+                        as i32;
+                    dynasm!(ops
+                        ; movdqu OWORD [rsp + ofs], Rx(*r as u8)
+                    );
+                },
             }
         }
     }
@@ -227,7 +236,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; mov Rq(r as u8), [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
                     )
                 }
-                Register::SIMD(_) => todo!("Restoring saved SIMD register from stack"),
+                Register::SIMD(r) => {
+                    assert_eq!(reg.size(), 16);
+                    dynasm!(ops
+                        ; movdqu Rx(r as u8), OWORD [rsp + self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128) as i32]
+                    )
+                }
             }
         }
 
