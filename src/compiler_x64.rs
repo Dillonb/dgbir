@@ -98,7 +98,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     dynasm!(ops
                         ; movdqu OWORD [rsp + ofs], Rx(*r as u8)
                     );
-                },
+                }
             }
         }
     }

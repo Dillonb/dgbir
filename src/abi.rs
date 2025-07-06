@@ -140,7 +140,8 @@ pub fn get_registers() -> Vec<Register> {
         }
         #[cfg(target_os = "windows")]
         {
-            vec![RBX, RBP, RDI, RSI, R12, R13, R14, R15,
+            vec![
+                RBX, RBP, RDI, RSI, R12, R13, R14, R15,
                 // Callee-saved XMM registers not also used for function arguments
                 XMM6, XMM7, XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
             ]
