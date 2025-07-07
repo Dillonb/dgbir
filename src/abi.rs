@@ -114,6 +114,14 @@ pub mod reg_constants {
     pub const V31: Register = Register::SIMD(31);
 }
 
+#[cfg(test)]
+fn get_stack_pointer() -> Register {
+    #[cfg(target_arch = "aarch64")]
+    return reg_constants::SP;
+    #[cfg(target_arch = "x86_64")]
+    return reg_constants::RSP;
+}
+
 pub fn get_registers() -> Vec<Register> {
     use reg_constants::*;
     // Callee-saved registers
@@ -146,6 +154,16 @@ pub fn get_registers() -> Vec<Register> {
                 XMM6, XMM7, XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
             ]
         }
+    }
+}
+
+#[test]
+fn registers_doesnt_include_stack_pointer() {
+    let regs = get_registers();
+    let stack_ptr = get_stack_pointer();
+
+    for reg in regs {
+        assert_ne!(reg, stack_ptr, "The get_registers() function should never return the stack pointer as one of the usable registers.");
     }
 }
 
