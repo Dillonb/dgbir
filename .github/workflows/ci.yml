@@ -18,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-nextest
         run: cargo-binstall cargo-nextest --source
       - name: Build
