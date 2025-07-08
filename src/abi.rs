@@ -163,7 +163,10 @@ fn registers_doesnt_include_stack_pointer() {
     let stack_ptr = get_stack_pointer();
 
     for reg in regs {
-        assert_ne!(reg, stack_ptr, "The get_registers() function should never return the stack pointer as one of the usable registers.");
+        assert_ne!(
+            reg, stack_ptr,
+            "The get_registers() function should never return the stack pointer as one of the usable registers."
+        );
     }
 }
 

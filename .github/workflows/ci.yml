@@ -20,7 +20,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-nextest
-        run: cargo-binstall cargo-nextest --source
+        run: cargo-binstall cargo-nextest --secure
       - name: Build
         run: cargo build --verbose
       - name: Test
