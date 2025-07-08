@@ -18,7 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-nextest
+        run: cargo-binstall cargo-nextest --source
       - name: Build
         run: cargo build --verbose
       - name: Test
-        run: cargo test --verbose
+        run: cargo nextest run --profile ci
