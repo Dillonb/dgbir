@@ -1,3 +1,4 @@
 /target
 .direnv
 .gdb_history
+vendor
