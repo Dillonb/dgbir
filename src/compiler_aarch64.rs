@@ -621,6 +621,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
+                dynasm!(ops
+                    ; str D(r_value as u32), [X(r_ptr as u32), offset as u32]
+                );
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -880,6 +885,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (Register::GPR(r_out), DataType::S64, c, DataType::S32) if c.is_const() => {
                 let c = (c.to_u64_const().unwrap() & 0xFFFFFFFF) as i32 as i64;
                 load_64_bit_signed_constant(ops, lp, r_out as u32, c);
+            }
+            (Register::SIMD(r_out), DataType::F64, ConstOrReg::GPR(r_in), DataType::S32) => {
+                dynasm!(ops
+                    ; scvtf D(r_out as u32), W(r_in as u32)
+                );
+            }
+            (Register::SIMD(r_out), DataType::F32, ConstOrReg::GPR(r_in), DataType::S32) => {
+                dynasm!(ops
+                    ; scvtf S(r_out as u32), W(r_in as u32)
+                );
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
