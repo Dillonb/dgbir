@@ -896,6 +896,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; scvtf S(r_out as u32), W(r_in as u32)
                 );
             }
+            (Register::SIMD(r_out), DataType::F32, ConstOrReg::GPR(r_in), DataType::F64) => {
+                dynasm!(ops
+                    // Bit preserving MOV to an FPU register
+                    ; fmov D(r_out as u32), X(r_in as u32)
+                    // Convert to F32
+                    ; fcvt S(r_out as u32), D(r_out as u32)
+                )
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
