@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    abi::get_registers,
+    abi::{get_registers, is_register_volatile},
     ir::{
         const_ptr, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction, InstructionType,
         OutputSlot,
@@ -80,44 +80,7 @@ impl Register {
 
 impl Register {
     pub fn is_volatile(&self) -> bool {
-        match *self {
-            Register::GPR(r) => {
-                #[cfg(target_arch = "aarch64")]
-                {
-                    r < 19 || r > 28
-                }
-                #[cfg(target_arch = "x86_64")]
-                {
-                    #[cfg(target_os = "linux")]
-                    {
-                        // rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11
-                        r == 0 || r == 7 || r == 6 || r == 2 || r == 1 || r == 8 || r == 9 || r == 10 || r == 11
-                    }
-                    #[cfg(target_os = "windows")]
-                    {
-                        // RAX, RCX, RDX, R8, R9, R10, R11
-                        r == 0 || r == 1 || r == 2 || r == 8 || r == 9 || r == 10 || r == 11
-                    }
-                }
-            }
-            Register::SIMD(_r) => {
-                #[cfg(target_arch = "aarch64")]
-                {
-                    _r < 8 || _r > 15
-                }
-                #[cfg(target_arch = "x86_64")]
-                {
-                    #[cfg(target_os = "linux")]
-                    {
-                        true // All SIMD registers are volatile in SYSTEM-V
-                    }
-                    #[cfg(target_os = "windows")]
-                    {
-                        _r <= 5 // XMM0-XMM5 are volatile in Windows
-                    }
-                }
-            }
-        }
+        is_register_volatile(*self)
     }
 
     pub fn size(&self) -> usize {
