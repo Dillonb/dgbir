@@ -7,7 +7,7 @@ use crate::{
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
-use dynasmrt::{dynasm, x64::X64Relocation, Assembler, VecAssembler};
+use dynasmrt::{dynasm, x64::X64Relocation, Assembler, AssemblyOffset, VecAssembler};
 
 impl GenericAssembler<X64Relocation> for Assembler<X64Relocation> {
     type R = X64Relocation;
@@ -27,7 +27,7 @@ pub struct X64Compiler<'a, Ops> {
     scratch_regs: RegPool,
     func: &'a IRFunctionInternal,
     allocations: RegisterAllocations,
-    entrypoint: dynasmrt::AssemblyOffset,
+    entrypoint: AssemblyOffset,
     block_labels: Vec<dynasmrt::DynamicLabel>,
     phantom: PhantomData<Ops>,
 }
@@ -35,6 +35,11 @@ pub struct X64Compiler<'a, Ops> {
 impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> for X64Compiler<'a, Ops> {
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
         ops.new_dynamic_label()
+    }
+
+    fn offset(ops: &mut Ops) -> usize {
+        let AssemblyOffset(offset) = ops.offset();
+        return offset;
     }
 
     fn new(ops: &mut Ops, func: &'a mut IRFunctionInternal) -> Self {
@@ -184,7 +189,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         &self.allocations
     }
 
-    fn get_entrypoint(&self) -> dynasmrt::AssemblyOffset {
+    fn get_entrypoint(&self) -> AssemblyOffset {
         self.entrypoint
     }
 

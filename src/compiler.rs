@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[cfg(target_arch = "aarch64")]
 use dynasmrt::aarch64::Aarch64Relocation;
@@ -445,6 +445,8 @@ impl LiteralPool {
 pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Get a new dynamic label.
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel;
+    /// Get the current offset in the assembly being emitted.
+    fn offset(ops: &mut Ops) -> usize;
 
     // Utility functions, shouldn't be overridden
     fn to_imm_or_reg(&self, s: &InputSlot) -> ConstOrReg {
@@ -771,23 +773,58 @@ impl CompiledFunction {
     }
 }
 
-fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R, Ops>>(ops: &mut Ops, compiler: &C) {
+trait CompiledBlockDebugInfo {
+    fn add_comment(&mut self, offset: usize, comment: String);
+}
+
+#[cfg(debug_assertions)]
+struct DebugCompiledBlockDebugInfo {
+    pub comments: HashMap<usize, String>,
+    // pub comments: HashMap<usize, String>,
+}
+
+#[cfg(debug_assertions)]
+impl CompiledBlockDebugInfo for DebugCompiledBlockDebugInfo {
+    fn add_comment(&mut self, offset: usize, comment: String) {
+        self.comments.insert(offset, comment);
+    }
+}
+
+#[cfg(not(debug_assertions))]
+struct NoopCompiledBlockDebugInfo;
+#[cfg(not(debug_assertions))]
+impl CompiledBlockDebugInfo for NoopCompiledBlockDebugInfo {
+    fn add_comment(&mut self, _offset: usize, _comment: String) {}
+}
+
+fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R, Ops>, D: CompiledBlockDebugInfo>(
+    ops: &mut Ops,
+    compiler: &C,
+    debug_info: &mut D,
+) {
     let mut lp = LiteralPool::new();
 
+    debug_info.add_comment(C::offset(ops), format!("Function prologue"));
+
     compiler.prologue(ops);
+    debug_info.add_comment(C::offset(ops), format!("Handle function arguments"));
     compiler.handle_function_arguments(ops, &mut lp);
 
     for (block_index, block) in compiler.get_func().blocks.iter().enumerate() {
+        debug_info.add_comment(C::offset(ops), format!("Block b{} begin", block_index));
         compiler.on_new_block_begin(ops, block_index);
         block
             .instructions
             .iter()
             .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
             .for_each(|(i_in_block, instruction)| {
+                debug_info.add_comment(C::offset(ops), format!("{}", instruction));
                 compile_instruction(ops, &mut lp, compiler, *i_in_block, instruction);
             })
     }
+    debug_info.add_comment(C::offset(ops), format!("Function epilogue"));
     compiler.epilogue(ops);
+    debug_info.add_comment(C::offset(ops), format!("Literal pool"));
     compiler.emit_literal_pool(ops, lp);
 }
 
@@ -806,7 +843,14 @@ pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    compile_common(&mut ops, &compiler);
+    #[cfg(debug_assertions)]
+    let mut debug_info = DebugCompiledBlockDebugInfo {
+        comments: HashMap::new(),
+    };
+    #[cfg(not(debug_assertions))]
+    let mut debug_info = NoopCompiledBlockDebugInfo;
+
+    compile_common(&mut ops, &compiler, &mut debug_info);
 
     return ops.finalize().unwrap();
 }
@@ -826,7 +870,14 @@ pub fn compile(func: &IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    compile_common(&mut ops, &compiler);
+    #[cfg(debug_assertions)]
+    let mut debug_info = DebugCompiledBlockDebugInfo {
+        comments: HashMap::new(),
+    };
+    #[cfg(not(debug_assertions))]
+    let mut debug_info = NoopCompiledBlockDebugInfo;
+
+    compile_common(&mut ops, &compiler, &mut debug_info);
 
     return CompiledFunction {
         entrypoint: compiler.get_entrypoint(),
