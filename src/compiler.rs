@@ -777,22 +777,22 @@ trait CompiledBlockDebugInfo {
     fn add_comment(&mut self, offset: usize, comment: String);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "asm_debug")]
 struct DebugCompiledBlockDebugInfo {
     pub comments: HashMap<usize, String>,
     // pub comments: HashMap<usize, String>,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "asm_debug")]
 impl CompiledBlockDebugInfo for DebugCompiledBlockDebugInfo {
     fn add_comment(&mut self, offset: usize, comment: String) {
         self.comments.insert(offset, comment);
     }
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(not(feature = "asm_debug"))]
 struct NoopCompiledBlockDebugInfo;
-#[cfg(not(debug_assertions))]
+#[cfg(not(feature = "asm_debug"))]
 impl CompiledBlockDebugInfo for NoopCompiledBlockDebugInfo {
     fn add_comment(&mut self, _offset: usize, _comment: String) {}
 }
@@ -843,11 +843,11 @@ pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "asm_debug")]
     let mut debug_info = DebugCompiledBlockDebugInfo {
         comments: HashMap::new(),
     };
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(feature = "asm_debug"))]
     let mut debug_info = NoopCompiledBlockDebugInfo;
 
     compile_common(&mut ops, &compiler, &mut debug_info);
@@ -870,11 +870,11 @@ pub fn compile(func: &IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "asm_debug")]
     let mut debug_info = DebugCompiledBlockDebugInfo {
         comments: HashMap::new(),
     };
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(feature = "asm_debug"))]
     let mut debug_info = NoopCompiledBlockDebugInfo;
 
     compile_common(&mut ops, &compiler, &mut debug_info);
