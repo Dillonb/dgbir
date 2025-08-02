@@ -2,7 +2,7 @@ use std::mem::{self, offset_of};
 
 use dgbir::{
     compiler::compile,
-    disassembler::disassemble,
+    disassembler::disassemble_function,
     ir::{const_f32, const_ptr, const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
     ir_interpreter::interpret_func,
 };
@@ -43,7 +43,7 @@ fn compiler_identityfunc() {
     println!("Compiling...");
     let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     assert_eq!(f(0), 0);
     assert_eq!(f(1), 1);
@@ -62,7 +62,7 @@ fn compiler_addone() {
     println!("Compiling...");
     let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     assert_eq!(f(0), 1);
     assert_eq!(f(1), 2);
@@ -80,7 +80,7 @@ fn compiler_identityfunc_f32() {
     println!("Compiling...");
     let compiled = compile(&func);
     let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     assert_eq!(f(0.0), 0.0);
     assert_eq!(f(1.0), 1.0);
@@ -100,7 +100,7 @@ fn compiler_addone_f32() {
     let compiled = compile(&func);
     let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
     assert_eq!(f(0.0), 1.0);
     assert_eq!(f(1.0), 2.0);
     assert_eq!(f(2.0), 3.0);
@@ -119,7 +119,7 @@ fn compiler_add_f32_to_self() {
     let compiled = compile(&func);
     let f: extern "C" fn(f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
     assert_eq!(f(0.0), 0.0);
     assert_eq!(f(1.0), 2.0);
     assert_eq!(f(2.0), 4.0);
@@ -154,7 +154,7 @@ fn constant_shifts_8() {
 
     let compiled = compile(&func);
     let f: extern "C" fn(usize, u8) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    // println!("{}", disassemble(&compiled.code, f as u64));
+    // println!("{}", disassemble_function(&compiled));
 
     f(results.as_ptr() as usize, 2);
     println!("Shift 2: Results:");
@@ -244,7 +244,7 @@ fn constant_shifts_16() {
 
     let compiled = compile(&func);
     let f: extern "C" fn(usize, u16) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     f(results.as_ptr() as usize, 2);
     println!("Shift 2: Results:");
@@ -421,7 +421,7 @@ fn constant_shifts_64() {
 
     let compiled = compile(&func);
     let f: extern "C" fn(usize, u64) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     f(results.as_ptr() as usize, 2);
     println!("Shift 2: Results: {:?}", results);
@@ -562,7 +562,7 @@ fn compiler_same_results_as_interpreter() {
 
     let f: extern "C" fn(usize) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     println!("Running compiled code...");
     let r2 = ResultStruct {
@@ -589,7 +589,7 @@ fn convert_u32_u64() {
     let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     for i in 0..100 {
         assert_eq!(f(i), i as u64, "Failed to convert {} to u64", i);
@@ -611,7 +611,7 @@ fn convert_s32_s64() {
     let compiled = compile(&func);
     let f: extern "C" fn(i32) -> i64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     for i in 0..100 {
         assert_eq!(f(i), i as i64, "Failed to convert {} to i64", i);
@@ -640,7 +640,7 @@ fn call_external_function() {
     let compiled = compile(&func);
     let f: extern "C" fn(u32) -> u32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
 
-    println!("{}", disassemble(&compiled.code, f as u64));
+    println!("{}", disassemble_function(&compiled));
 
     println!("Running compiled code...");
     assert_eq!(f(0), 10);

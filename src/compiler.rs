@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(feature = "asm_debug")]
+use std::collections::HashMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[cfg(target_arch = "aarch64")]
 use dynasmrt::aarch64::Aarch64Relocation;
@@ -765,6 +767,7 @@ pub struct CompiledFunction {
     pub code: ExecutableBuffer,
     // TODO: maybe only include this for debug builds?
     pub allocations: RegisterAllocations,
+    pub debug_info: CompiledBlockDebugInfo,
 }
 
 impl CompiledFunction {
@@ -773,35 +776,53 @@ impl CompiledFunction {
     }
 }
 
-trait CompiledBlockDebugInfo {
-    fn add_comment(&mut self, offset: usize, comment: String);
+pub struct CompiledFunctionVec {
+    pub entrypoint: AssemblyOffset,
+    pub code: Vec<u8>,
+    // TODO: maybe only include this for debug builds?
+    pub allocations: RegisterAllocations,
+    pub debug_info: CompiledBlockDebugInfo,
 }
 
-#[cfg(feature = "asm_debug")]
-struct DebugCompiledBlockDebugInfo {
-    pub comments: HashMap<usize, String>,
-    // pub comments: HashMap<usize, String>,
-}
-
-#[cfg(feature = "asm_debug")]
-impl CompiledBlockDebugInfo for DebugCompiledBlockDebugInfo {
-    fn add_comment(&mut self, offset: usize, comment: String) {
-        self.comments.insert(offset, comment);
+impl CompiledFunctionVec {
+    pub fn ptr_entrypoint(&self) -> *const u8 {
+        let AssemblyOffset(offset) = self.entrypoint;
+        return unsafe { self.code.as_ptr().add(offset) };
     }
 }
 
-#[cfg(not(feature = "asm_debug"))]
-struct NoopCompiledBlockDebugInfo;
-#[cfg(not(feature = "asm_debug"))]
-impl CompiledBlockDebugInfo for NoopCompiledBlockDebugInfo {
-    fn add_comment(&mut self, _offset: usize, _comment: String) {}
+#[derive(Debug)]
+pub struct CompiledBlockDebugInfo {
+    #[cfg(feature = "asm_debug")]
+    comments: HashMap<usize, String>,
 }
 
-fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R, Ops>, D: CompiledBlockDebugInfo>(
+impl CompiledBlockDebugInfo {
+    pub fn new() -> Self {
+        Self {
+            #[cfg(feature = "asm_debug")]
+            comments: HashMap::new(),
+        }
+    }
+    #[allow(unused)]
+    fn add_comment(&mut self, offset: usize, comment: String) {
+        #[cfg(feature = "asm_debug")]
+        self.comments.insert(offset, comment);
+    }
+    #[allow(unused)]
+    pub fn comment_at_offset(&self, offset: usize) -> Option<&String> {
+        #[cfg(feature = "asm_debug")]
+        return self.comments.get(&offset);
+        #[cfg(not(feature = "asm_debug"))]
+        return None;
+    }
+}
+
+fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R, Ops>>(
     ops: &mut Ops,
     compiler: &C,
-    debug_info: &mut D,
-) {
+) -> CompiledBlockDebugInfo {
+    let mut debug_info = CompiledBlockDebugInfo::new();
     let mut lp = LiteralPool::new();
 
     debug_info.add_comment(C::offset(ops), format!("Function prologue"));
@@ -826,9 +847,11 @@ fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R
     compiler.epilogue(ops);
     debug_info.add_comment(C::offset(ops), format!("Literal pool"));
     compiler.emit_literal_pool(ops, lp);
+
+    return debug_info;
 }
 
-pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> Vec<u8> {
+pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> CompiledFunctionVec {
     func.validate();
     #[cfg(target_arch = "x86_64")]
     let mut ops = dynasmrt::VecAssembler::<X64Relocation>::new(baseaddr);
@@ -843,16 +866,14 @@ pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    #[cfg(feature = "asm_debug")]
-    let mut debug_info = DebugCompiledBlockDebugInfo {
-        comments: HashMap::new(),
+    let debug_info = compile_common(&mut ops, &compiler);
+
+    return CompiledFunctionVec {
+        entrypoint: compiler.get_entrypoint(),
+        code: ops.finalize().unwrap(),
+        allocations: compiler.get_allocations().clone(),
+        debug_info,
     };
-    #[cfg(not(feature = "asm_debug"))]
-    let mut debug_info = NoopCompiledBlockDebugInfo;
-
-    compile_common(&mut ops, &compiler, &mut debug_info);
-
-    return ops.finalize().unwrap();
 }
 
 /// Compile an IR function into machine code
@@ -870,19 +891,13 @@ pub fn compile(func: &IRFunction) -> CompiledFunction {
     #[cfg(target_arch = "x86_64")]
     let compiler = compiler_x64::X64Compiler::new(&mut ops, &mut func);
 
-    #[cfg(feature = "asm_debug")]
-    let mut debug_info = DebugCompiledBlockDebugInfo {
-        comments: HashMap::new(),
-    };
-    #[cfg(not(feature = "asm_debug"))]
-    let mut debug_info = NoopCompiledBlockDebugInfo;
-
-    compile_common(&mut ops, &compiler, &mut debug_info);
+    let debug_info = compile_common(&mut ops, &compiler);
 
     return CompiledFunction {
         entrypoint: compiler.get_entrypoint(),
         code: ops.finalize().unwrap(),
         // TODO: maybe only include this for debug builds?
         allocations: compiler.get_allocations().clone(),
+        debug_info,
     };
 }

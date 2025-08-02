@@ -1,5 +1,7 @@
 use capstone::{arch::BuildsCapstone, Capstone};
 
+use crate::compiler::{CompiledBlockDebugInfo, CompiledFunction, CompiledFunctionVec};
+
 #[cfg(target_arch = "aarch64")]
 fn get_capstone() -> Capstone {
     Capstone::new()
@@ -18,17 +20,38 @@ fn get_capstone() -> Capstone {
         .unwrap()
 }
 
-pub fn disassemble(code: &[u8], addr: u64) -> String {
+fn disassemble_internal(code: &[u8], addr: u64, debug_info: &CompiledBlockDebugInfo) -> String {
     // Disassemble the code
 
     let cs = get_capstone();
 
     let insns = cs.disasm_all(code, addr).unwrap();
 
-    // for insn in insns.iter() {
     insns
         .iter()
-        .map(|insn| format!("0x{:x}:\t{}\t{}", insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap()))
+        .map(|insn| {
+            let offset = insn.address() - addr;
+            let comment = debug_info.comment_at_offset(offset as usize).map(|s| s.clone());
+            let disasm = format!("0x{:x}:\t{}\t{}", insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap());
+
+            if let Some(comment) = comment {
+                format!("\n// {}\n{}", comment, disasm)
+            } else {
+                disasm
+            }
+        })
         .collect::<Vec<String>>()
         .join("\n")
+}
+
+pub fn disassemble_vec_function(func: &CompiledFunctionVec) -> String {
+    disassemble_internal(&func.code, func.ptr_entrypoint() as u64, &func.debug_info)
+}
+
+pub fn disassemble_function(func: &CompiledFunction) -> String {
+    disassemble_internal(&func.code, func.ptr_entrypoint() as u64, &func.debug_info)
+}
+
+pub fn disassemble(code: &[u8], addr: u64) -> String {
+    disassemble_internal(code, addr, &CompiledBlockDebugInfo::new())
 }
