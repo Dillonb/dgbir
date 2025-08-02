@@ -608,7 +608,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         *lp.literals.entry(literal).or_insert(Self::new_dynamic_label(ops))
     }
 
-    // Functions that must be overridden by the different architecture bacends
+    // Functions that must be overridden by the different architecture backends
     /// Creates a new Compiler object and sets up the function for compilation.
     fn new(ops: &mut Ops, func: &'a mut IRFunctionInternal) -> Self;
     /// Emit the function prologue.
