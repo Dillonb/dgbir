@@ -95,6 +95,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         ops.new_dynamic_label()
     }
 
+    fn offset(ops: &mut Ops) -> usize {
+        let AssemblyOffset(offset) = ops.offset();
+        return offset;
+    }
+
     fn new(ops: &mut Ops, func: &'a mut IRFunctionInternal) -> Self {
         let allocations = alloc_for(func);
 
