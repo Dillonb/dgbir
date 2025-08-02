@@ -767,7 +767,7 @@ pub struct CompiledFunction {
     pub code: ExecutableBuffer,
     // TODO: maybe only include this for debug builds?
     pub allocations: RegisterAllocations,
-    pub debug_info: CompiledBlockDebugInfo,
+    pub debug_info: CompiledFunctionDebugInfo,
 }
 
 impl CompiledFunction {
@@ -781,7 +781,7 @@ pub struct CompiledFunctionVec {
     pub code: Vec<u8>,
     // TODO: maybe only include this for debug builds?
     pub allocations: RegisterAllocations,
-    pub debug_info: CompiledBlockDebugInfo,
+    pub debug_info: CompiledFunctionDebugInfo,
 }
 
 impl CompiledFunctionVec {
@@ -792,12 +792,12 @@ impl CompiledFunctionVec {
 }
 
 #[derive(Debug)]
-pub struct CompiledBlockDebugInfo {
+pub struct CompiledFunctionDebugInfo {
     #[cfg(feature = "asm_debug")]
     comments: HashMap<usize, String>,
 }
 
-impl CompiledBlockDebugInfo {
+impl CompiledFunctionDebugInfo {
     pub fn new() -> Self {
         Self {
             #[cfg(feature = "asm_debug")]
@@ -821,8 +821,8 @@ impl CompiledBlockDebugInfo {
 fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R, Ops>>(
     ops: &mut Ops,
     compiler: &C,
-) -> CompiledBlockDebugInfo {
-    let mut debug_info = CompiledBlockDebugInfo::new();
+) -> CompiledFunctionDebugInfo {
+    let mut debug_info = CompiledFunctionDebugInfo::new();
     let mut lp = LiteralPool::new();
 
     debug_info.add_comment(C::offset(ops), format!("Function prologue"));

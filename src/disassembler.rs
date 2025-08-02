@@ -1,6 +1,6 @@
 use capstone::{arch::BuildsCapstone, Capstone};
 
-use crate::compiler::{CompiledBlockDebugInfo, CompiledFunction, CompiledFunctionVec};
+use crate::compiler::{CompiledFunctionDebugInfo, CompiledFunction, CompiledFunctionVec};
 
 #[cfg(target_arch = "aarch64")]
 fn get_capstone() -> Capstone {
@@ -20,7 +20,7 @@ fn get_capstone() -> Capstone {
         .unwrap()
 }
 
-fn disassemble_internal(code: &[u8], addr: u64, debug_info: &CompiledBlockDebugInfo) -> String {
+fn disassemble_internal(code: &[u8], addr: u64, debug_info: &CompiledFunctionDebugInfo) -> String {
     // Disassemble the code
 
     let cs = get_capstone();
@@ -53,5 +53,5 @@ pub fn disassemble_function(func: &CompiledFunction) -> String {
 }
 
 pub fn disassemble(code: &[u8], addr: u64) -> String {
-    disassemble_internal(code, addr, &CompiledBlockDebugInfo::new())
+    disassemble_internal(code, addr, &CompiledFunctionDebugInfo::new())
 }
