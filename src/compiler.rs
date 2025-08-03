@@ -794,7 +794,7 @@ impl CompiledFunctionVec {
 #[derive(Debug)]
 pub struct CompiledFunctionDebugInfo {
     #[cfg(feature = "asm_debug")]
-    comments: HashMap<usize, String>,
+    comments: HashMap<usize, Vec<String>>,
 }
 
 impl CompiledFunctionDebugInfo {
@@ -807,10 +807,12 @@ impl CompiledFunctionDebugInfo {
     #[allow(unused)]
     fn add_comment(&mut self, offset: usize, comment: String) {
         #[cfg(feature = "asm_debug")]
-        self.comments.insert(offset, comment);
+        self.comments.entry(offset)
+            .or_insert_with(Vec::new)
+            .push(comment);
     }
     #[allow(unused)]
-    pub fn comment_at_offset(&self, offset: usize) -> Option<&String> {
+    pub fn comments_at_offset(&self, offset: usize) -> Option<&Vec<String>> {
         #[cfg(feature = "asm_debug")]
         return self.comments.get(&offset);
         #[cfg(not(feature = "asm_debug"))]

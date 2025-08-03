@@ -1,6 +1,6 @@
 use capstone::{arch::BuildsCapstone, Capstone};
 
-use crate::compiler::{CompiledFunctionDebugInfo, CompiledFunction, CompiledFunctionVec};
+use crate::compiler::{CompiledFunction, CompiledFunctionDebugInfo, CompiledFunctionVec};
 
 #[cfg(target_arch = "aarch64")]
 fn get_capstone() -> Capstone {
@@ -31,11 +31,17 @@ fn disassemble_internal(code: &[u8], addr: u64, debug_info: &CompiledFunctionDeb
         .iter()
         .map(|insn| {
             let offset = insn.address() - addr;
-            let comment = debug_info.comment_at_offset(offset as usize).map(|s| s.clone());
+            let comment = debug_info.comments_at_offset(offset as usize).map(|comments| {
+                comments
+                    .iter()
+                    .fold(String::new(), |acc, c| {
+                        acc  + "\n// " + c
+                    })
+            });
             let disasm = format!("0x{:x}:\t{}\t{}", insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap());
 
             if let Some(comment) = comment {
-                format!("\n// {}\n{}", comment, disasm)
+                format!("\n{}\n{}", comment, disasm)
             } else {
                 disasm
             }
