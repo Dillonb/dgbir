@@ -807,9 +807,7 @@ impl CompiledFunctionDebugInfo {
     #[allow(unused)]
     fn add_comment(&mut self, offset: usize, comment: String) {
         #[cfg(feature = "asm_debug")]
-        self.comments.entry(offset)
-            .or_insert_with(Vec::new)
-            .push(comment);
+        self.comments.entry(offset).or_insert_with(Vec::new).push(comment);
     }
     #[allow(unused)]
     pub fn comments_at_offset(&self, offset: usize) -> Option<&Vec<String>> {

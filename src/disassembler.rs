@@ -31,13 +31,9 @@ fn disassemble_internal(code: &[u8], addr: u64, debug_info: &CompiledFunctionDeb
         .iter()
         .map(|insn| {
             let offset = insn.address() - addr;
-            let comment = debug_info.comments_at_offset(offset as usize).map(|comments| {
-                comments
-                    .iter()
-                    .fold(String::new(), |acc, c| {
-                        acc  + "\n// " + c
-                    })
-            });
+            let comment = debug_info
+                .comments_at_offset(offset as usize)
+                .map(|comments| comments.iter().fold(String::new(), |acc, c| acc + "\n// " + c));
             let disasm = format!("0x{:x}:\t{}\t{}", insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap());
 
             if let Some(comment) = comment {
