@@ -196,27 +196,34 @@ fn evaluate_write_ptr(inputs: &Vec<Constant>) {
 }
 
 fn evaluate_compare(inputs: &Vec<Constant>, _outputs: &Vec<OutputSlot>) -> Constant {
-    assert_eq!(inputs.len(), 3);
-    let a = constant_to_u64(&inputs[0]);
-    let c = match inputs[1] {
+    assert_eq!(inputs.len(), 4);
+    let d = match inputs[0] {
+        Constant::DataType(d) => d,
+        _ => panic!("Expected DataType as first input"),
+    };
+
+    let a = constant_to_u64(&inputs[1]);
+    let c = match inputs[2] {
         Constant::CompareType(c) => c,
         _ => panic!("Expected CompareType as second input"),
     };
-    let b = constant_to_u64(&inputs[2]);
+    let b = constant_to_u64(&inputs[3]);
 
-    let result = match c {
-        CompareType::Equal => a == b,
-        CompareType::NotEqual => a != b,
+    let signed = d.is_signed();
 
-        CompareType::LessThanSigned => todo!("LessThanSigned"),
-        CompareType::GreaterThanSigned => todo!("GreaterThanSigned"),
-        CompareType::LessThanOrEqualSigned => todo!("LessThanOrEqualSigned"),
-        CompareType::GreaterThanOrEqualSigned => todo!("GreaterThanOrEqualSigned"),
+    let result = match (signed, c) {
+        (_, CompareType::Equal) => a == b,
+        (_, CompareType::NotEqual) => a != b,
 
-        CompareType::LessThanUnsigned => a < b,
-        CompareType::GreaterThanUnsigned => a > b,
-        CompareType::LessThanOrEqualUnsigned => a <= b,
-        CompareType::GreaterThanOrEqualUnsigned => a >= b,
+        (true, CompareType::LessThan) => todo!("LessThanSigned"),
+        (true, CompareType::GreaterThan) => todo!("GreaterThanSigned"),
+        (true, CompareType::LessThanOrEqual) => todo!("LessThanOrEqualSigned"),
+        (true, CompareType::GreaterThanOrEqual) => todo!("GreaterThanOrEqualSigned"),
+
+        (false, CompareType::LessThan) => a < b,
+        (false, CompareType::GreaterThan) => a > b,
+        (false, CompareType::LessThanOrEqual) => a <= b,
+        (false, CompareType::GreaterThanOrEqual) => a >= b,
     };
 
     return Constant::Bool(result);

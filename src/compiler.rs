@@ -216,13 +216,14 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     });
                 }
                 InstructionType::Compare => {
-                    assert_eq!(inputs.len(), 3);
+                    assert_eq!(inputs.len(), 4);
                     assert_eq!(outputs.len(), 1);
-                    let a = compiler.to_imm_or_reg(&inputs[0]);
-                    let cmp_type = expect_constant_cmp_type(&inputs[1]);
-                    let b = compiler.to_imm_or_reg(&inputs[2]);
+                    let data_type = expect_constant_data_type(&inputs[0]);
+                    let a = compiler.to_imm_or_reg(&inputs[1]);
+                    let cmp_type = expect_constant_cmp_type(&inputs[2]);
+                    let b = compiler.to_imm_or_reg(&inputs[3]);
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.compare(ops, lp, expect_gpr(*r_out), a, cmp_type, b);
+                        compiler.compare(ops, lp, expect_gpr(*r_out), data_type, a, cmp_type, b);
                     });
                 }
                 InstructionType::LoadPtr => {
@@ -654,6 +655,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         ops: &mut Ops,
         lp: &mut LiteralPool,
         r_out: usize,
+        data_type: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
         b: ConstOrReg,

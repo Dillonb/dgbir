@@ -433,61 +433,65 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         ops: &mut Ops,
         lp: &mut LiteralPool,
         r_out: usize,
+        data_type: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
         b: ConstOrReg,
     ) {
         fn set_reg_by_flags<Ops: GenericAssembler<Aarch64Relocation>>(
             ops: &mut Ops,
+            signed: bool,
             cmp_type: CompareType,
             r_out: usize,
         ) {
             // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/A64-General-Instructions/CSET
             // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/Condition-Codes/Condition-code-suffixes-and-related-flags?lang=en
-            match cmp_type {
-                CompareType::LessThanUnsigned => {
+            match (signed, cmp_type) {
+                (false, CompareType::LessThan) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), lo // unsigned "lower"
                     )
                 }
-                CompareType::Equal => {
+                (_, CompareType::Equal) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), eq // "equal"
                     )
                 }
-                CompareType::NotEqual => {
+                (_, CompareType::NotEqual) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), ne // "not equal"
                     )
                 }
-                CompareType::LessThanSigned => {
+                (true, CompareType::LessThan) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), lt // signed "less than"
                     )
                 }
-                CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
-                CompareType::LessThanOrEqualSigned => {
+                (true, CompareType::GreaterThan) => todo!("Compare with type GreaterThanSigned"),
+                (true, CompareType::LessThanOrEqual) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), le // signed "less than or equal"
                     )
                 }
-                CompareType::GreaterThanOrEqualSigned => {
+                (true, CompareType::GreaterThanOrEqual) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), ge // signed "greater than or equal"
                     )
                 }
-                CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
-                CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
-                CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
+                (false, CompareType::GreaterThan) => todo!("Compare with type GreaterThanUnsigned"),
+                (false, CompareType::LessThanOrEqual) => todo!("Compare with type LessThanOrEqualUnsigned"),
+                (false, CompareType::GreaterThanOrEqual) => todo!("Compare with type GreaterThanOrEqualUnsigned"),
             }
         }
+
+        let signed = data_type.is_signed();
 
         match (a, b) {
             (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
                     ; cmp X(r1 as u32), X(r2 as u32)
                 );
-                set_reg_by_flags(ops, cmp_type, r_out);
+                set_reg_by_flags(ops, signed, cmp_type, r_out);
             }
             (ConstOrReg::GPR(r), c) if c.is_const() => {
                 let c = c.to_u64_const().unwrap();
@@ -502,7 +506,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; cmp XSP(r as u32), X(r_temp.r() as u32)
                     );
                 }
-                set_reg_by_flags(ops, cmp_type, r_out);
+                set_reg_by_flags(ops, signed, cmp_type, r_out);
             }
             (c, ConstOrReg::GPR(r)) if c.is_const() => {
                 let c = c.to_u64_const().unwrap();
@@ -511,31 +515,31 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 dynasm!(ops
                     ; cmp XSP(r_temp.r()), X(r as u32)
                 );
-                set_reg_by_flags(ops, cmp_type, r_out);
+                set_reg_by_flags(ops, signed, cmp_type, r_out);
             }
-            (c1, c2) if c1.is_const() && c2.is_const() => match cmp_type {
-                CompareType::Equal => {
+            (c1, c2) if c1.is_const() && c2.is_const() => match (signed, cmp_type) {
+                (_, CompareType::Equal) => {
                     dynasm!(ops
                         ; mov W(r_out as u32), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as u32
                     )
                 }
-                CompareType::NotEqual => {
+                (_, CompareType::NotEqual) => {
                     dynasm!(ops
                         ; mov W(r_out as u32), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as u32
                     )
                 }
-                CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
-                CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
-                CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
-                CompareType::GreaterThanOrEqualSigned => {
+                (true, CompareType::LessThan) => todo!("Compare constants with type LessThanSigned"),
+                (true, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanSigned"),
+                (true, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualSigned"),
+                (true, CompareType::GreaterThanOrEqual) => {
                     dynasm!(ops
                         ; mov W(r_out as u32), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap()) as u32
                     )
                 }
-                CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
-                CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
-                CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
-                CompareType::GreaterThanOrEqualUnsigned => {
+                (false, CompareType::LessThan) => todo!("Compare constants with type LessThanUnsigned"),
+                (false, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanUnsigned"),
+                (false, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualUnsigned"),
+                (false, CompareType::GreaterThanOrEqual) => {
                     todo!("Compare constants with type GreaterThanOrEqualUnsigned")
                 }
             },

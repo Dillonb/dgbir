@@ -99,7 +99,7 @@ fn test_conditional_branch_loop() {
 
     let running_sum = loop_block.add(DataType::U32, loop_block.input(0), const_u32(1));
 
-    let compare = loop_block.compare(running_sum.val(), CompareType::LessThanUnsigned, const_u32(10));
+    let compare = loop_block.compare(DataType::U32, running_sum.val(), CompareType::LessThan, const_u32(10));
 
     let mut exit_block = func.new_block(vec![DataType::U32]);
     loop_block.branch(

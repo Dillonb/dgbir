@@ -532,7 +532,7 @@ fn compiler_same_results_as_interpreter() {
         let loop_counter = loop_block.add(DataType::U32, loop_block.input(0), const_u32(1));
         let running_total = loop_block.add(DataType::U32, loop_block.input(1), const_u32(1));
 
-        let loop_again = loop_block.compare(loop_counter.val(), CompareType::LessThanUnsigned, const_u32(10));
+        let loop_again = loop_block.compare(DataType::U32, loop_counter.val(), CompareType::LessThan, const_u32(10));
         let mut ret_block = func.new_block(vec![DataType::U32]);
         loop_block.branch(
             loop_again.val(),

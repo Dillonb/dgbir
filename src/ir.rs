@@ -42,6 +42,21 @@ impl DataType {
             DataType::Ptr => 8,
         }
     }
+
+    pub fn is_signed(&self) -> bool {
+        match self {
+            // Integers
+            DataType::S8 | DataType::S16 | DataType::S32 | DataType::S64 => true,
+            DataType::U8 | DataType::U16 | DataType::U32 | DataType::U64 | DataType::U128 => false,
+
+            // Consider floats to be signed since unsigned floats don't exist
+            DataType::F32 | DataType::F64 => true,
+
+            // ???
+            DataType::Bool => false,
+            DataType::Ptr => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -99,14 +114,10 @@ pub enum MultiplyType {
 pub enum CompareType {
     Equal,
     NotEqual,
-    LessThanSigned,
-    GreaterThanSigned,
-    LessThanOrEqualSigned,
-    GreaterThanOrEqualSigned,
-    LessThanUnsigned,
-    GreaterThanUnsigned,
-    LessThanOrEqualUnsigned,
-    GreaterThanOrEqualUnsigned,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 #[derive(Debug)]

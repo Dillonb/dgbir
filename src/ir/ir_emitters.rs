@@ -39,10 +39,10 @@ impl IRBlockHandle {
         )
     }
 
-    pub fn compare(&mut self, x: InputSlot, tp: CompareType, y: InputSlot) -> InstructionOutput {
+    pub fn compare(&mut self, dtp: DataType, x: InputSlot, ctp: CompareType, y: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::Compare,
-            vec![x, InputSlot::Constant(Constant::CompareType(tp)), y],
+            vec![InputSlot::Constant(Constant::DataType(dtp)), x, InputSlot::Constant(Constant::CompareType(ctp)), y],
             vec![OutputSlot { tp: DataType::Bool }],
         )
     }
