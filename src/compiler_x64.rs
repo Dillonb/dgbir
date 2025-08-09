@@ -372,6 +372,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         ops: &mut Ops,
         _lp: &mut LiteralPool,
         r_out: usize,
+        tp: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
         b: ConstOrReg,
@@ -381,6 +382,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             ; xor Rd(r_out as u8), Rd(r_out as u8)
         );
 
+        let signed = tp.is_signed();
         match (a, b) {
             (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                 dynasm!(ops
@@ -396,54 +398,58 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     todo!("Too big for i32, move to temp reg and compare")
                 }
             }
-            (c1, c2) if c1.is_const() && c2.is_const() => match cmp_type {
-                CompareType::Equal => {
+            (c1, c2) if c1.is_const() && c2.is_const() => match (signed, cmp_type) {
+                (_, CompareType::Equal) => {
                     dynasm!(ops
                         ; mov Rd(r_out as u8), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as i32
                     )
                 }
-                CompareType::NotEqual => {
+                (_, CompareType::NotEqual) => {
                     dynasm!(ops
                         ; mov Rd(r_out as u8), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as i32
                     )
                 }
-                CompareType::LessThanSigned => todo!("Compare constants with type LessThanSigned"),
-                CompareType::GreaterThanSigned => todo!("Compare constants with type GreaterThanSigned"),
-                CompareType::LessThanOrEqualSigned => todo!("Compare constants with type LessThanOrEqualSigned"),
-                CompareType::GreaterThanOrEqualSigned => todo!("Compare constants with type GreaterThanOrEqualSigned"),
-                CompareType::LessThanUnsigned => todo!("Compare constants with type LessThanUnsigned"),
-                CompareType::GreaterThanUnsigned => todo!("Compare constants with type GreaterThanUnsigned"),
-                CompareType::LessThanOrEqualUnsigned => todo!("Compare constants with type LessThanOrEqualUnsigned"),
-                CompareType::GreaterThanOrEqualUnsigned => {
+                (true, CompareType::LessThan) => todo!("Compare constants with type LessThanSigned"),
+                (true, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanSigned"),
+                (true, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualSigned"),
+                (true, CompareType::GreaterThanOrEqual) => {
+                    todo!("Compare constants with type GreaterThanOrEqualSigned")
+                }
+
+                (false, CompareType::LessThan) => todo!("Compare constants with type LessThanUnsigned"),
+                (false, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanUnsigned"),
+                (false, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualUnsigned"),
+                (false, CompareType::GreaterThanOrEqual) => {
                     todo!("Compare constants with type GreaterThanOrEqualUnsigned")
                 }
             },
             _ => todo!("Unsupported Compare operation: {:?} = {:?} <cmp> {:?}", r_out, a, b),
         }
 
-        match cmp_type {
-            CompareType::LessThanUnsigned => {
+        match (signed, cmp_type) {
+            (false, CompareType::LessThan) => {
                 dynasm!(ops
                     ; setb Rb(r_out as u8)
                 );
             }
-            CompareType::Equal => {
+            (_, CompareType::Equal) => {
                 dynasm!(ops
                     ; sete Rb(r_out as u8)
                 );
             }
-            CompareType::NotEqual => {
+            (_, CompareType::NotEqual) => {
                 dynasm!(ops
                     ; setne Rb(r_out as u8)
                 );
             }
-            CompareType::LessThanSigned => todo!("Compare with type LessThanSigned"),
-            CompareType::GreaterThanSigned => todo!("Compare with type GreaterThanSigned"),
-            CompareType::LessThanOrEqualSigned => todo!("Compare with type LessThanOrEqualSigned"),
-            CompareType::GreaterThanOrEqualSigned => todo!("Compare with type GreaterThanOrEqualSigned"),
-            CompareType::GreaterThanUnsigned => todo!("Compare with type GreaterThanUnsigned"),
-            CompareType::LessThanOrEqualUnsigned => todo!("Compare with type LessThanOrEqualUnsigned"),
-            CompareType::GreaterThanOrEqualUnsigned => todo!("Compare with type GreaterThanOrEqualUnsigned"),
+            (true, CompareType::LessThan) => todo!("Compare with type LessThanSigned"),
+            (true, CompareType::GreaterThan) => todo!("Compare with type GreaterThanSigned"),
+            (true, CompareType::LessThanOrEqual) => todo!("Compare with type LessThanOrEqualSigned"),
+            (true, CompareType::GreaterThanOrEqual) => todo!("Compare with type GreaterThanOrEqualSigned"),
+
+            (false, CompareType::GreaterThan) => todo!("Compare with type GreaterThanUnsigned"),
+            (false, CompareType::LessThanOrEqual) => todo!("Compare with type LessThanOrEqualUnsigned"),
+            (false, CompareType::GreaterThanOrEqual) => todo!("Compare with type GreaterThanOrEqualUnsigned"),
         }
     }
 
