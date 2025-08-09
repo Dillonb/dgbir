@@ -417,6 +417,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; fadd S(r_out as u32), S(r_out as u32), S(r)
                     )
                 }
+                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
+                    dynasm!(ops
+                        ; fmov S(r_out as u32), W(r2 as u32)
+                        ; fadd S(r_out as u32), S(r_out as u32), S(r1)
+                    )
+                }
                 _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
             }
         }
@@ -933,6 +939,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             let result = a.to_u64_const().unwrap() & b.to_u64_const().unwrap();
             match tp {
                 DataType::U32 => load_32_bit_constant(ops, lp, r_out.expect_gpr() as u32, result as u32),
+                DataType::U64 => load_64_bit_constant(ops, lp, r_out.expect_gpr() as u32, result),
                 _ => todo!("Unsupported AND operation with constants: {:?} & {:?} with type {:?}", a, b, tp),
             }
         } else {
@@ -1200,6 +1207,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; udiv W(r_quotient as u32), W(r_dividend as u32), W(r_divisor as u32)
                     ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
                 );
+            }
+            (DataType::F32, ConstOrReg::SIMD(r_dividend), ConstOrReg::SIMD(r_divisor)) => {
+                if r_remainder.is_some() {
+                    panic!("Remainder is not supported for F32 division");
+                }
+                let r_quotient = r_quotient.unwrap().expect_simd();
+
+                dynasm!(ops
+                    ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_divisor as u32)
+                );
+
             }
             _ => todo!("Unsupported Divide operation: {:?} / {:?} with type {:?}", dividend, divisor, tp),
         }

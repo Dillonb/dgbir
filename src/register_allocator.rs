@@ -67,6 +67,13 @@ impl Register {
         }
     }
 
+    pub fn expect_simd(&self) -> usize {
+        match self {
+            Register::SIMD(r) => *r,
+            _ => panic!("Expected SIMD, found {:?}", self),
+        }
+    }
+
     pub fn is_same_type_as(&self, other: &Register) -> bool {
         match (self, other) {
             (Register::GPR(_), Register::GPR(_)) => true,
