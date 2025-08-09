@@ -564,7 +564,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr W(r_out as u32), [X(r_ptr), offset as u32]
                 );
             }
-            _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
+            (Register::SIMD(r_out), ConstOrReg::GPR(r_ptr), DataType::F64) => {
+                dynasm!(ops
+                    ; ldr D(r_out as u32), [X(r_ptr), offset as u32]
+                );
+            }
+            (Register::SIMD(r_out), ConstOrReg::GPR(r_ptr), DataType::F32) => {
+                dynasm!(ops
+                    ; ldr S(r_out as u32), [X(r_ptr), offset as u32]
+                );
+            }
+            _ => todo!("Unsupported LoadPtr operation: Load {:?} with address [{:?}] and type {}", r_out, ptr, tp),
         }
     }
 
@@ -909,6 +919,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fcvt S(r_out as u32), D(r_out as u32)
                 )
             }
+            (Register::SIMD(r_out), DataType::F32, ConstOrReg::SIMD(r_in), DataType::F64) => {
+                dynasm!(ops
+                    ; fcvt S(r_out as u32), D(r_in as u32)
+                )
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
@@ -951,7 +966,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; and X(r_out as u32), X(r), X(r_out as u32)
                     );
                 }
-                _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
+                (DataType::U64, Register::GPR(r_out), ConstOrReg::SIMD(r), c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap();
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_64_bit_constant(ops, lp, r_temp.r(), c);
+
+                    dynasm!(ops
+                        ; fmov X(r_out as u32), D(r)
+                        ; and X(r_out as u32), X(r_out as u32), X(r_temp.r())
+                    );
+                }
+                _ => todo!("Unsupported AND operation: {:?} = {:?} & {:?} with type {:?}", r_out, a, b, tp),
             }
         }
     }
