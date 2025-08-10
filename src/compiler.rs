@@ -15,7 +15,7 @@ use crate::abi::get_function_argument_registers;
 use crate::compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::compiler_x64;
-use crate::ir::{IRFunction, IRFunctionInternal};
+use crate::ir::{IRFunction, IRFunctionInternal, RoundType};
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
@@ -133,55 +133,6 @@ impl ConstOrReg {
     }
 }
 
-impl Register {
-    pub fn to_const_or_reg(&self) -> ConstOrReg {
-        match self {
-            Register::GPR(r) => ConstOrReg::GPR(*r as u32),
-            Register::SIMD(r) => ConstOrReg::SIMD(*r as u32),
-        }
-    }
-}
-
-fn expect_constant_data_type(input: &InputSlot) -> DataType {
-    if let InputSlot::Constant(Constant::DataType(data_type)) = input {
-        *data_type
-    } else {
-        panic!("Expected data type constant, got {:?}", input);
-    }
-}
-
-fn expect_constant_cmp_type(input: &InputSlot) -> CompareType {
-    if let InputSlot::Constant(Constant::CompareType(cmp_type)) = input {
-        *cmp_type
-    } else {
-        panic!("Expected compare type constant, got {:?}", input);
-    }
-}
-
-fn expect_constant_u64(input: &InputSlot) -> u64 {
-    if let InputSlot::Constant(c) = input {
-        match c {
-            Constant::U64(value) => *value,
-            Constant::U32(value) => *value as u64,
-            Constant::U8(value) => *value as u64,
-            Constant::S64(value) if *value >= 0 => *value as u64,
-            Constant::S16(value) if *value >= 0 => *value as u64,
-            Constant::S8(value) if *value >= 0 => *value as u64,
-            Constant::Ptr(value) => *value as u64,
-            _ => panic!("Expected unsigned, positive, or ptr constant, got {:?}", input),
-        }
-    } else {
-        panic!("Expected u64 constant, got {:?}", input);
-    }
-}
-
-pub fn expect_gpr(register: Register) -> usize {
-    match register {
-        Register::GPR(r) => r,
-        _ => panic!("Expected GPR, got {:?}", register),
-    }
-}
-
 fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler<'a, R, Ops>>(
     ops: &mut Ops,
     lp: &mut LiteralPool,
@@ -218,19 +169,19 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                 InstructionType::Compare => {
                     assert_eq!(inputs.len(), 4);
                     assert_eq!(outputs.len(), 1);
-                    let data_type = expect_constant_data_type(&inputs[0]);
+                    let data_type = inputs[0].expect_constant_data_type();
                     let a = compiler.to_imm_or_reg(&inputs[1]);
-                    let cmp_type = expect_constant_cmp_type(&inputs[2]);
+                    let cmp_type = inputs[2].expect_constant_cmp_type();
                     let b = compiler.to_imm_or_reg(&inputs[3]);
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.compare(ops, lp, expect_gpr(*r_out), data_type, a, cmp_type, b);
+                        compiler.compare(ops, lp, r_out.expect_gpr(), data_type, a, cmp_type, b);
                     });
                 }
                 InstructionType::LoadPtr => {
                     assert_eq!(inputs.len(), 2);
                     assert_eq!(outputs.len(), 1);
                     let ptr = compiler.to_imm_or_reg(&inputs[0]);
-                    let offset = expect_constant_u64(&inputs[1]);
+                    let offset = inputs[1].expect_constant_u64();
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
                         compiler.load_ptr(ops, lp, *r_out, tp, ptr, offset);
@@ -240,16 +191,16 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     assert_eq!(inputs.len(), 4);
                     // ptr, offset, value, type
                     let ptr = compiler.to_imm_or_reg(&inputs[0]);
-                    let offset = expect_constant_u64(&inputs[1]);
+                    let offset = inputs[1].expect_constant_u64();
                     let value = compiler.to_imm_or_reg(&inputs[2]);
-                    let data_type = expect_constant_data_type(&inputs[3]);
+                    let data_type = inputs[3].expect_constant_data_type();
                     compiler.write_ptr(ops, lp, ptr, offset, value, data_type);
                 }
                 InstructionType::SpillToStack => {
                     assert_eq!(inputs.len(), 3);
                     let to_spill = compiler.to_imm_or_reg(&inputs[0]);
                     let stack_offset = compiler.to_imm_or_reg(&inputs[1]);
-                    let tp = expect_constant_data_type(&inputs[2]);
+                    let tp = inputs[2].expect_constant_data_type();
                     compiler.spill_to_stack(ops, to_spill, stack_offset, tp);
                 }
                 InstructionType::LoadFromStack => {
@@ -268,7 +219,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.left_shift(ops, expect_gpr(*r_out), n, amount, tp);
+                        compiler.left_shift(ops, r_out.expect_gpr(), n, amount, tp);
                     });
                 }
                 InstructionType::RightShift => {
@@ -278,7 +229,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.right_shift(ops, lp, expect_gpr(*r_out), n, amount, tp);
+                        compiler.right_shift(ops, lp, r_out.expect_gpr(), n, amount, tp);
                     });
                 }
                 InstructionType::Convert => {
@@ -289,7 +240,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let from_tp = if inputs.len() == 2 {
                         // If we have two arguments, the second argument is the data type to
                         // convert from.
-                        expect_constant_data_type(&inputs[1])
+                        inputs[1].expect_constant_data_type()
                     } else if inputs.len() == 1 {
                         // Otherwise, use the input's own type
                         inputs[0].tp()
@@ -356,7 +307,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     assert_eq!(outputs.len() == 1 || outputs.len() == 2, true);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
-                    let arg_tp = expect_constant_data_type(&inputs[2]);
+                    let arg_tp = inputs[2].expect_constant_data_type();
                     let result_tp = outputs[0].tp;
                     compiler.multiply(ops, lp, result_tp, arg_tp, output_regs, a, b);
                 }
@@ -418,6 +369,14 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
 
                     compiler.call_function(ops, lp, address, active_volatile_regs, r_out, args);
                 }
+                InstructionType::Round => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let value = compiler.to_imm_or_reg(&inputs[0]);
+                    let round_type = inputs[1].expect_constant_round_type();
+
+                    compiler.round(ops, lp, outputs[0].tp, round_type, value);
+                }
             }
         }
         Instruction::Branch {
@@ -475,6 +434,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::Bool(_) => todo!(),
                 Constant::DataType(_) => todo!(),
                 Constant::CompareType(_) => todo!(),
+                Constant::RoundType(_) => todo!(),
             },
             // _ => todo!("Unsupported input slot type: {:?}", s),
         }
@@ -752,6 +712,8 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     fn absolute_value(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
     /// Compile an IR negate instruction
     fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
+    /// Compile an IR round instruction
+    fn round(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, round_type: RoundType, value: ConstOrReg);
     /// Compile an IR call instruction
     fn call_function(
         &self,

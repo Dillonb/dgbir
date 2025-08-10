@@ -6,11 +6,9 @@ use std::{
 };
 
 use crate::{
-    abi::{get_registers, is_register_volatile},
-    ir::{
-        const_ptr, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction, InstructionType,
-        OutputSlot,
-    },
+    abi::{get_registers, is_register_volatile}, compiler::ConstOrReg, ir::{
+        const_ptr, CompareType, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot, RoundType
+    }
 };
 
 use itertools::Itertools;
@@ -83,9 +81,13 @@ impl Register {
             (Register::SIMD(_), _) => false,
         }
     }
-}
 
-impl Register {
+    pub fn to_const_or_reg(&self) -> ConstOrReg {
+        match self {
+            Register::GPR(r) => ConstOrReg::GPR(*r as u32),
+            Register::SIMD(r) => ConstOrReg::SIMD(*r as u32),
+        }
+    }
     pub fn is_volatile(&self) -> bool {
         is_register_volatile(*self)
     }
@@ -339,6 +341,49 @@ impl InputSlot {
             InputSlot::Constant(c) => c.get_type(),
         }
     }
+
+    pub fn expect_constant_round_type(&self) -> RoundType {
+        match self {
+            InputSlot::Constant(Constant::RoundType(rt)) => *rt,
+            _ => {
+                panic!("Expected a RoundType constant, found {:?}", self);
+            }
+        }
+    }
+
+    pub fn expect_constant_data_type(&self) -> DataType {
+        if let InputSlot::Constant(Constant::DataType(data_type)) = self {
+            *data_type
+        } else {
+            panic!("Expected data type constant, got {:?}", self);
+        }
+    }
+
+    pub fn expect_constant_cmp_type(&self) -> CompareType {
+        if let InputSlot::Constant(Constant::CompareType(cmp_type)) = self {
+            *cmp_type
+        } else {
+            panic!("Expected compare type constant, got {:?}", self);
+        }
+    }
+
+    pub fn expect_constant_u64(&self) -> u64 {
+        if let InputSlot::Constant(c) = self {
+            match c {
+                Constant::U64(value) => *value,
+                Constant::U32(value) => *value as u64,
+                Constant::U8(value) => *value as u64,
+                Constant::S64(value) if *value >= 0 => *value as u64,
+                Constant::S16(value) if *value >= 0 => *value as u64,
+                Constant::S8(value) if *value >= 0 => *value as u64,
+                Constant::Ptr(value) => *value as u64,
+                _ => panic!("Expected unsigned, positive, or ptr constant, got {:?}", self),
+            }
+        } else {
+            panic!("Expected u64 constant, got {:?}", self);
+        }
+    }
+
 }
 
 struct IRFunctionValueIterator<'a> {

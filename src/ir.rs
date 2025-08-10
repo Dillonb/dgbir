@@ -99,6 +99,7 @@ pub enum Constant {
     Bool(bool),
     DataType(DataType),
     CompareType(CompareType),
+    RoundType(RoundType),
 }
 
 impl Constant {
@@ -144,6 +145,14 @@ pub enum CompareType {
     GreaterThanOrEqual,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum RoundType {
+    Up,
+    Down,
+    Nearest,
+    Truncate,
+}
+
 #[derive(Debug)]
 pub enum InstructionType {
     Add,
@@ -166,6 +175,7 @@ pub enum InstructionType {
     AbsoluteValue,
     Negate,
     CallFunction,
+    Round,
 }
 
 #[derive(Debug, Clone, Copy)]

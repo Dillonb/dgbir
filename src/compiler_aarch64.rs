@@ -1289,6 +1289,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         todo!()
     }
 
+    fn round(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _round_type: crate::ir::RoundType, _value: ConstOrReg) {
+        todo!("Round instruction")
+    }
+
     fn call_function(
         &self,
         ops: &mut Ops,
