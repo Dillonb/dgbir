@@ -57,6 +57,22 @@ impl DataType {
             DataType::Ptr => false,
         }
     }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            DataType::U8 | DataType::S8 | DataType::U16 | DataType::S16 | DataType::U32 | DataType::S32 | DataType::U64 | DataType::S64 | DataType::U128 => true,
+            DataType::F32 | DataType::F64 => false,
+            DataType::Bool => true,
+            DataType::Ptr => true,
+        }
+    }
+
+    pub fn is_float(&self) -> bool {
+        match self {
+            DataType::F32 | DataType::F64 => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]

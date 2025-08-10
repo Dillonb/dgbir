@@ -487,13 +487,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         let signed = data_type.is_signed();
 
         match (a, b) {
-            (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+            (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) if data_type.is_integer() => {
                 dynasm!(ops
                     ; cmp X(r1 as u32), X(r2 as u32)
                 );
                 set_reg_by_flags(ops, signed, cmp_type, r_out);
             }
-            (ConstOrReg::GPR(r), c) if c.is_const() => {
+            (ConstOrReg::GPR(r), c) if c.is_const() && data_type.is_integer() => {
                 let c = c.to_u64_const().unwrap();
                 if c < 4096 {
                     dynasm!(ops
@@ -508,7 +508,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 }
                 set_reg_by_flags(ops, signed, cmp_type, r_out);
             }
-            (c, ConstOrReg::GPR(r)) if c.is_const() => {
+            (c, ConstOrReg::GPR(r)) if c.is_const() && data_type.is_integer() => {
                 let c = c.to_u64_const().unwrap();
                 let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_temp.r(), c);
@@ -517,7 +517,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 );
                 set_reg_by_flags(ops, signed, cmp_type, r_out);
             }
-            (c1, c2) if c1.is_const() && c2.is_const() => match (signed, cmp_type) {
+            (c1, c2) if c1.is_const() && c2.is_const() && data_type.is_integer() => match (signed, cmp_type) {
                 (_, CompareType::Equal) => {
                     dynasm!(ops
                         ; mov W(r_out as u32), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as u32
@@ -543,7 +543,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     todo!("Compare constants with type GreaterThanOrEqualUnsigned")
                 }
             },
-            _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?}", r_out, a, cmp_type, b),
+            _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}", r_out, a, cmp_type, b, data_type),
         }
     }
 
