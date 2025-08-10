@@ -565,7 +565,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; fcmp S(r_temp.r() as u32), S(r2 as u32)
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
-
                 }
                 _ => todo!(
                     "Unsupported float Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
@@ -1289,7 +1288,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         todo!()
     }
 
-    fn round(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _round_type: crate::ir::RoundType, _value: ConstOrReg) {
+    fn round(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _round_type: crate::ir::RoundType,
+        _value: ConstOrReg,
+    ) {
         todo!("Round instruction")
     }
 

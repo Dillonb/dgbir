@@ -6,9 +6,12 @@ use std::{
 };
 
 use crate::{
-    abi::{get_registers, is_register_volatile}, compiler::ConstOrReg, ir::{
-        const_ptr, CompareType, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot, RoundType
-    }
+    abi::{get_registers, is_register_volatile},
+    compiler::ConstOrReg,
+    ir::{
+        const_ptr, CompareType, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction,
+        InstructionType, OutputSlot, RoundType,
+    },
 };
 
 use itertools::Itertools;
@@ -383,7 +386,6 @@ impl InputSlot {
             panic!("Expected u64 constant, got {:?}", self);
         }
     }
-
 }
 
 struct IRFunctionValueIterator<'a> {

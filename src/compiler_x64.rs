@@ -827,7 +827,14 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         todo!()
     }
 
-    fn round(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _round_type: crate::ir::RoundType, _value: ConstOrReg) {
+    fn round(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _tp: DataType,
+        _round_type: crate::ir::RoundType,
+        _value: ConstOrReg,
+    ) {
         todo!("Round instruction")
     }
 

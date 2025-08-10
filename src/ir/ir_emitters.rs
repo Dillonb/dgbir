@@ -147,7 +147,11 @@ impl IRBlockHandle {
     }
 
     pub fn round(&mut self, result_tp: DataType, round_type: RoundType, value: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::Round, vec![value, Constant::RoundType(round_type).into_inputslot()], vec![OutputSlot { tp: result_tp }])
+        self.append(
+            InstructionType::Round,
+            vec![value, Constant::RoundType(round_type).into_inputslot()],
+            vec![OutputSlot { tp: result_tp }],
+        )
     }
 
     pub fn call_function(
