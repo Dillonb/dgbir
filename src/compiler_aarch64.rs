@@ -539,7 +539,9 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     }
                     (false, CompareType::LessThan) => todo!("Compare constants with type LessThanUnsigned"),
                     (false, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanUnsigned"),
-                    (false, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualUnsigned"),
+                    (false, CompareType::LessThanOrEqual) => {
+                        todo!("Compare constants with type LessThanOrEqualUnsigned")
+                    }
                     (false, CompareType::GreaterThanOrEqual) => {
                         todo!("Compare constants with type GreaterThanOrEqualUnsigned")
                     }
@@ -554,8 +556,25 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 ),
             }
         } else if data_type.is_float() {
-            match (a, b) {
-                _ => todo!("Unsupported float Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}", r_out, a, cmp_type, b, data_type),
+            let signed = true; // Floats are always signed
+            match (data_type, a, b) {
+                (DataType::F32, ConstOrReg::GPR(r1), ConstOrReg::SIMD(r2)) => {
+                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
+                    dynasm!(ops
+                        ; fmov S(r_temp.r() as u32), W(r1 as u32)
+                        ; fcmp S(r_temp.r() as u32), S(r2 as u32)
+                    );
+                    set_reg_by_flags(ops, signed, cmp_type, r_out);
+
+                }
+                _ => todo!(
+                    "Unsupported float Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
+                    r_out,
+                    a,
+                    cmp_type,
+                    b,
+                    data_type
+                ),
             }
         } else {
             todo!("Unsupported Compare operation with data type: {:?}", data_type);
