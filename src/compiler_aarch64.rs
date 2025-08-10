@@ -656,12 +656,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str W(r_value.r() as u32), [X(r_ptr), offset as u32]
                 );
             }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32) => {
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
                     ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64) => {
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
+                dynasm!(ops
+                    ; str D(r_value as u32), [X(r_ptr as u32), offset as u32]
+                );
+            }
+            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
                 dynasm!(ops
                     ; str X(r_value as u32), [X(r_ptr as u32), offset as u32]
                 );
@@ -1172,6 +1177,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     load_32_bit_constant(ops, lp, r_subtrahend.r(), subtrahend);
                     dynasm!(ops
                         ; sub W(r_out as u32), W(r_minuend), W(r_subtrahend.r())
+                    )
+                }
+                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                    dynasm!(ops
+                        ; fsub S(r_out as u32), S(r1), S(r2)
                     )
                 }
                 _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
