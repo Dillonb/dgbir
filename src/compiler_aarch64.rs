@@ -543,7 +543,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     todo!("Compare constants with type GreaterThanOrEqualUnsigned")
                 }
             },
-            _ => todo!("Unsupported Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}", r_out, a, cmp_type, b, data_type),
+            _ => todo!(
+                "Unsupported Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
+                r_out,
+                a,
+                cmp_type,
+                b,
+                data_type
+            ),
         }
     }
 
@@ -1221,7 +1228,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 dynasm!(ops
                     ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_divisor as u32)
                 );
-
             }
             _ => todo!("Unsupported Divide operation: {:?} / {:?} with type {:?}", dividend, divisor, tp),
         }
