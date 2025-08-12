@@ -972,6 +972,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fcvt S(r_out as u32), D(r_in as u32)
                 )
             }
+            (Register::GPR(r_out), DataType::S64, ConstOrReg::SIMD(r_in), DataType::S32) => {
+                dynasm!(ops
+                    // Bit preserving MOV to a GPR from an FPU register
+                    ; fmov W(r_out as u32), S(r_in as u32)
+                    // Sign extend
+                    ; sxtw X(r_out as u32), W(r_out as u32)
+                )
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
@@ -1286,17 +1294,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn negate(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
         todo!()
-    }
-
-    fn round(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _round_type: crate::ir::RoundType,
-        _value: ConstOrReg,
-    ) {
-        todo!("Round instruction")
     }
 
     fn call_function(

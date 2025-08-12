@@ -10,7 +10,7 @@ use crate::{
     compiler::ConstOrReg,
     ir::{
         const_ptr, CompareType, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction,
-        InstructionType, OutputSlot, RoundType,
+        InstructionType, OutputSlot, RoundingMode,
     },
 };
 
@@ -345,11 +345,11 @@ impl InputSlot {
         }
     }
 
-    pub fn expect_constant_round_type(&self) -> RoundType {
+    pub fn expect_constant_rounding_mode(&self) -> RoundingMode {
         match self {
-            InputSlot::Constant(Constant::RoundType(rt)) => *rt,
+            InputSlot::Constant(Constant::RoundingMode(rt)) => *rt,
             _ => {
-                panic!("Expected a RoundType constant, found {:?}", self);
+                panic!("Expected a RoundingMode constant, found {:?}", self);
             }
         }
     }

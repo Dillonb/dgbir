@@ -15,7 +15,7 @@ use crate::abi::get_function_argument_registers;
 use crate::compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::compiler_x64;
-use crate::ir::{IRFunction, IRFunctionInternal, RoundType};
+use crate::ir::{IRFunction, IRFunctionInternal};
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
@@ -369,14 +369,6 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
 
                     compiler.call_function(ops, lp, address, active_volatile_regs, r_out, args);
                 }
-                InstructionType::Round => {
-                    assert_eq!(inputs.len(), 2);
-                    assert_eq!(outputs.len(), 1);
-                    let value = compiler.to_imm_or_reg(&inputs[0]);
-                    let round_type = inputs[1].expect_constant_round_type();
-
-                    compiler.round(ops, lp, outputs[0].tp, round_type, value);
-                }
             }
         }
         Instruction::Branch {
@@ -434,7 +426,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::Bool(_) => todo!(),
                 Constant::DataType(_) => todo!(),
                 Constant::CompareType(_) => todo!(),
-                Constant::RoundType(_) => todo!(),
+                Constant::RoundingMode(_) => todo!(),
             },
             // _ => todo!("Unsupported input slot type: {:?}", s),
         }
@@ -712,8 +704,6 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     fn absolute_value(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
     /// Compile an IR negate instruction
     fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg);
-    /// Compile an IR round instruction
-    fn round(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, round_type: RoundType, value: ConstOrReg);
     /// Compile an IR call instruction
     fn call_function(
         &self,

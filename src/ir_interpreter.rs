@@ -70,7 +70,7 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::Bool(v) => *v as u64,
         Constant::DataType(_) => unimplemented!("DataType is not supported"),
         Constant::CompareType(_) => unimplemented!("CompareType is not supported"),
-        Constant::RoundType(_) => unimplemented!("RoundType is not supported"),
+        Constant::RoundingMode(_) => unimplemented!("RoundingMode is not supported"),
     }
 }
 
@@ -255,7 +255,6 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::AbsoluteValue => todo!(),
         InstructionType::Negate => todo!(),
         InstructionType::CallFunction => todo!(),
-        InstructionType::Round => todo!(),
     }
 }
 
