@@ -710,6 +710,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
             }
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::F64) => {
+                dynasm!(ops
+                    ; str D(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
+                )
+            }
             _ => todo!(
                 "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
                 to_spill,
@@ -736,6 +741,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
                 )
             }
+            (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::F64) => {
+                dynasm!(ops
+                    ; ldr D(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
+                )
+            }
             _ => todo!(
                 "Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}",
                 r_out,
@@ -745,7 +755,15 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn left_shift(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) -> () {
+    fn left_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: usize,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+        tp: DataType,
+    ) -> () {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             match (tp, n) {
@@ -1004,6 +1022,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fcvtzs W(r_out as u32), S(r_in as u32)
                 )
             }
+            (Register::GPR(r_out), DataType::U64, ConstOrReg::SIMD(r_in), DataType::U64) => {
+                dynasm!(ops
+                    // Bit preserving MOV to a GPR from an FPU register
+                    ; fmov X(r_out as u32), D(r_in as u32)
+                )
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
@@ -1119,7 +1143,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; mvn X(r_out as u32), X(r)
                     );
                 }
-                _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a)
+                _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a),
             }
         }
     }
