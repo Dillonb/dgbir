@@ -927,7 +927,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     // Shift the sign bit into the 32 bit sign position
                     ; lsl W(r_out as u32), W(r_in as u32), 24
                     // Sign extend to 64 bits
-                    ; sxtw X(r_out as u32), W(r_in as u32)
+                    ; sxtw X(r_out as u32), W(r_out as u32)
                     // Then shift arithmetic back to the original position
                     ; asr X(r_out as u32), X(r_out as u32), 24
                 );
@@ -937,7 +937,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     // Shift the sign bit into the 32 bit sign position
                     ; lsl W(r_out as u32), W(r_in as u32), 16
                     // Sign extend to 64 bits
-                    ; sxtw X(r_out as u32), W(r_in as u32)
+                    ; sxtw X(r_out as u32), W(r_out as u32)
                     // Then shift arithmetic back to the original position
                     ; asr X(r_out as u32), X(r_out as u32), 16
                 );
