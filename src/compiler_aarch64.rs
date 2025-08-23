@@ -1098,7 +1098,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 _ => todo!("Unsupported NOT operation with constant: {:?} with type {:?}", a, tp),
             }
         } else {
-            todo!("Unsupported (non-const) NOT operation: {:?}", a);
+            match (tp, a) {
+                (DataType::U32, ConstOrReg::GPR(r)) => {
+                    dynasm!(ops
+                        ; mvn W(r_out as u32), W(r)
+                    );
+                }
+                (DataType::U64, ConstOrReg::GPR(r)) => {
+                    dynasm!(ops
+                        ; mvn X(r_out as u32), X(r)
+                    );
+                }
+                _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a)
+            }
         }
     }
 
