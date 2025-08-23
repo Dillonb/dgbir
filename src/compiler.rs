@@ -219,7 +219,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.left_shift(ops, r_out.expect_gpr(), n, amount, tp);
+                        compiler.left_shift(ops, lp, r_out.expect_gpr(), n, amount, tp);
                     });
                 }
                 InstructionType::RightShift => {
@@ -637,7 +637,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR load from stack instruction
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR left shift instruction
-    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
+    fn left_shift(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
     /// Compile an IR right shift instruction
     fn right_shift(
         &self,

@@ -583,7 +583,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
+    fn left_shift(&self, ops: &mut Ops, _lp: &mut LiteralPool, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             match (tp, n) {

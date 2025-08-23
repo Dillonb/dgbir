@@ -745,7 +745,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn left_shift(&self, ops: &mut Ops, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) -> () {
+    fn left_shift(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType) -> () {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             match (tp, n) {
@@ -784,11 +784,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; lslv W(r_out as u32), W(r_n as u32), W(r_amount as u32)
                     );
                 }
+                (DataType::U32, c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap() as u32;
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_32_bit_constant(ops, lp, r_temp.r(), c);
+                    dynasm!(ops
+                        ; lslv W(r_out as u32), W(r_temp.r() as u32), W(r_amount as u32)
+                    );
+                }
                 (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S32"),
                 (DataType::U64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for U64"),
                 (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S64"),
 
-                _ => todo!("Unsupported DataType {} or unsupported register type for LeftShift operation with GPR amount: {:?} << {:?}", tp, n, r_amount),
+                _ => todo!("Unsupported DataType {} or unsupported register type for LeftShift operation with GPR amount: {:?} << GPR({:?})", tp, n, r_amount),
             }
         } else {
             panic!("RightShift amount must be a constant or a GPR, got: {:?}", amount);
