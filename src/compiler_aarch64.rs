@@ -884,14 +884,24 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     );
                 }
                 (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S32"),
-                (DataType::U64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for U64"),
+                (DataType::U64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lsrv X(r_out as u32), X(r_n as u32), X(r_amount as u32)
+                    );
+                }
                 (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S64"),
 
                 (DataType::U8,  c) if c.is_const() => todo!("RightShift const with GPR amount for U8"),
                 (DataType::S8,  c) if c.is_const() => todo!("RightShift const with GPR amount for S8"),
                 (DataType::U16, c) if c.is_const() => todo!("RightShift const with GPR amount for U16"),
                 (DataType::S16, c) if c.is_const() => todo!("RightShift const with GPR amount for S16"),
-                (DataType::U32, c) if c.is_const() => todo!("RightShift const with GPR amount for U32"),
+                (DataType::U32, c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap() as u32;
+                    load_32_bit_constant(ops, lp, r_out as u32, c);
+                    dynasm!(ops
+                        ; lsrv W(r_out as u32), W(r_out as u32), W(r_amount as u32)
+                    );
+                },
                 (DataType::S32, c) if c.is_const() => todo!("RightShift const with GPR amount for S32"),
                 (DataType::U64, c) if c.is_const() => {
                     let c = c.to_u64_const().unwrap();
@@ -1136,6 +1146,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     load_64_bit_constant(ops, lp, r_out as u32, c.to_u64_const().unwrap());
                     dynasm!(ops
                         ; eor X(r_out as u32), X(r), X(r_out as u32)
+                    );
+                }
+                (DataType::U32, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
+                    load_32_bit_constant(ops, lp, r_out as u32, c.to_u64_const().unwrap() as u32);
+                    dynasm!(ops
+                        ; eor W(r_out as u32), W(r), W(r_out as u32)
                     );
                 }
                 _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp),
