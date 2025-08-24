@@ -1297,6 +1297,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
                 );
             }
+            (DataType::F32, DataType::F32, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    // Bit preserving MOV to an FPU register
+                    ; fmov S(r_out as u32), W(r_a as u32)
+                    ; fmul S(r_out as u32), S(r_out as u32), S(r_b as u32)
+                );
+            }
             _ => todo!(
                 "Unsupported Multiply operation: {:?} * {:?} with result type {} ({} regs) and arg type {}",
                 a,
