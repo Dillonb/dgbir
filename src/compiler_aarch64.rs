@@ -570,6 +570,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
+                (DataType::F64, ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
+                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
+                    dynasm!(ops
+                        ; fmov S(r_temp.r() as u32), W(r2 as u32)
+                        ; fcmp S(r1 as u32), S(r_temp.r() as u32)
+                    );
+                    set_reg_by_flags(ops, signed, cmp_type, r_out);
+                }
                 _ => todo!(
                     "Unsupported float Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
                     r_out,
@@ -780,30 +788,40 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     ) -> () {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
-            match (tp, n) {
-                (DataType::U8 | DataType::S8, ConstOrReg::GPR(r_n)) => {
-                    dynasm!(ops
-                        ; lsl W(r_out as u32), W(r_n as u32), amount & 0b111
-                        ; and WSP(r_out as u32), W(r_out as u32), 0xFF // Mask to 8 bits
-                    );
+            if let Some(base) = n.to_u64_const() {
+                match tp {
+                    DataType::U64 | DataType::S64 => {
+                        let result = base.wrapping_shl(amount);
+                        load_64_bit_constant(ops, lp, r_out as u32, result);
+                    }
+                    _ => todo!("LeftShift with constant base with tp {}", tp),
                 }
-                (DataType::U16 | DataType::S16, ConstOrReg::GPR(r_n)) => {
-                    dynasm!(ops
-                        ; lsl W(r_out as u32), W(r_n as u32), amount & 0b1111
-                        ; and WSP(r_out as u32), W(r_out as u32), 0xFFFF // Mask to 16
-                    );
+            } else {
+                match (tp, n) {
+                    (DataType::U8 | DataType::S8, ConstOrReg::GPR(r_n)) => {
+                        dynasm!(ops
+                            ; lsl W(r_out as u32), W(r_n as u32), amount & 0b111
+                            ; and WSP(r_out as u32), W(r_out as u32), 0xFF // Mask to 8 bits
+                        );
+                    }
+                    (DataType::U16 | DataType::S16, ConstOrReg::GPR(r_n)) => {
+                        dynasm!(ops
+                            ; lsl W(r_out as u32), W(r_n as u32), amount & 0b1111
+                            ; and WSP(r_out as u32), W(r_out as u32), 0xFFFF // Mask to 16
+                        );
+                    }
+                    (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n)) => {
+                        dynasm!(ops
+                            ; lsl W(r_out as u32), W(r_n as u32), amount & 0b11111
+                        );
+                    }
+                    (DataType::U64 | DataType::S64, ConstOrReg::GPR(r_n)) => {
+                        dynasm!(ops
+                            ; lsl X(r_out as u32), X(r_n as u32), amount & 0b111111
+                        );
+                    }
+                    _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
                 }
-                (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n)) => {
-                    dynasm!(ops
-                        ; lsl W(r_out as u32), W(r_n as u32), amount & 0b11111
-                    );
-                }
-                (DataType::U64 | DataType::S64, ConstOrReg::GPR(r_n)) => {
-                    dynasm!(ops
-                        ; lsl X(r_out as u32), X(r_n as u32), amount & 0b111111
-                    );
-                }
-                _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
             }
         } else if let Some(Register::GPR(r_amount)) = amount.to_reg() {
             match (tp, n) {
@@ -1174,6 +1192,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     dynasm!(ops
                         ; mvn X(r_out as u32), X(r)
                     );
+                }
+                (DataType::Bool, ConstOrReg::GPR(r)) => {
+                    dynasm!(ops
+                        ; cmp XSP(r), 0
+                        ; cset X(r), eq
+                    )
                 }
                 _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a),
             }
