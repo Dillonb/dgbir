@@ -1028,6 +1028,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fmov X(r_out as u32), D(r_in as u32)
                 )
             }
+            (Register::GPR(r_out), DataType::U32, ConstOrReg::SIMD(r_in), DataType::U32) => {
+                dynasm!(ops
+                    // Bit preserving MOV to a GPR from an FPU register
+                    ; fmov W(r_out as u32), S(r_in as u32)
+                )
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
