@@ -467,7 +467,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; cset W(r_out as u32), lt // signed "less than"
                     )
                 }
-                (true, CompareType::GreaterThan) => todo!("Compare with type GreaterThanSigned"),
+                (true, CompareType::GreaterThan) => {
+                    dynasm!(ops
+                        ; cset W(r_out as u32), gt // signed "greater than"
+                    )
+                }
                 (true, CompareType::LessThanOrEqual) => {
                     dynasm!(ops
                         ; cset W(r_out as u32), le // signed "less than or equal"
@@ -821,7 +825,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     );
                 }
                 (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S32"),
-                (DataType::U64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for U64"),
+                (DataType::U64, ConstOrReg::GPR(r_n)) => {
+                    dynasm!(ops
+                        ; lslv X(r_out as u32), X(r_n as u32), X(r_amount as u32)
+                    );
+                }
+                (DataType::U64, c) if c.is_const() => {
+                    let c = c.to_u64_const().unwrap();
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    load_64_bit_constant(ops, lp, r_temp.r(), c);
+                    dynasm!(ops
+                        ; lslv X(r_out as u32), X(r_temp.r() as u32), X(r_amount as u32)
+                    );
+                }
                 (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S64"),
 
                 _ => todo!("Unsupported DataType {} or unsupported register type for LeftShift operation with GPR amount: {:?} << GPR({:?})", tp, n, r_amount),
