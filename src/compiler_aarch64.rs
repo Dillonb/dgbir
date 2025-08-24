@@ -1331,6 +1331,28 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fmul S(r_out as u32), S(r_out as u32), S(r_b as u32)
                 );
             }
+            (DataType::F64, DataType::F64, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    // Bit preserving MOV to an FPU register
+                    ; fmov D(r_out as u32), X(r_a as u32)
+                    ; fmul D(r_out as u32), D(r_out as u32), D(r_b as u32)
+                );
+            }
+            (DataType::F64, DataType::F64, 1, ConstOrReg::SIMD(r_a), ConstOrReg::GPR(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    // Bit preserving MOV to an FPU register
+                    ; fmov D(r_out as u32), X(r_b as u32)
+                    ; fmul D(r_out as u32), D(r_out as u32), D(r_a as u32)
+                );
+            }
+            (DataType::F64, DataType::F64, 1, ConstOrReg::SIMD(r_a), ConstOrReg::SIMD(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    ; fmul D(r_out as u32), D(r_a as u32), D(r_b as u32)
+                );
+            }
             _ => todo!(
                 "Unsupported Multiply operation: {:?} * {:?} with result type {} ({} regs) and arg type {}",
                 a,
@@ -1377,6 +1399,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
                 dynasm!(ops
                     ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_divisor as u32)
+                );
+            }
+            (DataType::F64, ConstOrReg::SIMD(r_dividend), ConstOrReg::SIMD(r_divisor)) => {
+                if r_remainder.is_some() {
+                    panic!("Remainder is not supported for F64 division");
+                }
+                let r_quotient = r_quotient.unwrap().expect_simd();
+
+                dynasm!(ops
+                    ; fdiv D(r_quotient as u32), D(r_dividend as u32), D(r_divisor as u32)
                 );
             }
             _ => todo!("Unsupported Divide operation: {:?} / {:?} with type {:?}", dividend, divisor, tp),
