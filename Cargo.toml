@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["asm_debug"]
+default = ["asm_debug", "ir_comments"]
 asm_debug = []
+ir_comments = []
 
 [dependencies]
 capstone = "0.13.0"

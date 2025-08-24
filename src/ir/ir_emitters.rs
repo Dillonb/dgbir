@@ -5,6 +5,14 @@ impl IRBlockHandle {
         self.func.borrow_mut().append(self, tp, inputs, outputs)
     }
 
+    #[cfg(feature = "ir_comments")]
+    pub fn comment(&self, text: impl AsRef<str>) {
+        let text = text.as_ref();
+        self.func
+            .borrow_mut()
+            .append_obj(self, Instruction::Comment(text.to_string()));
+    }
+
     pub fn add(&self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
         self.append(InstructionType::Add, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }

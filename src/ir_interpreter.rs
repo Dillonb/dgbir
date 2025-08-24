@@ -281,6 +281,8 @@ pub fn interpret_func(func: &IRFunction, args: Vec<Constant>) -> Option<Constant
         let block = &func.blocks[block_index];
         let instruction = &func.instructions[block.instructions[pc]];
         match &instruction.instruction {
+            #[cfg(feature = "ir_comments")]
+            Instruction::Comment(_) => {}
             Instruction::Instruction { tp, inputs, outputs } => {
                 let const_inputs = inputs
                     .iter()

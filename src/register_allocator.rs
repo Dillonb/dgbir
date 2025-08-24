@@ -9,8 +9,8 @@ use crate::{
     abi::{get_registers, is_register_volatile},
     compiler::ConstOrReg,
     ir::{
-        const_ptr, CompareType, Constant, DataType, IRFunctionInternal, IndexedInstruction, InputSlot, Instruction,
-        InstructionType, OutputSlot, RoundingMode,
+        const_ptr, CompareType, Constant, DataType, IRBasicBlock, IRFunctionInternal, IndexedInstruction, InputSlot,
+        Instruction, InstructionType, OutputSlot, RoundingMode,
     },
 };
 
@@ -396,6 +396,18 @@ struct IRFunctionValueIterator<'a> {
     output_index: usize,
 }
 
+impl IRFunctionValueIterator<'_> {
+    fn skip_instruction(&mut self, block: &IRBasicBlock) {
+        self.output_index = 0;
+        self.instruction_index += 1;
+        if self.instruction_index >= block.instructions.len() {
+            self.block_index += 1;
+            self.block_input_index = 0;
+            self.instruction_index = 0;
+        }
+    }
+}
+
 impl Iterator for IRFunctionValueIterator<'_> {
     type Item = Value;
 
@@ -453,13 +465,11 @@ impl Iterator for IRFunctionValueIterator<'_> {
 
                 // These aren't values, so skip
                 Instruction::Branch { .. } | Instruction::Jump { .. } | Instruction::Return { .. } => {
-                    self.output_index = 0;
-                    self.instruction_index += 1;
-                    if self.instruction_index >= block.instructions.len() {
-                        self.block_index += 1;
-                        self.block_input_index = 0;
-                        self.instruction_index = 0;
-                    }
+                    self.skip_instruction(block);
+                }
+                #[cfg(feature = "ir_comments")]
+                Instruction::Comment(_) => {
+                    self.skip_instruction(block);
                 }
             }
         }
@@ -604,6 +614,8 @@ fn calculate_lifetimes(func: &IRFunctionInternal) -> Lifetimes {
         })
         .for_each(|(block_index, instruction_index_in_block, instruction_index)| {
             match &func.instructions[*instruction_index].instruction {
+                #[cfg(feature = "ir_comments")]
+                Instruction::Comment(_) => {}
                 Instruction::Instruction { inputs, .. } => {
                     inputs.iter().map(|input| input.to_value(&func)).for_each(|input| {
                         if let Some(value) = input {
@@ -787,6 +799,8 @@ impl IRFunctionInternal {
         for usage in usages_post_spill {
             let instruction = &mut self.instructions[usage.instruction_index];
             match &mut instruction.instruction {
+                #[cfg(feature = "ir_comments")]
+                Instruction::Comment(_) => {}
                 Instruction::Instruction { inputs, .. } => {
                     let indices = inputs
                         .into_iter()

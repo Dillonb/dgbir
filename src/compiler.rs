@@ -143,6 +143,8 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
     let instruction_index = instruction.index;
     let block_index = instruction.block_index;
     match &instruction.instruction {
+        #[cfg(feature = "ir_comments")]
+        Instruction::Comment(_) => {}
         Instruction::Instruction { tp, inputs, outputs } => {
             let output_regs = outputs
                 .iter()
@@ -637,7 +639,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Compile an IR load from stack instruction
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType);
     /// Compile an IR left shift instruction
-    fn left_shift(&self, ops: &mut Ops, lp: &mut LiteralPool, r_out: usize, n: ConstOrReg, amount: ConstOrReg, tp: DataType);
+    fn left_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: usize,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+        tp: DataType,
+    );
     /// Compile an IR right shift instruction
     fn right_shift(
         &self,

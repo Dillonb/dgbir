@@ -208,6 +208,8 @@ pub struct BlockReference {
 
 #[derive(Debug)]
 pub enum Instruction {
+    #[cfg(feature = "ir_comments")]
+    Comment(String),
     Instruction {
         tp: InstructionType,
         inputs: Vec<InputSlot>,
@@ -386,6 +388,8 @@ impl IRFunctionInternal {
 
         // Close the block if necessary
         match instruction {
+            #[cfg(feature = "ir_comments")]
+            Instruction::Comment(_) => {}
             Instruction::Branch { .. } | Instruction::Jump { .. } | Instruction::Return { .. } => {
                 block.is_closed = true;
             }

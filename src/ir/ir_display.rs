@@ -55,6 +55,8 @@ impl Display for IndexedInstruction {
             f,
             "{}",
             match &self.instruction {
+                #[cfg(feature = "ir_comments")]
+                Instruction::Comment(text) => format!("// {}", text),
                 Instruction::Instruction { tp, inputs, outputs } => {
                     let outputs = outputs
                         .iter()
