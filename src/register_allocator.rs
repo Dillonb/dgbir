@@ -705,7 +705,7 @@ impl Display for Register {
 impl IRFunctionInternal {
     pub fn new_sized_stack_location(&mut self, bytes_needed: usize) -> usize {
         // Align the stack to this data type
-        self.stack_bytes_used += bytes_needed - (self.stack_bytes_used % bytes_needed);
+        self.stack_bytes_used += bytes_needed + (self.stack_bytes_used % bytes_needed);
 
         return self.stack_bytes_used - bytes_needed;
     }
