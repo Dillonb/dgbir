@@ -411,6 +411,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; fadd S(r_out as u32), S(r1), S(r2)
                     )
                 }
+                (DataType::F64, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                    dynasm!(ops
+                        ; fadd D(r_out as u32), D(r1), D(r2)
+                    )
+                }
                 (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
                     dynasm!(ops
                         ; fmov S(r_out as u32), *c
@@ -1118,6 +1123,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 println!("TODO: this is assuming round towards zero in all cases, which is not always true");
                 dynasm!(ops
                     ; fcvtzs W(r_out as u32), S(r_in as u32)
+                )
+            }
+            (Register::GPR(r_out), DataType::S32, ConstOrReg::SIMD(r_in), DataType::F64) => {
+                println!("TODO: this is assuming round towards zero in all cases, which is not always true");
+                dynasm!(ops
+                    ; fcvtzs W(r_out as u32), D(r_in as u32)
                 )
             }
             (Register::GPR(r_out), DataType::U64, ConstOrReg::SIMD(r_in), DataType::U64) => {
