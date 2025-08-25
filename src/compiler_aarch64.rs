@@ -562,6 +562,21 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         } else if data_type.is_float() {
             let signed = true; // Floats are always signed
             match (data_type, a, b) {
+                // SIMD, SIMD
+                (DataType::F32, ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                    dynasm!(ops
+                        ; fcmp S(r1 as u32), S(r2 as u32)
+                    );
+                    set_reg_by_flags(ops, signed, cmp_type, r_out);
+                }
+                (DataType::F64, ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                    dynasm!(ops
+                        ; fcmp D(r1 as u32), D(r2 as u32)
+                    );
+                    set_reg_by_flags(ops, signed, cmp_type, r_out);
+                }
+
+                // GPR, SIMD
                 (DataType::F32, ConstOrReg::GPR(r1), ConstOrReg::SIMD(r2)) => {
                     let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
                     dynasm!(ops
@@ -570,7 +585,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
-                (DataType::F64, ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
+                (DataType::F64, ConstOrReg::GPR(r1), ConstOrReg::SIMD(r2)) => {
+                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
+                    dynasm!(ops
+                        ; fmov D(r_temp.r() as u32), X(r1 as u32)
+                        ; fcmp D(r_temp.r() as u32), D(r2 as u32)
+                    );
+                    set_reg_by_flags(ops, signed, cmp_type, r_out);
+                }
+
+                // SIMD, GPR
+                (DataType::F32, ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
                     let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
                     dynasm!(ops
                         ; fmov S(r_temp.r() as u32), W(r2 as u32)
@@ -578,6 +603,35 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
+                (DataType::F64, ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
+                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
+                    dynasm!(ops
+                        ; fmov D(r_temp.r() as u32), X(r2 as u32)
+                        ; fcmp D(r1 as u32), D(r_temp.r() as u32)
+                    );
+                    set_reg_by_flags(ops, signed, cmp_type, r_out);
+                }
+
+                // GPR, GPR
+                (DataType::F32, ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+                    let r_temp_1 = self.scratch_regs.borrow::<register_type::SIMD>();
+                    let r_temp_2 = self.scratch_regs.borrow::<register_type::SIMD>();
+                    dynasm!(ops
+                        ; fmov S(r_temp_1.r() as u32), W(r1 as u32)
+                        ; fmov S(r_temp_2.r() as u32), W(r2 as u32)
+                        ; fcmp S(r_temp_1.r() as u32), S(r_temp_2.r() as u32)
+                    );
+                }
+                (DataType::F64, ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+                    let r_temp_1 = self.scratch_regs.borrow::<register_type::SIMD>();
+                    let r_temp_2 = self.scratch_regs.borrow::<register_type::SIMD>();
+                    dynasm!(ops
+                        ; fmov D(r_temp_1.r() as u32), X(r1 as u32)
+                        ; fmov D(r_temp_2.r() as u32), X(r2 as u32)
+                        ; fcmp D(r_temp_1.r() as u32), D(r_temp_2.r() as u32)
+                    );
+                }
+
                 _ => todo!(
                     "Unsupported float Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
                     r_out,
@@ -1196,7 +1250,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::Bool, ConstOrReg::GPR(r)) => {
                     dynasm!(ops
                         ; cmp XSP(r), 0
-                        ; cset X(r), eq
+                        ; cset X(r_out as u32), eq
                     )
                 }
                 _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a),
@@ -1311,6 +1365,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
                     dynasm!(ops
                         ; fsub S(r_out as u32), S(r1), S(r2)
+                    )
+                }
+                (DataType::F64, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                    dynasm!(ops
+                        ; fsub D(r_out as u32), D(r1), D(r2)
                     )
                 }
                 _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
