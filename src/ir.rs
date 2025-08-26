@@ -1,3 +1,5 @@
+use itertools::Itertools;
+use petgraph::{algo::dominators, graph::Graph};
 use std::{cell::RefCell, rc::Rc};
 
 use ordered_float::OrderedFloat;
@@ -228,6 +230,34 @@ pub enum Instruction {
     },
 }
 
+impl Instruction {
+    pub fn all_inputslots(&self) -> Vec<InputSlot> {
+        match self {
+            Instruction::Comment(_) => vec![],
+            Instruction::Instruction { inputs, .. } => inputs.clone(),
+            Instruction::Branch {
+                cond,
+                if_true,
+                if_false,
+            } => {
+                let mut slots = vec![*cond];
+                slots.extend(if_true.arguments.iter());
+                slots.extend(if_false.arguments.iter());
+                slots
+            }
+            Instruction::Jump { target } => target.arguments.clone(),
+            Instruction::Return { value } => value.iter().cloned().collect(),
+        }
+    }
+    pub fn references_values_in_blocks(&self, func: &IRFunctionInternal) -> Vec<usize> {
+        self.all_inputslots()
+            .iter()
+            .flat_map(|slot| slot.block_referenced(func))
+            .dedup()
+            .collect_vec()
+    }
+}
+
 #[derive(Debug)]
 pub struct InstructionOutput {
     outputs: Vec<InputSlot>,
@@ -294,6 +324,7 @@ pub struct IRContext {
 
 #[derive(Debug)]
 pub struct IRFunctionInternal {
+    pub block_graph: Graph<usize, ()>,
     pub stack_bytes_used: usize,
     pub blocks: Vec<IRBasicBlock>,
     pub instructions: Vec<IndexedInstruction>,
@@ -346,6 +377,7 @@ impl IRFunction {
     pub fn new(_context: RefCell<IRContext>) -> Self {
         IRFunction {
             func: Rc::new(RefCell::new(IRFunctionInternal {
+                block_graph: Graph::new(),
                 blocks: Vec::new(),
                 instructions: Vec::new(),
                 stack_bytes_used: 0,
@@ -355,12 +387,16 @@ impl IRFunction {
 
     pub fn new_block(&self, inputs: Vec<DataType>) -> IRBlockHandle {
         let index = self.func.borrow().blocks.len();
-        self.func.borrow_mut().blocks.push(IRBasicBlock {
-            is_closed: false,
-            index,
-            inputs: inputs.clone(),
-            instructions: Vec::new(),
-        });
+        {
+            let mut func = self.func.borrow_mut();
+            func.blocks.push(IRBasicBlock {
+                is_closed: false,
+                index,
+                inputs: inputs.clone(),
+                instructions: Vec::new(),
+            });
+            func.block_graph.add_node(index);
+        }
         return IRBlockHandle {
             index,
             inputs,
@@ -369,15 +405,46 @@ impl IRFunction {
     }
 
     pub fn validate(&self) {
-        for block in &self.func.borrow().blocks {
-            if !block.is_closed {
-                panic!("Unclosed block: block_{}", block.index);
-            }
-        }
+        self.func.borrow().validate();
     }
 }
 
 impl IRFunctionInternal {
+    pub fn validate(&self) {
+        // Ensure all blocks are closed
+        for block in &self.blocks {
+            if !block.is_closed {
+                panic!("Unclosed block: block_{}", block.index);
+            }
+        }
+
+        // Ensure all instructions only reference values from blocks that fully dominate their originating block
+        let block_dominators = dominators::simple_fast(&self.block_graph, 0.into());
+
+        for (block_index, block) in self.blocks.iter().enumerate() {
+            let doms = block_dominators
+                .dominators((block_index as u32).into())
+                .unwrap_or_else(|| panic!("Unreachable block (no dominators found) block index: {}", block_index))
+                .map(|n| n.index() as usize)
+                .collect::<std::collections::HashSet<_>>();
+
+            block.instructions.iter().for_each(|i_in_block| {
+                let instr = &self.instructions[*i_in_block];
+                let blocks_referenced = instr.instruction.references_values_in_blocks(&self);
+
+                for block in blocks_referenced {
+                    if !doms.contains(&block) {
+                        println!("{}", self);
+                        panic!(
+                            "Instruction '{}' references a value from block b{} which may not be initialized.",
+                            instr, block
+                        );
+                    }
+                }
+            });
+        }
+    }
+
     pub fn append_obj(&mut self, block_handle: &IRBlockHandle, instruction: Instruction) -> usize {
         let block = &mut self.blocks[block_handle.index];
         if block.is_closed {
@@ -387,10 +454,23 @@ impl IRFunctionInternal {
         let index = self.instructions.len();
 
         // Close the block if necessary
-        match instruction {
+        // Add edges to the block graph
+        match &instruction {
             #[cfg(feature = "ir_comments")]
             Instruction::Comment(_) => {}
-            Instruction::Branch { .. } | Instruction::Jump { .. } | Instruction::Return { .. } => {
+            Instruction::Branch { if_true, if_false, .. } => {
+                self.block_graph
+                    .add_edge((block_handle.index as u32).into(), (if_true.block_index as u32).into(), ());
+                self.block_graph
+                    .add_edge((block_handle.index as u32).into(), (if_false.block_index as u32).into(), ());
+                block.is_closed = true;
+            }
+            Instruction::Jump { target } => {
+                self.block_graph
+                    .add_edge((block_handle.index as u32).into(), (target.block_index as u32).into(), ());
+                block.is_closed = true;
+            }
+            Instruction::Return { .. } => {
                 block.is_closed = true;
             }
             Instruction::Instruction { .. } => {}

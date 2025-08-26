@@ -789,6 +789,8 @@ fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R
     let mut debug_info = CompiledFunctionDebugInfo::new();
     let mut lp = LiteralPool::new();
 
+    compiler.get_func().validate();
+
     debug_info.add_comment(C::offset(ops), format!("Function prologue"));
 
     compiler.prologue(ops);
@@ -816,10 +818,8 @@ fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R
 }
 
 pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> CompiledFunctionVec {
-    func.validate();
     #[cfg(target_arch = "x86_64")]
     let mut ops = dynasmrt::VecAssembler::<X64Relocation>::new(baseaddr);
-    // TODO fix above for x86_64
     #[cfg(target_arch = "aarch64")]
     let mut ops = dynasmrt::VecAssembler::<Aarch64Relocation>::new(baseaddr);
 
@@ -842,7 +842,6 @@ pub fn compile_vec(func: &IRFunction, baseaddr: usize) -> CompiledFunctionVec {
 
 /// Compile an IR function into machine code
 pub fn compile(func: &IRFunction) -> CompiledFunction {
-    func.validate();
     #[cfg(target_arch = "x86_64")]
     let mut ops = dynasmrt::x64::Assembler::new().unwrap();
     #[cfg(target_arch = "aarch64")]

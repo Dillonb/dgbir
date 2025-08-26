@@ -34,6 +34,33 @@ fn unclosed_block() {
 }
 
 #[test]
+#[should_panic(
+    expected = "Instruction 'v3 : U32 = Add(v2, U32(1))' references a value from block b1 which may not be initialized."
+)]
+fn use_value_from_non_dominator_block() {
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+
+    let mut block_a = func.new_block(vec![DataType::Bool]);
+    let one = block_a.add(DataType::U32, const_u32(1), const_u32(0));
+
+    let mut block_b = func.new_block(vec![]);
+
+    let mut block_c = func.new_block(vec![]);
+    block_a.branch(block_a.input(0), block_b.call(vec![]), block_c.call(vec![]));
+
+    let two = block_b.add(DataType::U32, one.val(), const_u32(1));
+
+    let three = block_c.add(DataType::U32, two.val(), const_u32(1));
+
+    let mut block_d = func.new_block(vec![DataType::U32]);
+    block_b.jump(block_d.call(vec![two.val()]));
+    block_c.jump(block_d.call(vec![three.val()]));
+    block_d.ret(Some(block_d.input(0)));
+    compile(&func);
+}
+
+#[test]
 fn compiler_identityfunc() {
     let context = IRContext::new();
     let func = IRFunction::new(context);

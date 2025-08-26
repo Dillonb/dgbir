@@ -386,6 +386,16 @@ impl InputSlot {
             panic!("Expected u64 constant, got {:?}", self);
         }
     }
+
+    pub fn block_referenced(&self, func: &IRFunctionInternal) -> Option<usize> {
+        match self {
+            InputSlot::InstructionOutput { instruction_index, .. } => {
+                Some(func.instructions[*instruction_index].block_index)
+            }
+            InputSlot::BlockInput { block_index, .. } => Some(*block_index),
+            InputSlot::Constant(_) => None,
+        }
+    }
 }
 
 struct IRFunctionValueIterator<'a> {
