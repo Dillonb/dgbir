@@ -774,45 +774,60 @@ impl IRFunctionInternal {
                 .splice(i..i, [spill_instr_index]);
         }
 
-        // Now, insert a reload instruction before the first usage after the spill
-
-        let first_usage_post_spill = usages_post_spill[0].recalculate_index_in_block(self);
-
-        let reload_instr_index = self.instructions.len();
-        let reload_instr_block_index = first_usage_post_spill.block_index;
-        let reload_instr = IndexedInstruction {
-            block_index: reload_instr_block_index,
-            index: reload_instr_index,
-            instruction: Instruction::Instruction {
-                tp: InstructionType::LoadFromStack,
-                inputs: vec![const_ptr(stack_location)],
-                outputs: vec![OutputSlot {
-                    tp: to_spill.data_type(),
-                }],
-            },
-        };
-        self.instructions.push(reload_instr);
-
-        {
-            let i = first_usage_post_spill.instruction_index_in_block; // Insert immediately before the first usage post-spill
-            self.blocks[first_usage_post_spill.block_index]
-                .instructions
-                .splice(i..i, [reload_instr_index]);
-        }
-
-        let reloaded_inputslot = InputSlot::InstructionOutput {
-            instruction_index: reload_instr_index,
-            output_index: 0,
-            tp: to_spill.data_type(),
-        };
+        // Maps block index of reload to an InputSlot referencing the reload
+        let mut reloads: BTreeMap<usize, InputSlot> = BTreeMap::new();
 
         let dominators = self.calculate_dominance_graph();
 
-        // Then rewrite all following usages to use that reload:
+        // Then rewrite all references post-spill to a reload. Insert several reloads if needed.
         for usage in usages_post_spill {
-            if !dominators.dominates(reload_instr_block_index, usage.block_index) {
-                panic!("Reload instruction's block does not dominate usage's block! Insert a new reload.");
-            }
+            // Iterate in reverse over all the existing loads to find the _farthest out_ usage, to
+            // be kinder to the register allocator.
+            // Only consider reloads in blocks that dominate the block with the usage.
+            let reload = reloads.iter().rev().find(|(reload_block, reload)| {
+                if !dominators.dominates(**reload_block, usage.block_index) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            let reloaded_inputslot = if let Some((_, reloaded_inputslot)) = reload {
+                *reloaded_inputslot
+            } else {
+                let usage = usage.recalculate_index_in_block(self);
+
+                let reload_instr_index = self.instructions.len();
+                let reload_instr_block_index = usage.block_index;
+                let reload_instr = IndexedInstruction {
+                    block_index: reload_instr_block_index,
+                    index: reload_instr_index,
+                    instruction: Instruction::Instruction {
+                        tp: InstructionType::LoadFromStack,
+                        inputs: vec![const_ptr(stack_location)],
+                        outputs: vec![OutputSlot {
+                            tp: to_spill.data_type(),
+                        }],
+                    },
+                };
+                self.instructions.push(reload_instr);
+
+                {
+                    let i = usage.instruction_index_in_block; // Insert immediately before the usage
+                    self.blocks[usage.block_index]
+                        .instructions
+                        .splice(i..i, [reload_instr_index]);
+                }
+
+                let reloaded_inputslot = InputSlot::InstructionOutput {
+                    instruction_index: reload_instr_index,
+                    output_index: 0,
+                    tp: to_spill.data_type(),
+                };
+                reloads.insert(usage.block_index, reloaded_inputslot);
+                reloaded_inputslot
+            };
+
             let instruction = &mut self.instructions[usage.instruction_index];
             match &mut instruction.instruction {
                 #[cfg(feature = "ir_comments")]
