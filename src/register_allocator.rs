@@ -784,13 +784,10 @@ impl IRFunctionInternal {
             // Iterate in reverse over all the existing loads to find the _farthest out_ usage, to
             // be kinder to the register allocator.
             // Only consider reloads in blocks that dominate the block with the usage.
-            let reload = reloads.iter().rev().find(|(reload_block, reload)| {
-                if !dominators.dominates(**reload_block, usage.block_index) {
-                    return false;
-                }
-
-                return true;
-            });
+            let reload = reloads
+                .iter()
+                .rev()
+                .find(|(reload_block, _)| dominators.dominates(**reload_block, usage.block_index));
 
             let reloaded_inputslot = if let Some((_, reloaded_inputslot)) = reload {
                 *reloaded_inputslot
