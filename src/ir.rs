@@ -1,6 +1,6 @@
 use itertools::Itertools;
-use petgraph::{algo::dominators, graph::Graph};
-use std::{cell::RefCell, rc::Rc};
+use petgraph::{algo::dominators::{self, Dominators}, graph::{Graph, NodeIndex}};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use ordered_float::OrderedFloat;
 
@@ -409,7 +409,38 @@ impl IRFunction {
     }
 }
 
+pub struct IRFunctionBlockDominanceGraph {
+    doms: Dominators<NodeIndex>,
+}
+
+impl IRFunctionBlockDominanceGraph {
+    /// Get a set of all dominators of a given block
+    pub fn get_dominators_of_block(&self, block_index: usize) -> HashSet<usize> {
+        self.doms
+            .dominators((block_index as u32).into())
+            .unwrap_or_else(|| panic!("Unreachable block (no dominators found) block index: {}", block_index))
+            .map(|n| n.index() as usize)
+            .collect::<std::collections::HashSet<_>>()
+    }
+
+    /// Returns true if block `a` dominates block `b`
+    /// TODO: Optimize, cache in a HashMap?
+    pub fn dominates(&self, a: usize, b: usize) -> bool {
+        self.doms
+            .dominators((b as u32).into())
+            .unwrap_or_else(|| panic!("Unreachable block (no dominators found) block index: {}", b))
+            .find(|n| n.index() as usize == a)
+            .is_some()
+    }
+}
+
 impl IRFunctionInternal {
+    pub fn calculate_dominance_graph(&self) -> IRFunctionBlockDominanceGraph {
+        IRFunctionBlockDominanceGraph {
+            doms: dominators::simple_fast(&self.block_graph, 0.into()),
+        }
+    }
+
     pub fn validate(&self) {
         // Ensure all blocks are closed
         for block in &self.blocks {
@@ -419,14 +450,10 @@ impl IRFunctionInternal {
         }
 
         // Ensure all instructions only reference values from blocks that fully dominate their originating block
-        let block_dominators = dominators::simple_fast(&self.block_graph, 0.into());
+        let function_block_dominators = self.calculate_dominance_graph();
 
         for (block_index, block) in self.blocks.iter().enumerate() {
-            let doms = block_dominators
-                .dominators((block_index as u32).into())
-                .unwrap_or_else(|| panic!("Unreachable block (no dominators found) block index: {}", block_index))
-                .map(|n| n.index() as usize)
-                .collect::<std::collections::HashSet<_>>();
+            let doms = function_block_dominators.get_dominators_of_block(block_index);
 
             block.instructions.iter().for_each(|i_in_block| {
                 let instr = &self.instructions[*i_in_block];

@@ -779,8 +779,9 @@ impl IRFunctionInternal {
         let first_usage_post_spill = usages_post_spill[0].recalculate_index_in_block(self);
 
         let reload_instr_index = self.instructions.len();
+        let reload_instr_block_index = first_usage_post_spill.block_index;
         let reload_instr = IndexedInstruction {
-            block_index: first_usage_post_spill.block_index,
+            block_index: reload_instr_block_index,
             index: reload_instr_index,
             instruction: Instruction::Instruction {
                 tp: InstructionType::LoadFromStack,
@@ -805,8 +806,13 @@ impl IRFunctionInternal {
             tp: to_spill.data_type(),
         };
 
+        let dominators = self.calculate_dominance_graph();
+
         // Then rewrite all following usages to use that reload:
         for usage in usages_post_spill {
+            if !dominators.dominates(reload_instr_block_index, usage.block_index) {
+                panic!("Reload instruction's block does not dominate usage's block! Insert a new reload.");
+            }
             let instruction = &mut self.instructions[usage.instruction_index];
             match &mut instruction.instruction {
                 #[cfg(feature = "ir_comments")]
