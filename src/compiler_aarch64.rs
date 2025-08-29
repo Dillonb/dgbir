@@ -1417,6 +1417,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
                 );
             }
+            (DataType::U64, DataType::U64, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+                let r_out_lo = output_regs[0].unwrap().expect_gpr();
+                let r_out_hi = output_regs[1].unwrap().expect_gpr();
+                dynasm!(ops
+                    ; umulh X(r_out_hi as u32), X(r_a as u32), X(r_b as u32)
+                    ; mul X(r_out_lo as u32), X(r_a as u32), X(r_b as u32)
+                );
+            }
             (DataType::F32, DataType::F32, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
