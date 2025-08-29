@@ -141,13 +141,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; stur X(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
+                        ; str X(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                     )
                 }
                 Register::SIMD(r) => {
                     assert_eq!(reg.size(), 16);
                     dynasm!(ops
-                        ; stur Q(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128) as i32]
+                        ; str Q(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     );
                 }
             }
@@ -295,13 +295,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; ldur X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64) as i32]
+                        ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                     )
                 }
                 Register::SIMD(r) => {
                     assert_eq!(reg.size(), 16);
                     dynasm!(ops
-                        ; ldur Q(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128) as i32]
+                        ; ldr Q(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     )
                 }
             }
@@ -783,7 +783,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
                 dynasm!(ops
-                    ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
+                    ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64)]
                 )
             }
             (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::F64) => {
@@ -819,7 +819,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
                 dynasm!(ops
-                    ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64) as u32]
+                    ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64)]
                 )
             }
             (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::F64) => {

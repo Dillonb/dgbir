@@ -726,11 +726,16 @@ impl Display for Register {
 
 impl IRFunctionInternal {
     pub fn new_sized_stack_location(&mut self, bytes_needed: usize) -> usize {
-        // Align the stack to this data type
-        self.stack_bytes_used += bytes_needed + (self.stack_bytes_used % bytes_needed);
+        assert!(bytes_needed.is_power_of_two(), "Stack allocations must be a power of two in size");
 
-        return self.stack_bytes_used - bytes_needed;
+        // Align to the size of the allocation
+        self.stack_bytes_used = (self.stack_bytes_used + bytes_needed - 1) & !(bytes_needed - 1);
+
+        let location_offset = self.stack_bytes_used;
+        self.stack_bytes_used += bytes_needed;
+        return location_offset;
     }
+
     pub fn new_stack_location(&mut self, tp: DataType) -> usize {
         return self.new_sized_stack_location(tp.size());
     }
