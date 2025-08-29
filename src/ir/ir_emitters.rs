@@ -126,7 +126,9 @@ impl IRBlockHandle {
         arg2: InputSlot,
     ) -> InstructionOutput {
         let slot = match mult_type {
-            MultiplyType::Split => OutputSlot { tp: result_tp.half_type() },
+            MultiplyType::Split => OutputSlot {
+                tp: result_tp.half_type(),
+            },
             MultiplyType::Combined => OutputSlot { tp: result_tp },
         };
         let outputs = match mult_type {

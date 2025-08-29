@@ -1,5 +1,8 @@
 use itertools::Itertools;
-use petgraph::{algo::dominators::{self, Dominators}, graph::{Graph, NodeIndex}};
+use petgraph::{
+    algo::dominators::{self, Dominators},
+    graph::{Graph, NodeIndex},
+};
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use ordered_float::OrderedFloat;
