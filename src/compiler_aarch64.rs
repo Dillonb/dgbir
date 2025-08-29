@@ -1399,7 +1399,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         b: ConstOrReg,
     ) {
         match (result_tp, arg_tp, output_regs.len(), a, b) {
-            (DataType::U64, DataType::U32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+            (DataType::U32, DataType::U32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
@@ -1408,7 +1408,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
                 );
             }
-            (DataType::S64, DataType::S32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+            (DataType::S32, DataType::S32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops

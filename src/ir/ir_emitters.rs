@@ -125,7 +125,10 @@ impl IRBlockHandle {
         arg1: InputSlot,
         arg2: InputSlot,
     ) -> InstructionOutput {
-        let slot = OutputSlot { tp: result_tp };
+        let slot = match mult_type {
+            MultiplyType::Split => OutputSlot { tp: result_tp.half_type() },
+            MultiplyType::Combined => OutputSlot { tp: result_tp },
+        };
         let outputs = match mult_type {
             MultiplyType::Split => vec![slot, slot],
             MultiplyType::Combined => vec![slot],

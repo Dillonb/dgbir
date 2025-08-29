@@ -83,6 +83,23 @@ impl DataType {
             _ => false,
         }
     }
+
+    fn half_type(&self) -> DataType {
+        match self {
+            DataType::U8 | DataType::S8 => panic!("Cannot take half type of U8 or S8"),
+            DataType::U16 => DataType::U8,
+            DataType::S16 => DataType::S8,
+            DataType::U32 => DataType::U16,
+            DataType::S32 => DataType::S16,
+            DataType::U64 => DataType::U32,
+            DataType::S64 => DataType::S32,
+            DataType::U128 => DataType::U64,
+            DataType::F32 => panic!("Cannot take half type of F32"),
+            DataType::F64 => DataType::F32,
+            DataType::Bool => panic!("Cannot take half type of Bool"),
+            DataType::Ptr => panic!("Cannot take half type of Ptr"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
