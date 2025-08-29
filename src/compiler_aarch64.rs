@@ -1501,6 +1501,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
                 );
             }
+            (DataType::U64, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+                dynasm!(ops
+                    ; udiv X(r_quotient as u32), X(r_dividend as u32), X(r_divisor as u32)
+                    ; msub X(r_remainder as u32), X(r_quotient as u32), X(r_divisor as u32), X(r_dividend as u32)
+                );
+            }
             (DataType::F32, ConstOrReg::SIMD(r_dividend), ConstOrReg::SIMD(r_divisor)) => {
                 if r_remainder.is_some() {
                     panic!("Remainder is not supported for F32 division");
