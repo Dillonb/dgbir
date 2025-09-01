@@ -1356,14 +1356,18 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; sub W(r_out as u32), W(r_minuend), W(r_subtrahend.r())
                     )
                 }
-                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                (DataType::F32, Register::SIMD(r_out), a, b) => {
+                    let a = self.materialize_as_simd(ops, lp, a);
+                    let b = self.materialize_as_simd(ops, lp, b);
                     dynasm!(ops
-                        ; fsub S(r_out as u32), S(r1), S(r2)
+                        ; fsub S(r_out as u32), S(a.r()), S(b.r())
                     )
                 }
-                (DataType::F64, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                (DataType::F64, Register::SIMD(r_out), a, b) => {
+                    let a = self.materialize_as_simd(ops, lp, a);
+                    let b = self.materialize_as_simd(ops, lp, b);
                     dynasm!(ops
-                        ; fsub D(r_out as u32), D(r1), D(r2)
+                        ; fsub D(r_out as u32), D(a.r()), D(b.r())
                     )
                 }
                 _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
