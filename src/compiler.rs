@@ -634,13 +634,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                     input_index,
                     data_type: *input,
                 };
-                let input_reg = self.get_allocations().get(&block_input).unwrap();
-                let arg_reg = arg_regs
-                    .iter()
-                    .find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r))
-                    .unwrap();
-                allocated_arg_regs.insert(arg_reg);
-                self.move_to_reg(ops, lp, arg_reg.to_const_or_reg(), input_reg);
+                // If the argument is unused, it won't have a register allocated to it.
+                if let Some(input_reg) = self.get_allocations().get(&block_input) {
+                    let arg_reg = arg_regs
+                        .iter()
+                        .find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r))
+                        .unwrap();
+                    allocated_arg_regs.insert(arg_reg);
+                    self.move_to_reg(ops, lp, arg_reg.to_const_or_reg(), input_reg);
+                }
             });
     }
 
