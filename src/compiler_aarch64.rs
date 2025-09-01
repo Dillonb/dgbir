@@ -1126,6 +1126,25 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; mov W(r_out as u32), W(r_in as u32)
                 );
             }
+            (Register::SIMD(r_out), DataType::F64, value, DataType::F32) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; fcvt D(r_out as u32), S(value.r())
+                );
+            }
+            (Register::SIMD(r_out), DataType::F64, value, DataType::S32) => {
+                let value = self.materialize_as_gpr(ops, lp, value);
+                dynasm!(ops
+                    ; scvtf D(r_out as u32), W(value.r())
+                );
+            }
+            (Register::GPR(r_out), DataType::S32, value, DataType::F32) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; fcvtzs W(r_out as u32), S(value.r())
+                );
+            }
+
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
