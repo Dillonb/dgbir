@@ -170,6 +170,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn move_to_reg(&self, ops: &mut Ops, lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
         match (from, to) {
+            (ConstOrReg::U16(c), Register::GPR(r_to)) => {
+                load_32_bit_constant(ops, lp, r_to as u32, c as u32);
+            }
+            (ConstOrReg::S16(c), Register::GPR(r_to)) => {
+                load_64_bit_signed_constant(ops, lp, r_to as u32, c.into());
+            }
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
                 load_32_bit_constant(ops, lp, r_to as u32, c);
             }
@@ -185,6 +191,16 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
                     ; mov X(r_to as u32), X(r_from as u32)
+                );
+            }
+            (ConstOrReg::GPR(r_from), Register::SIMD(r_to)) => {
+                dynasm!(ops
+                    ; fmov D(r_to as u32), X(r_from as u32)
+                );
+            }
+            (ConstOrReg::SIMD(r_from), Register::GPR(r_to)) => {
+                dynasm!(ops
+                    ; fmov X(r_to as u32), D(r_from as u32)
                 );
             }
             (ConstOrReg::SIMD(r_from), Register::SIMD(r_to)) => {
@@ -346,93 +362,36 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
             return;
         } else {
-            match (tp, r_out, a, b) {
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
-                    let c = c.to_s64_const().unwrap();
-                    if c > 0 && c < 4096 {
-                        dynasm!(ops
-                            ; add WSP(r_out as u32), WSP(r), c as u32
-                        )
-                    } else if c < 0 && c > -4096 {
-                        let c = c.abs() as u32;
-                        dynasm!(ops
-                            ; sub WSP(r_out as u32), WSP(r), c
-                        );
-                    } else {
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        load_64_bit_signed_constant(ops, lp, r_temp.r(), c);
-                        dynasm!(ops
-                            ; add W(r_out as u32), W(r), W(r_temp.r())
-                        )
-                    }
-                }
-                // Identical to above but the constant comes before the GPR
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), c, ConstOrReg::GPR(r)) if c.is_const() => {
-                    let c = c.to_s64_const().unwrap();
-                    if c > 0 && c < 4096 {
-                        dynasm!(ops
-                            ; add WSP(r_out as u32), WSP(r), c as u32
-                        )
-                    } else if c < 0 && c > -4096 {
-                        let c = c.abs() as u32;
-                        dynasm!(ops
-                            ; sub WSP(r_out as u32), WSP(r), c
-                        );
-                    } else {
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        load_64_bit_signed_constant(ops, lp, r_temp.r(), c);
-                        dynasm!(ops
-                            ; add W(r_out as u32), W(r), W(r_temp.r())
-                        )
-                    }
-                }
-                (DataType::U64 | DataType::S64, Register::GPR(r_out), ConstOrReg::GPR(r), c) if c.is_const() => {
-                    let c = c.to_s64_const().unwrap();
-                    if c > 0 && c < 4096 {
-                        dynasm!(ops
-                            ; add XSP(r_out as u32), XSP(r), c as u32
-                        )
-                    } else if c < 0 && c > -4096 {
-                        let c = c.abs() as u32;
-                        dynasm!(ops
-                            ; sub XSP(r_out as u32), XSP(r), c
-                        );
-                    } else {
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        load_64_bit_constant(ops, lp, r_temp.r(), c as u64);
-                        dynasm!(ops
-                            ; add X(r_out as u32), X(r), X(r_temp.r())
-                        )
-                    }
-                }
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
+            match (tp, r_out) {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
+                    let a = self.materialize_as_gpr(ops, lp, a);
+                    let b = self.materialize_as_gpr(ops, lp, b);
                     dynasm!(ops
-                        ; add W(r_out as u32), W(r1), W(r2)
-                    )
+                        ; add W(r_out as u32), W(a.r()), W(b.r())
+                    );
                 }
-                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
+                    let a = self.materialize_as_gpr(ops, lp, a);
+                    let b = self.materialize_as_gpr(ops, lp, b);
                     dynasm!(ops
-                        ; fadd S(r_out as u32), S(r1), S(r2)
-                    )
+                        ; add X(r_out as u32), X(a.r()), X(b.r())
+                    );
                 }
-                (DataType::F64, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                (DataType::F32, Register::SIMD(r_out)) => {
+                    let a = self.materialize_as_simd(ops, lp, a);
+                    let b = self.materialize_as_simd(ops, lp, b);
                     dynasm!(ops
-                        ; fadd D(r_out as u32), D(r1), D(r2)
-                    )
+                        ; fadd S(r_out as u32), S(a.r()), S(b.r())
+                    );
                 }
-                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
+                (DataType::F64, Register::SIMD(r_out)) => {
+                    let a = self.materialize_as_simd(ops, lp, a);
+                    let b = self.materialize_as_simd(ops, lp, b);
                     dynasm!(ops
-                        ; fmov S(r_out as u32), *c
-                        ; fadd S(r_out as u32), S(r_out as u32), S(r)
-                    )
+                        ; fadd D(r_out as u32), D(a.r()), D(b.r())
+                    );
                 }
-                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
-                    dynasm!(ops
-                        ; fmov S(r_out as u32), W(r2 as u32)
-                        ; fadd S(r_out as u32), S(r_out as u32), S(r1)
-                    )
-                }
-                _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
+                _ => todo!("Unsupported Add operation: ({:?}, {:?})", tp, r_out),
             }
         }
     }

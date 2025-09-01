@@ -45,6 +45,34 @@ pub enum ConstOrReg {
     S64(i64),
 }
 
+pub enum MaterializedGpr {
+    AlreadyGPR(u32),
+    TemporaryGPR(BorrowedReg<GPR>),
+}
+
+impl MaterializedGpr {
+    pub fn r(&self) -> u32 {
+        match self {
+            MaterializedGpr::AlreadyGPR(r) => *r,
+            MaterializedGpr::TemporaryGPR(temp) => temp.r(),
+        }
+    }
+}
+
+pub enum MaterializedSimd {
+    AlreadySIMD(u32),
+    TemporarySIMD(BorrowedReg<SIMD>),
+}
+
+impl MaterializedSimd {
+    pub fn r(&self) -> u32 {
+        match self {
+            MaterializedSimd::AlreadySIMD(r) => *r,
+            MaterializedSimd::TemporarySIMD(temp) => temp.r(),
+        }
+    }
+}
+
 impl ConstOrReg {
     pub fn to_reg(&self) -> Option<Register> {
         match self {
@@ -435,6 +463,28 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::RoundingMode(_) => todo!(),
             },
             // _ => todo!("Unsupported input slot type: {:?}", s),
+        }
+    }
+
+    fn materialize_as_gpr(&self, ops: &mut Ops, lp: &mut LiteralPool, value: ConstOrReg) -> MaterializedGpr {
+        match value {
+            ConstOrReg::GPR(r) => MaterializedGpr::AlreadyGPR(r),
+            v => {
+                let r_temp = self.get_scratch_regs().borrow::<register_type::GPR>();
+                self.move_to_reg(ops, lp, v, r_temp.reg());
+                MaterializedGpr::TemporaryGPR(r_temp)
+            }
+        }
+    }
+
+    fn materialize_as_simd(&self, ops: &mut Ops, lp: &mut LiteralPool, value: ConstOrReg) -> MaterializedSimd {
+        match value {
+            ConstOrReg::SIMD(r) => MaterializedSimd::AlreadySIMD(r),
+            v => {
+                let r_temp = self.get_scratch_regs().borrow::<register_type::SIMD>();
+                self.move_to_reg(ops, lp, v, r_temp.reg());
+                MaterializedSimd::TemporarySIMD(r_temp)
+            }
         }
     }
 
