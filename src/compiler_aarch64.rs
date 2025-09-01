@@ -1378,7 +1378,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     fn multiply(
         &self,
         ops: &mut Ops,
-        _lp: &mut LiteralPool,
+        lp: &mut LiteralPool,
         result_tp: DataType,
         arg_tp: DataType,
         output_regs: Vec<Option<Register>>,
@@ -1420,58 +1420,20 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; mul X(r_out_lo as u32), X(r_a as u32), X(r_b as u32)
                 );
             }
-            (DataType::F32, DataType::F32, 1, ConstOrReg::SIMD(r_a), ConstOrReg::SIMD(r_b)) => {
+            (DataType::F32, DataType::F32, 1, a, b) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
-                    ; fmul S(r_out as u32), S(r_a as u32), S(r_b as u32)
+                    ; fmul S(r_out as u32), S(a.r()), S(b.r())
                 );
             }
-            (DataType::F32, DataType::F32, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
+            (DataType::F64, DataType::F64, 1, a, b) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
-                    // Bit preserving MOV to an FPU register
-                    ; fmov S(r_out as u32), W(r_a as u32)
-                    ; fmul S(r_out as u32), S(r_out as u32), S(r_b as u32)
-                );
-            }
-            (DataType::F32, DataType::F32, 1, ConstOrReg::SIMD(r_a), ConstOrReg::GPR(r_b)) => {
-                let r_out = output_regs[0].unwrap().expect_simd();
-                dynasm!(ops
-                    // Bit preserving MOV to an FPU register
-                    ; fmov S(r_out as u32), W(r_b as u32)
-                    ; fmul S(r_out as u32), S(r_out as u32), S(r_a as u32)
-                );
-            }
-            (DataType::F32, DataType::F32, 1, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
-                let r_out = output_regs[0].unwrap().expect_simd();
-                let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
-                dynasm!(ops
-                    // Bit preserving MOV to an FPU register
-                    ; fmov S(r_out as u32), W(r_a as u32)
-                    ; fmov S(r_temp.r() as u32), W(r_b as u32)
-                    ; fmul S(r_out as u32), S(r_out as u32), S(r_temp.r())
-                );
-            }
-            (DataType::F64, DataType::F64, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
-                let r_out = output_regs[0].unwrap().expect_simd();
-                dynasm!(ops
-                    // Bit preserving MOV to an FPU register
-                    ; fmov D(r_out as u32), X(r_a as u32)
-                    ; fmul D(r_out as u32), D(r_out as u32), D(r_b as u32)
-                );
-            }
-            (DataType::F64, DataType::F64, 1, ConstOrReg::SIMD(r_a), ConstOrReg::GPR(r_b)) => {
-                let r_out = output_regs[0].unwrap().expect_simd();
-                dynasm!(ops
-                    // Bit preserving MOV to an FPU register
-                    ; fmov D(r_out as u32), X(r_b as u32)
-                    ; fmul D(r_out as u32), D(r_out as u32), D(r_a as u32)
-                );
-            }
-            (DataType::F64, DataType::F64, 1, ConstOrReg::SIMD(r_a), ConstOrReg::SIMD(r_b)) => {
-                let r_out = output_regs[0].unwrap().expect_simd();
-                dynasm!(ops
-                    ; fmul D(r_out as u32), D(r_a as u32), D(r_b as u32)
+                    ; fmul D(r_out as u32), D(a.r()), D(b.r())
                 );
             }
             _ => todo!(
