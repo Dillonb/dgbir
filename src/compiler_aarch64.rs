@@ -700,7 +700,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
-                    ; str D(r_value as u32), [X(r_ptr as u32), offset as u32]
+                    ; str S(r_value as u32), [X(r_ptr as u32), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
