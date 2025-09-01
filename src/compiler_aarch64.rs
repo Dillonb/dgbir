@@ -729,7 +729,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_offset: ConstOrReg, tp: DataType) {
         match (&to_spill, &stack_offset, tp) {
-            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U8 | DataType::S8) => {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U8 | DataType::S8 | DataType::Bool) => {
                 dynasm!(ops
                     ; strb W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8) as u32]
                 )
@@ -770,7 +770,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_offset: ConstOrReg, tp: DataType) {
         match (r_out, &stack_offset, tp) {
-            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U8 | DataType::S8) => {
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U8 | DataType::S8 | DataType::Bool) => {
                 dynasm!(ops
                     ; ldrb W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8) as u32]
                 )
