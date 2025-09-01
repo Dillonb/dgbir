@@ -1488,7 +1488,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     fn divide(
         &self,
         ops: &mut Ops,
-        _lp: &mut LiteralPool,
+        lp: &mut LiteralPool,
         tp: DataType,
         r_quotient: Option<Register>,
         r_remainder: Option<Register>,
@@ -1520,35 +1520,29 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; msub X(r_remainder as u32), X(r_quotient as u32), X(r_divisor as u32), X(r_dividend as u32)
                 );
             }
-            (DataType::F32, ConstOrReg::SIMD(r_dividend), ConstOrReg::SIMD(r_divisor)) => {
+            (DataType::F32, dividend, divisor) => {
+                let dividend = self.materialize_as_simd(ops, lp, dividend);
+                let divisor = self.materialize_as_simd(ops, lp, divisor);
+
                 if r_remainder.is_some() {
                     panic!("Remainder is not supported for F32 division");
                 }
                 let r_quotient = r_quotient.unwrap().expect_simd();
 
                 dynasm!(ops
-                    ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_divisor as u32)
+                    ; fdiv S(r_quotient as u32), S(dividend.r()), S(divisor.r())
                 );
             }
-            (DataType::F32, ConstOrReg::SIMD(r_dividend), ConstOrReg::GPR(r_divisor)) => {
-                if r_remainder.is_some() {
-                    panic!("Remainder is not supported for F32 division");
-                }
-                let r_quotient = r_quotient.unwrap().expect_simd();
-
-                dynasm!(ops
-                    ; fmov S(r_quotient as u32), W(r_divisor as u32)
-                    ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_quotient as u32)
-                );
-            }
-            (DataType::F64, ConstOrReg::SIMD(r_dividend), ConstOrReg::SIMD(r_divisor)) => {
+            (DataType::F64, dividend, divisor) => {
+                let dividend = self.materialize_as_simd(ops, lp, dividend);
+                let divisor = self.materialize_as_simd(ops, lp, divisor);
                 if r_remainder.is_some() {
                     panic!("Remainder is not supported for F64 division");
                 }
                 let r_quotient = r_quotient.unwrap().expect_simd();
 
                 dynasm!(ops
-                    ; fdiv D(r_quotient as u32), D(r_dividend as u32), D(r_divisor as u32)
+                    ; fdiv D(r_quotient as u32), D(dividend.r()), D(divisor.r())
                 );
             }
             _ => todo!("Unsupported Divide operation: {:?} / {:?} with type {:?}", dividend, divisor, tp),
