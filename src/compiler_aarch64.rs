@@ -790,6 +790,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str X(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64)]
                 )
             }
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::F32) => {
+                dynasm!(ops
+                    ; str S(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F32)]
+                )
+            }
             (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::F64) => {
                 dynasm!(ops
                     ; str D(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
@@ -816,7 +821,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldrh W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U16) as u32]
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32) => {
+            (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
                     ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
                 )
@@ -824,6 +829,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
                 dynasm!(ops
                     ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64)]
+                )
+            }
+            (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::F32) => {
+                dynasm!(ops
+                    ; ldr S(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F32)]
                 )
             }
             (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::F64) => {
@@ -1147,6 +1157,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fmov W(r_out as u32), S(r_in as u32)
                 )
             }
+            (Register::GPR(r_out), DataType::U32, ConstOrReg::GPR(r_in), DataType::U32) => {
+                dynasm!(ops
+                    ; mov W(r_out as u32), W(r_in as u32)
+                );
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
@@ -1445,6 +1460,24 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fmul S(r_out as u32), S(r_out as u32), S(r_b as u32)
                 );
             }
+            (DataType::F32, DataType::F32, 1, ConstOrReg::SIMD(r_a), ConstOrReg::GPR(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    // Bit preserving MOV to an FPU register
+                    ; fmov S(r_out as u32), W(r_b as u32)
+                    ; fmul S(r_out as u32), S(r_out as u32), S(r_a as u32)
+                );
+            }
+            (DataType::F32, DataType::F32, 1, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
+                dynasm!(ops
+                    // Bit preserving MOV to an FPU register
+                    ; fmov S(r_out as u32), W(r_a as u32)
+                    ; fmov S(r_temp.r() as u32), W(r_b as u32)
+                    ; fmul S(r_out as u32), S(r_out as u32), S(r_temp.r())
+                );
+            }
             (DataType::F64, DataType::F64, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
@@ -1521,6 +1554,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
                 dynasm!(ops
                     ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_divisor as u32)
+                );
+            }
+            (DataType::F32, ConstOrReg::SIMD(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+                if r_remainder.is_some() {
+                    panic!("Remainder is not supported for F32 division");
+                }
+                let r_quotient = r_quotient.unwrap().expect_simd();
+
+                dynasm!(ops
+                    ; fmov S(r_quotient as u32), W(r_divisor as u32)
+                    ; fdiv S(r_quotient as u32), S(r_dividend as u32), S(r_quotient as u32)
                 );
             }
             (DataType::F64, ConstOrReg::SIMD(r_dividend), ConstOrReg::SIMD(r_divisor)) => {
