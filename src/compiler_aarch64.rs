@@ -1511,16 +1511,18 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn square_root(&self, ops: &mut Ops, _lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
-        match (r_out, tp, value) {
-            (Register::SIMD(r_out), DataType::F32, ConstOrReg::SIMD(r_in)) => {
+    fn square_root(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
+        match (r_out, tp) {
+            (Register::SIMD(r_out), DataType::F32) => {
+                let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fsqrt S(r_out as u32), S(r_in as u32)
+                    ; fsqrt S(r_out as u32), S(value.r())
                 );
             }
-            (Register::SIMD(r_out), DataType::F64, ConstOrReg::SIMD(r_in)) => {
+            (Register::SIMD(r_out), DataType::F64) => {
+                let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fsqrt D(r_out as u32), D(r_in as u32)
+                    ; fsqrt D(r_out as u32), D(value.r())
                 );
             }
             _ => todo!("Unsupported SquareRoot operation: ({:?}, {:?}, {:?})", r_out, tp, value),
