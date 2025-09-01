@@ -1112,6 +1112,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; scvtf S(r_out as u32), W(r_in as u32)
                 );
             }
+            (Register::SIMD(r_out), DataType::F32, ConstOrReg::SIMD(r_in), DataType::S32) => {
+                dynasm!(ops
+                    ; scvtf S(r_out as u32), S(r_in as u32)
+                );
+            }
             (Register::SIMD(r_out), DataType::F32, ConstOrReg::GPR(r_in), DataType::F64) => {
                 dynasm!(ops
                     // Bit preserving MOV to an FPU register
@@ -1452,6 +1457,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; mul X(r_out_lo as u32), X(r_a as u32), X(r_b as u32)
                 );
             }
+            (DataType::F32, DataType::F32, 1, ConstOrReg::SIMD(r_a), ConstOrReg::SIMD(r_b)) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    ; fmul S(r_out as u32), S(r_a as u32), S(r_b as u32)
+                );
+            }
             (DataType::F32, DataType::F32, 1, ConstOrReg::GPR(r_a), ConstOrReg::SIMD(r_b)) => {
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
@@ -1581,8 +1592,20 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
-    fn square_root(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
-        todo!()
+    fn square_root(&self, ops: &mut Ops, _lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
+        match (r_out, tp, value) {
+            (Register::SIMD(r_out), DataType::F32, ConstOrReg::SIMD(r_in)) => {
+                dynasm!(ops
+                    ; fsqrt S(r_out as u32), S(r_in as u32)
+                );
+            }
+            (Register::SIMD(r_out), DataType::F64, ConstOrReg::SIMD(r_in)) => {
+                dynasm!(ops
+                    ; fsqrt D(r_out as u32), D(r_in as u32)
+                );
+            }
+            _ => todo!("Unsupported SquareRoot operation: ({:?}, {:?}, {:?})", r_out, tp, value),
+        }
     }
 
     fn absolute_value(
