@@ -1576,8 +1576,22 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         todo!()
     }
 
-    fn negate(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
-        todo!()
+    fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
+        match (tp, r_out) {
+            (DataType::F32, Register::SIMD(r_out)) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; fneg S(r_out as u32), S(value.r())
+                );
+            }
+            (DataType::F64, Register::SIMD(r_out)) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; fneg D(r_out as u32), D(value.r())
+                );
+            }
+            _ => todo!("Unsupported Negate operation: ({:?}, {:?}) with value {:?}", tp, r_out, value),
+        }
     }
 
     fn call_function(
