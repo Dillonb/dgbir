@@ -538,7 +538,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
             .arguments
             .iter()
             .enumerate()
-            .map(|(input_index, arg)| {
+            .flat_map(|(input_index, arg)| {
                 let data_type = self.get_func().blocks[target.block_index].inputs[input_index];
 
                 let in_block_value = Value::BlockInput {
@@ -547,10 +547,11 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                     data_type,
                 };
 
-                // TODO: if the argument is not used, this unwrap will fail.
-                // Need to remove this move if there's no target
-                let block_arg_reg = self.get_allocations().get(&in_block_value).unwrap();
-                (self.to_imm_or_reg(&arg), block_arg_reg)
+                // If an argument isn't used, there will be no allocated register for it, so don't
+                // bother moving that value into place
+                 self.get_allocations().get(&in_block_value).map(|block_arg_reg| {
+                    (self.to_imm_or_reg(&arg), block_arg_reg)
+                })
             })
             .collect::<BTreeMap<_, _>>();
 
