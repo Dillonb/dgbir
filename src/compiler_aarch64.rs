@@ -358,6 +358,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     r_out.expect_gpr() as u32,
                     a.to_u64_const().unwrap().wrapping_add(b.to_u64_const().unwrap()),
                 ),
+                DataType::S64 => {
+                    let result = a.to_s64_const().unwrap().wrapping_add(b.to_s64_const().unwrap());
+                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr() as u32, result);
+                }
                 _ => todo!("Unsupported Add operation with result type {} and constants: {:?} + {:?}", tp, a, b),
             }
             return;
@@ -1198,6 +1202,18 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; and X(r_out as u32), X(r_out as u32), X(r_temp.r())
                     );
                 }
+                (DataType::Bool, Register::GPR(r_out), v1, v2) => {
+                    let v1 = self.materialize_as_gpr(ops, lp, v1);
+                    let v2 = self.materialize_as_gpr(ops, lp, v2);
+                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                    dynasm!(ops
+                        ; cmp XSP(v1.r()), 0
+                        ; cset X(r_temp.r()), ne
+                        ; cmp XSP(v2.r()), 0
+                        ; cset X(r_out as u32), ne
+                        ; and X(r_out as u32), X(r_temp.r()), X(r_out as u32)
+                    );
+                }
                 _ => todo!("Unsupported AND operation: {:?} = {:?} & {:?} with type {:?}", r_out, a, b, tp),
             }
         }
@@ -1477,12 +1493,24 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         divisor: ConstOrReg,
     ) {
         match (tp, dividend, divisor) {
-            (DataType::S32, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+            (DataType::S32, dividend, divisor) => {
+                let dividend = self.materialize_as_gpr(ops, lp, dividend);
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; sdiv W(r_quotient as u32), W(r_dividend as u32), W(r_divisor as u32)
-                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
+                    ; sdiv W(r_quotient as u32), W(dividend.r()), W(divisor.r())
+                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(divisor.r()), W(dividend.r())
+                );
+            }
+            (DataType::S64, dividend, divisor) => {
+                let dividend = self.materialize_as_gpr(ops, lp, dividend);
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+                dynasm!(ops
+                    ; sdiv X(r_quotient as u32), X(dividend.r()), X(divisor.r())
+                    ; msub X(r_remainder as u32), X(r_quotient as u32), X(divisor.r()), X(dividend.r())
                 );
             }
             (DataType::U32, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
