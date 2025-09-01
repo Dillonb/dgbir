@@ -144,13 +144,15 @@ impl<T: RegPoolRegister> BorrowedReg<T> {
     pub fn r(&self) -> u32 {
         self.pool_reg.idx()
     }
+
+    pub fn reg(&self) -> Register {
+        self.reg
+    }
 }
 
 impl<T: RegPoolRegister> Drop for BorrowedReg<T> {
     fn drop(&mut self) {
         let mut pool = self.pool.borrow_mut();
-        if pool.regs.contains_key(&self.reg) {
-            pool.regs.insert(self.reg, false);
-        }
+        pool.regs.insert(self.reg, false);
     }
 }

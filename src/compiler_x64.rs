@@ -42,6 +42,10 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         return offset;
     }
 
+    fn get_scratch_regs(&self) -> &RegPool {
+        &self.scratch_regs
+    }
+
     fn new(ops: &mut Ops, func: &'a mut IRFunctionInternal) -> Self {
         let allocations = alloc_for(func);
 

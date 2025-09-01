@@ -16,6 +16,8 @@ use crate::compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::compiler_x64;
 use crate::ir::{IRFunction, IRFunctionInternal};
+use crate::reg_pool::register_type::{GPR, SIMD};
+use crate::reg_pool::{register_type, BorrowedReg, RegPool};
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
@@ -403,6 +405,8 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel;
     /// Get the current offset in the assembly being emitted.
     fn offset(ops: &mut Ops) -> usize;
+    /// Get a RegPool for getting temporary scratch registers
+    fn get_scratch_regs(&self) -> &RegPool;
 
     // Utility functions, shouldn't be overridden
     fn to_imm_or_reg(&self, s: &InputSlot) -> ConstOrReg {
@@ -453,6 +457,9 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
             }
         }
 
+        let mut temp_gprs: Vec<BorrowedReg<GPR>> = Vec::new();
+        let mut temp_simd: Vec<BorrowedReg<SIMD>> = Vec::new();
+
         // Used to reorder the moves in case there's a conflict
         let mut postponed_moves = Vec::new();
         while moves.len() > 0 {
@@ -467,18 +474,46 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                     pending_move_sources.remove(&to);
                 } else if pending_move_sources.contains(&to) {
                     if postponed_moves.contains(&to.to_const_or_reg()) {
-                        // What I think I have to do here is:
-                        //
+                        // Conflict that can't be resolved by reordering.
+                        // There's a cycle in the list of moves that needs
+                        // to be fixed by allocating a temporary register.
+
                         // Allocate a temporary register for the move target.
-                        //
-                        // Move the target into the temporary register.
-                        //
-                        // Remove the move of the target to _its target_ from the move queue and replace
-                        // it with a move from the temp reg to the target's target.
-                        //
-                        // Add this move back to postponed_moves and `continue`
-                        panic!("Would overwrite a pending move target - we have a cycle. Need to allocate temp regs to fix this.");
+                        let temp_reg = match to {
+                            Register::GPR(_) => {
+                                let r_temp = self.get_scratch_regs().borrow::<register_type::GPR>();
+                                let reg = r_temp.reg();
+                                // TODO: maybe we'll want a way to remove these once they're not
+                                // needed anymore
+                                temp_gprs.push(r_temp);
+                                reg
+                            }
+                            Register::SIMD(_) => {
+                                let r_temp = self.get_scratch_regs().borrow::<register_type::SIMD>();
+                                let reg = r_temp.reg();
+                                // TODO: maybe we'll want a way to remove these once they're not
+                                // needed anymore
+                                temp_simd.push(r_temp);
+                                reg
+                            }
+                        };
+
+                        let secondary_target = moves[&to.to_const_or_reg()];
+
+                        // Execute the to->temp_reg move immediately
+                        self.move_to_reg(ops, lp, to.to_const_or_reg(), temp_reg);
+                        // Remove "to" from moves and pending_move_sources since it is not a source anymore
+                        moves.remove(&to.to_const_or_reg());
+                        pending_move_sources.remove(&to);
+                        // Add temp_reg to moves and pending_move_sources so we can move from it to
+                        // secondary_target later
+                        moves.insert(temp_reg.to_const_or_reg(), secondary_target);
+                        pending_move_sources.insert(temp_reg);
+
+                        // Clear out postponed moves and start fresh with the new set of moves
+                        postponed_moves.clear();
                     } else {
+                        println!("We got a conflict from: {:?} to {:?}, Postponing it but ensuring we do the other move first.", from, to);
                         // We couldn't make this move, so we need to add it back to the list of moves
                         postponed_moves.push(from);
                         // But do the conflicting one first
@@ -486,7 +521,6 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                     }
                 } else {
                     // It is safe to do the move. It's not a self-move, and it doesn't conflict with any other moves.
-                    // do_move(from, to);
                     self.move_to_reg(ops, lp, from, to);
 
                     moves.remove(&from);
