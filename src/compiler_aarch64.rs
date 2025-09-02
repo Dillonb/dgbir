@@ -1107,10 +1107,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fcvtzs W(r_out as u32), S(r_in as u32)
                 )
             }
-            (Register::GPR(r_out), DataType::S32, ConstOrReg::SIMD(r_in), DataType::F64) => {
+            (Register::GPR(r_out), DataType::S32, value, DataType::F64) => {
                 println!("TODO: this is assuming round towards zero in all cases, which is not always true");
+                let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fcvtzs W(r_out as u32), D(r_in as u32)
+                    ; fcvtzs W(r_out as u32), D(value.r())
                 )
             }
             (Register::GPR(r_out), DataType::U64, ConstOrReg::SIMD(r_in), DataType::U64) => {
