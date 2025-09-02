@@ -599,9 +599,9 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
 
                 // If an argument isn't used, there will be no allocated register for it, so don't
                 // bother moving that value into place
-                 self.get_allocations().get(&in_block_value).map(|block_arg_reg| {
-                    (self.to_imm_or_reg(&arg), block_arg_reg)
-                })
+                self.get_allocations()
+                    .get(&in_block_value)
+                    .map(|block_arg_reg| (self.to_imm_or_reg(&arg), block_arg_reg))
             })
             .collect::<BTreeMap<_, _>>();
 
