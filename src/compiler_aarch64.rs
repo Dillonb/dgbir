@@ -208,6 +208,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; mov V(r_to as u32).B16, V(r_from as u32).B16
                 )
             }
+            (ConstOrReg::F32(value), Register::SIMD(r_to)) => {
+                dynasm!(ops
+                    ; fmov S(r_to as u32), *value
+                )
+            }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
