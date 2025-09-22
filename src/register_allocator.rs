@@ -9,8 +9,8 @@ use crate::{
     abi::{get_registers, is_register_volatile},
     compiler::ConstOrReg,
     ir::{
-        const_ptr, CompareType, Constant, DataType, IRBasicBlock, IRFunctionInternal, IndexedInstruction, InputSlot,
-        Instruction, InstructionType, OutputSlot, RoundingMode,
+        const_ptr, BlockReference, CompareType, Constant, DataType, IRBasicBlock, IRFunctionInternal,
+        IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot, RoundingMode,
     },
 };
 
@@ -799,14 +799,14 @@ impl IRFunctionInternal {
             .position(|i| *i == instruction_index)
     }
 
-    fn spill(&mut self, to_spill: &Value, final_usage_pre_spill: &Usage, usages_post_spill: Vec<&Usage>) {
+    fn spill(&mut self, to_spill: &Value, spill_after: &Usage, usages_post_spill: Vec<&Usage>) {
         let to_spill_inputslot = to_spill.into_inputslot();
 
         let stack_location = self.new_stack_location(to_spill.data_type());
 
         let spill_instr_index = self.instructions.len();
         let spill_instr = IndexedInstruction {
-            block_index: final_usage_pre_spill.block_index,
+            block_index: spill_after.block_index,
             index: spill_instr_index,
             instruction: Instruction::Instruction {
                 tp: InstructionType::SpillToStack,
@@ -821,8 +821,8 @@ impl IRFunctionInternal {
         self.instructions.push(spill_instr);
 
         {
-            let i = final_usage_pre_spill.instruction_index_in_block + 1; // Insert immediately after the last usage pre-spill
-            self.blocks[final_usage_pre_spill.block_index]
+            let i = spill_after.instruction_index_in_block + 1; // Insert immediately after the last usage pre-spill
+            self.blocks[spill_after.block_index]
                 .instructions
                 .splice(i..i, [spill_instr_index]);
         }
@@ -1011,18 +1011,12 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
             let (to_spill_next_used, to_spill) = to_spill.unwrap();
             let to_spill_first_usage = to_spill.into_usage(&func);
 
-            let final_usage_pre_spill = lifetimes.all_usages[&to_spill]
-                .iter()
-                .filter(|u| u < &&to_spill_next_used)
-                .last()
-                .unwrap_or(&to_spill_first_usage);
-
             let usages_post_spill = lifetimes.all_usages[&to_spill]
                 .iter()
                 .filter(|u| u >= &&to_spill_next_used)
                 .collect::<Vec<_>>();
 
-            func.spill(&to_spill, final_usage_pre_spill, usages_post_spill);
+            func.spill(&to_spill, &to_spill_first_usage, usages_post_spill);
         }
     }
 
