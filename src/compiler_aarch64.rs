@@ -533,85 +533,23 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
         } else if data_type.is_float() {
             let signed = true; // Floats are always signed
-            match (data_type, a, b) {
+            let a = self.materialize_as_simd(ops, lp, a);
+            let b = self.materialize_as_simd(ops, lp, b);
+            match data_type {
                 // SIMD, SIMD
-                (DataType::F32, ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                DataType::F32 => {
                     dynasm!(ops
-                        ; fcmp S(r1 as u32), S(r2 as u32)
+                        ; fcmp S(a.r() as u32), S(b.r() as u32)
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
-                (DataType::F64, ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
+                DataType::F64 => {
                     dynasm!(ops
-                        ; fcmp D(r1 as u32), D(r2 as u32)
+                        ; fcmp D(a.r() as u32), D(b.r() as u32)
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
-
-                // GPR, SIMD
-                (DataType::F32, ConstOrReg::GPR(r1), ConstOrReg::SIMD(r2)) => {
-                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
-                    dynasm!(ops
-                        ; fmov S(r_temp.r() as u32), W(r1 as u32)
-                        ; fcmp S(r_temp.r() as u32), S(r2 as u32)
-                    );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-                (DataType::F64, ConstOrReg::GPR(r1), ConstOrReg::SIMD(r2)) => {
-                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
-                    dynasm!(ops
-                        ; fmov D(r_temp.r() as u32), X(r1 as u32)
-                        ; fcmp D(r_temp.r() as u32), D(r2 as u32)
-                    );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-
-                // SIMD, GPR
-                (DataType::F32, ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
-                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
-                    dynasm!(ops
-                        ; fmov S(r_temp.r() as u32), W(r2 as u32)
-                        ; fcmp S(r1 as u32), S(r_temp.r() as u32)
-                    );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-                (DataType::F64, ConstOrReg::SIMD(r1), ConstOrReg::GPR(r2)) => {
-                    let r_temp = self.scratch_regs.borrow::<register_type::SIMD>();
-                    dynasm!(ops
-                        ; fmov D(r_temp.r() as u32), X(r2 as u32)
-                        ; fcmp D(r1 as u32), D(r_temp.r() as u32)
-                    );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-
-                // GPR, GPR
-                (DataType::F32, ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
-                    let r_temp_1 = self.scratch_regs.borrow::<register_type::SIMD>();
-                    let r_temp_2 = self.scratch_regs.borrow::<register_type::SIMD>();
-                    dynasm!(ops
-                        ; fmov S(r_temp_1.r() as u32), W(r1 as u32)
-                        ; fmov S(r_temp_2.r() as u32), W(r2 as u32)
-                        ; fcmp S(r_temp_1.r() as u32), S(r_temp_2.r() as u32)
-                    );
-                }
-                (DataType::F64, ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
-                    let r_temp_1 = self.scratch_regs.borrow::<register_type::SIMD>();
-                    let r_temp_2 = self.scratch_regs.borrow::<register_type::SIMD>();
-                    dynasm!(ops
-                        ; fmov D(r_temp_1.r() as u32), X(r1 as u32)
-                        ; fmov D(r_temp_2.r() as u32), X(r2 as u32)
-                        ; fcmp D(r_temp_1.r() as u32), D(r_temp_2.r() as u32)
-                    );
-                }
-
-                _ => todo!(
-                    "Unsupported float Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
-                    r_out,
-                    a,
-                    cmp_type,
-                    b,
-                    data_type
-                ),
+                _ => todo!("Unsupported float Compare operation with data type {:?}", data_type),
             }
         } else {
             todo!("Unsupported Compare operation with data type: {:?}", data_type);
