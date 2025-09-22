@@ -536,21 +536,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             let a = self.materialize_as_simd(ops, lp, a);
             let b = self.materialize_as_simd(ops, lp, b);
             match data_type {
-                // SIMD, SIMD
                 DataType::F32 => {
                     dynasm!(ops
                         ; fcmp S(a.r() as u32), S(b.r() as u32)
                     );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
                 DataType::F64 => {
                     dynasm!(ops
                         ; fcmp D(a.r() as u32), D(b.r() as u32)
                     );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
                 _ => todo!("Unsupported float Compare operation with data type {:?}", data_type),
             }
+            set_reg_by_flags(ops, signed, cmp_type, r_out);
         } else {
             todo!("Unsupported Compare operation with data type: {:?}", data_type);
         }
