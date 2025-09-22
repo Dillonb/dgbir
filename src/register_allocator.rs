@@ -708,11 +708,59 @@ fn calculate_lifetimes(func: &IRFunctionInternal) -> Lifetimes {
         }
     });
 
-    Lifetimes {
+    let mut result = Lifetimes {
         last_used,
         all_usages,
         interference,
-    }
+    };
+
+    // Add interference graph edges for jumps and branches so that moving values into block
+    // argument registers is safe
+
+    func.blocks
+        .iter()
+        .enumerate()
+        .flat_map(|(block_index, block)| {
+            block
+                .instructions
+                .iter()
+                .enumerate()
+                .map(move |(instruction_index_in_block, instruction_index)| {
+                    (block_index, instruction_index_in_block, instruction_index)
+                })
+        })
+        .for_each(|(block_index, instruction_index_in_block, instruction_index)| {
+            let mut interference_for = |target: &BlockReference| {
+                let target_block = &func.blocks[target.block_index];
+                result
+                    .get_active_at_index(func, block_index, instruction_index_in_block)
+                    .iter()
+                    .for_each(|v| {
+                        for (input_index, input_dt) in target_block.inputs.iter().enumerate() {
+                            let input = Value::BlockInput {
+                                block_index: target.block_index,
+                                input_index,
+                                data_type: *input_dt,
+                            };
+
+                            result.interference.entry(*v).or_insert_with(Vec::new).push(input);
+                            result.interference.entry(input).or_insert_with(Vec::new).push(*v);
+                        }
+                    });
+            };
+            match &func.instructions[*instruction_index].instruction {
+                Instruction::Comment(_) => {}
+                Instruction::Instruction { .. } => {}
+                Instruction::Branch { if_true, if_false, .. } => {
+                    interference_for(if_true);
+                    interference_for(if_false);
+                }
+                Instruction::Jump { target } => interference_for(target),
+                Instruction::Return { .. } => {}
+            }
+        });
+
+    return result;
 }
 
 impl Display for Register {
