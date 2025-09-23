@@ -771,6 +771,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         let result = base.wrapping_shl(amount);
                         load_64_bit_constant(ops, lp, r_out as u32, result);
                     }
+                    DataType::U32 | DataType::S32 => {
+                        let result = (base as i32).wrapping_shl(amount) as i64;
+                        load_64_bit_constant(ops, lp, r_out as u32, result as u64);
+                    }
                     _ => todo!("LeftShift with constant base with tp {}", tp),
                 }
             } else {
