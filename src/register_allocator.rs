@@ -749,6 +749,7 @@ fn calculate_lifetimes(func: &IRFunctionInternal) -> Lifetimes {
                     });
             };
             match &func.instructions[*instruction_index].instruction {
+                #[cfg(feature = "ir_comments")]
                 Instruction::Comment(_) => {}
                 Instruction::Instruction { .. } => {}
                 Instruction::Branch { if_true, if_false, .. } => {

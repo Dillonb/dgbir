@@ -254,6 +254,7 @@ pub enum Instruction {
 impl Instruction {
     pub fn all_inputslots(&self) -> Vec<InputSlot> {
         match self {
+            #[cfg(feature = "ir_comments")]
             Instruction::Comment(_) => vec![],
             Instruction::Instruction { inputs, .. } => inputs.clone(),
             Instruction::Branch {

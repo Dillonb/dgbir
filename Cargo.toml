@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["asm_debug", "ir_comments"]
+default = []
 asm_debug = []
 ir_comments = []
 
