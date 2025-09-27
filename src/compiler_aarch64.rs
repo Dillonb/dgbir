@@ -1367,42 +1367,50 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         a: ConstOrReg,
         b: ConstOrReg,
     ) {
-        match (result_tp, arg_tp, output_regs.len(), a, b) {
-            (DataType::U32, DataType::U32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+        match (result_tp, arg_tp, output_regs.len()) {
+            (DataType::U32, DataType::U32, 2) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; umull X(r_out_hi as u32), W(r_a as u32), W(r_b as u32)
+                    ; umull X(r_out_hi as u32), W(a.r() as u32), W(b.r() as u32)
                     ; mov W(r_out_lo as u32), W(r_out_hi as u32)
                     ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
                 );
             }
-            (DataType::S32, DataType::S32, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+            (DataType::S32, DataType::S32, 2) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; smull X(r_out_hi as u32), W(r_a as u32), W(r_b as u32)
+                    ; smull X(r_out_hi as u32), W(a.r() as u32), W(b.r() as u32)
                     ; mov W(r_out_lo as u32), W(r_out_hi as u32)
                     ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
                 );
             }
-            (DataType::U64, DataType::U64, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+            (DataType::U64, DataType::U64, 2) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; umulh X(r_out_hi as u32), X(r_a as u32), X(r_b as u32)
-                    ; mul X(r_out_lo as u32), X(r_a as u32), X(r_b as u32)
+                    ; umulh X(r_out_hi as u32), X(a.r() as u32), X(b.r() as u32)
+                    ; mul X(r_out_lo as u32), X(a.r() as u32), X(b.r() as u32)
                 );
             }
-            (DataType::S64, DataType::S64, 2, ConstOrReg::GPR(r_a), ConstOrReg::GPR(r_b)) => {
+            (DataType::S64, DataType::S64, 2) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; smulh X(r_out_hi as u32), X(r_a as u32), X(r_b as u32)
-                    ; mul X(r_out_lo as u32), X(r_a as u32), X(r_b as u32)
+                    ; smulh X(r_out_hi as u32), X(a.r() as u32), X(b.r() as u32)
+                    ; mul X(r_out_lo as u32), X(a.r() as u32), X(b.r() as u32)
                 );
             }
-            (DataType::F32, DataType::F32, 1, a, b) => {
+            (DataType::F32, DataType::F32, 1) => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);
                 let r_out = output_regs[0].unwrap().expect_simd();
@@ -1410,7 +1418,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fmul S(r_out as u32), S(a.r()), S(b.r())
                 );
             }
-            (DataType::F64, DataType::F64, 1, a, b) => {
+            (DataType::F64, DataType::F64, 1) => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);
                 let r_out = output_regs[0].unwrap().expect_simd();
