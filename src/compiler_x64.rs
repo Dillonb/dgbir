@@ -49,7 +49,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     fn new(ops: &mut Ops, func: &'a mut IRFunctionInternal) -> Self {
         let allocations = alloc_for(func);
 
-        println!("Function after allocation:\n{}", func);
+        info!("Function after allocation:\n{}", func);
 
         // Stack bytes used: aligned to 16 bytes
         // Note: x64 is stupid, and the CALL instruction leaves the stack pointer misaligned.
@@ -57,7 +57,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         let misalignment = (func.stack_bytes_used + 8) % 16;
         let correction = if misalignment == 0 { 0 } else { 16 - misalignment };
         let stack_bytes_used = func.stack_bytes_used + correction;
-        println!(
+        info!(
             "Function uses {} bytes of stack, misaligned by {}, corrected to {}",
             func.stack_bytes_used, misalignment, stack_bytes_used
         );
@@ -113,7 +113,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     }
 
     fn epilogue(&self, _ops: &mut Ops) {
-        println!("Epilogue: emitting nothing");
+        trace!("Epilogue: emitting nothing");
     }
 
     fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel) {
@@ -123,7 +123,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     }
 
     fn move_to_reg(&self, ops: &mut Ops, _lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
-        println!("move_to_reg(): Moving {:?} to {:?}", from, to);
+        trace!("move_to_reg(): Moving {:?} to {:?}", from, to);
         match (from, to) {
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
                 dynasm!(ops
@@ -909,7 +909,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
 
         if let Some(to) = r_out {
-            println!("Moving return value from {} to {}", get_return_value_registers()[0], to);
+            trace!("Moving return value from {} to {}", get_return_value_registers()[0], to);
             self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
         }
 

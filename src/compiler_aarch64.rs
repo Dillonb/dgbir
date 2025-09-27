@@ -8,6 +8,7 @@ use crate::{
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
 use dynasmrt::{aarch64::Aarch64Relocation, dynasm, Assembler, AssemblyOffset, VecAssembler};
+use log::{debug, info, trace, warn};
 
 impl GenericAssembler<Aarch64Relocation> for Assembler<Aarch64Relocation> {
     type R = Aarch64Relocation;
@@ -29,7 +30,7 @@ fn load_64_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
     reg: u32,
     value: u64,
 ) {
-    println!("Loading 64-bit constant: 0x{:X}", value);
+    trace!("Loading 64-bit constant: 0x{:X}", value);
     if value <= 0xFFFF {
         dynasm!(ops
             ; movz X(reg), value as u32
@@ -37,7 +38,7 @@ fn load_64_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
     } else {
         // TODO: check if the value can fit in a U16, U32, etc and zero extend when loading
         let literal = Aarch64Compiler::add_literal(ops, lp, Constant::U64(value));
-        println!("Loading using literal pool");
+        trace!("Loading using literal pool");
         dynasm!(ops
             ; ldr X(reg), =>literal
         );
@@ -111,7 +112,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         let misalignment = func.stack_bytes_used % 16;
         let correction = if misalignment == 0 { 0 } else { 16 - misalignment };
         let stack_bytes_used = func.stack_bytes_used + correction;
-        println!(
+        info!(
             "Function uses {} bytes of stack, misaligned by {}, corrected to {}",
             func.stack_bytes_used, misalignment, stack_bytes_used
         );
@@ -159,7 +160,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     }
 
     fn epilogue(&self, _ops: &mut Ops) {
-        println!("Epilogue: emitting nothing");
+        trace!("Epilogue: emitting nothing");
     }
 
     fn jump_to_dynamic_label(&self, ops: &mut Ops, label: dynasmrt::DynamicLabel) {
@@ -220,7 +221,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     // TODO: this is exactly the same in all compilers, figure out how to share this
     fn emit_literal_pool(&self, ops: &mut Ops, lp: LiteralPool) {
         for (literal, label) in lp.literals {
-            println!("Aligning to {} bytes for literal {:?}", literal.size(), literal);
+            trace!("Aligning to {} bytes for literal {:?}", literal.size(), literal);
             ops.align(literal.size(), 0);
             match literal {
                 Constant::U32(c) => {
@@ -1047,13 +1048,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 )
             }
             (Register::GPR(r_out), DataType::S32, ConstOrReg::SIMD(r_in), DataType::F32) => {
-                println!("TODO: this is assuming round towards zero in all cases, which is not always true");
+                warn!("TODO: this is assuming round towards zero in all cases, which is not always true");
                 dynasm!(ops
                     ; fcvtzs W(r_out as u32), S(r_in as u32)
                 )
             }
             (Register::GPR(r_out), DataType::S32, value, DataType::F64) => {
-                println!("TODO: this is assuming round towards zero in all cases, which is not always true");
+                warn!("TODO: this is assuming round towards zero in all cases, which is not always true");
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
                     ; fcvtzs W(r_out as u32), D(value.r())
@@ -1610,7 +1611,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
 
         if let Some(to) = r_out {
-            println!("Moving return value from {} to {}", get_return_value_registers()[0], to);
+            debug!("Moving return value from {} to {}", get_return_value_registers()[0], to);
             self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
         }
 

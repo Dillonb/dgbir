@@ -8,6 +8,7 @@ use dynasmrt::relocations::Relocation;
 #[cfg(target_arch = "x86_64")]
 use dynasmrt::x64::X64Relocation;
 use dynasmrt::{AssemblyOffset, DynamicLabel, DynasmApi, DynasmLabelApi, ExecutableBuffer};
+use log::info;
 use ordered_float::OrderedFloat;
 
 use crate::abi::get_function_argument_registers;
@@ -563,7 +564,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                         // Clear out postponed moves and start fresh with the new set of moves
                         postponed_moves.clear();
                     } else {
-                        println!("We got a conflict from: {:?} to {:?}, Postponing it but ensuring we do the other move first.", from, to);
+                        info!("We got a conflict from: {:?} to {:?}, Postponing it but ensuring we do the other move first.", from, to);
                         // We couldn't make this move, so we need to add it back to the list of moves
                         postponed_moves.push(from);
                         // But do the conflicting one first

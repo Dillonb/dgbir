@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use log::error;
 use petgraph::{
     algo::dominators::{self, Dominators},
     graph::{Graph, NodeIndex},
@@ -481,7 +482,7 @@ impl IRFunctionInternal {
 
                 for block in blocks_referenced {
                     if !doms.contains(&block) {
-                        println!("{}", self);
+                        error!("{}", self);
                         panic!(
                             "Instruction '{}' references a value from block b{} which may not be initialized.",
                             instr, block

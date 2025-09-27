@@ -11,7 +11,9 @@ ir_comments = []
 [dependencies]
 capstone = "0.13.0"
 dynasmrt = "3.2.1"
+env_logger = "0.11.8"
 itertools = "0.14.0"
+log = "0.4.28"
 nom = "8.0.0"
 nom-language = "0.1.0"
 ordered-float = "5.0.0"
