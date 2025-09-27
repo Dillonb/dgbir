@@ -1447,8 +1447,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         dividend: ConstOrReg,
         divisor: ConstOrReg,
     ) {
-        match (tp, dividend, divisor) {
-            (DataType::S32, dividend, divisor) => {
+        match tp {
+            DataType::S32 => {
                 let dividend = self.materialize_as_gpr(ops, lp, dividend);
                 let divisor = self.materialize_as_gpr(ops, lp, divisor);
                 let r_quotient = r_quotient.unwrap().expect_gpr();
@@ -1458,7 +1458,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; msub W(r_remainder as u32), W(r_quotient as u32), W(divisor.r()), W(dividend.r())
                 );
             }
-            (DataType::S64, dividend, divisor) => {
+            DataType::S64 => {
                 let dividend = self.materialize_as_gpr(ops, lp, dividend);
                 let divisor = self.materialize_as_gpr(ops, lp, divisor);
                 let r_quotient = r_quotient.unwrap().expect_gpr();
@@ -1468,23 +1468,27 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; msub X(r_remainder as u32), X(r_quotient as u32), X(divisor.r()), X(dividend.r())
                 );
             }
-            (DataType::U32, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+            DataType::U32 => {
+                let dividend = self.materialize_as_gpr(ops, lp, dividend);
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; udiv W(r_quotient as u32), W(r_dividend as u32), W(r_divisor as u32)
-                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(r_divisor as u32), W(r_dividend as u32)
+                    ; udiv W(r_quotient as u32), W(dividend.r() as u32), W(divisor.r() as u32)
+                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(divisor.r() as u32), W(dividend.r() as u32)
                 );
             }
-            (DataType::U64, ConstOrReg::GPR(r_dividend), ConstOrReg::GPR(r_divisor)) => {
+            DataType::U64 => {
+                let dividend = self.materialize_as_gpr(ops, lp, dividend);
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; udiv X(r_quotient as u32), X(r_dividend as u32), X(r_divisor as u32)
-                    ; msub X(r_remainder as u32), X(r_quotient as u32), X(r_divisor as u32), X(r_dividend as u32)
+                    ; udiv X(r_quotient as u32), X(dividend.r() as u32), X(divisor.r() as u32)
+                    ; msub X(r_remainder as u32), X(r_quotient as u32), X(divisor.r() as u32), X(dividend.r() as u32)
                 );
             }
-            (DataType::F32, dividend, divisor) => {
+            DataType::F32 => {
                 let dividend = self.materialize_as_simd(ops, lp, dividend);
                 let divisor = self.materialize_as_simd(ops, lp, divisor);
 
@@ -1497,7 +1501,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fdiv S(r_quotient as u32), S(dividend.r()), S(divisor.r())
                 );
             }
-            (DataType::F64, dividend, divisor) => {
+            DataType::F64 => {
                 let dividend = self.materialize_as_simd(ops, lp, dividend);
                 let divisor = self.materialize_as_simd(ops, lp, divisor);
                 if r_remainder.is_some() {
