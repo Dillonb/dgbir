@@ -910,7 +910,7 @@ impl IRFunctionInternal {
         }
     }
 
-    fn value_iter(&self) -> IRFunctionValueIterator {
+    fn value_iter(&self) -> IRFunctionValueIterator<'_> {
         IRFunctionValueIterator {
             function: self,
             block_index: 0,
