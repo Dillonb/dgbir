@@ -1307,49 +1307,33 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             }
             return;
         } else {
-            match (tp, r_out, minuend, subtrahend) {
-                (
-                    DataType::U32 | DataType::S32,
-                    Register::GPR(r_out),
-                    ConstOrReg::GPR(r_minuend),
-                    ConstOrReg::GPR(r_subtrahend),
-                ) => {
+            match (tp, r_out) {
+                (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
+                    let minuend = self.materialize_as_gpr(ops, lp, minuend);
+                    let subtrahend = self.materialize_as_gpr(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; sub W(r_out as u32), W(r_minuend), W(r_subtrahend)
+                        ; sub W(r_out as u32), W(minuend.r()), W(subtrahend.r())
                     )
                 }
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), c, ConstOrReg::GPR(r_subtrahend))
-                    if c.is_const() =>
-                {
-                    let minuend = c.to_u64_const().unwrap() as u32;
-                    let r_minuend = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_32_bit_constant(ops, lp, r_minuend.r(), minuend);
+                (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
+                    let minuend = self.materialize_as_gpr(ops, lp, minuend);
+                    let subtrahend = self.materialize_as_gpr(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; sub W(r_out as u32), W(r_minuend.r()), W(r_subtrahend)
+                        ; sub X(r_out as u32), X(minuend.r()), X(subtrahend.r())
                     )
                 }
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r_minuend), c)
-                    if c.is_const() =>
-                {
-                    let subtrahend = c.to_u64_const().unwrap() as u32;
-                    let r_subtrahend = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_32_bit_constant(ops, lp, r_subtrahend.r(), subtrahend);
+                (DataType::F32, Register::SIMD(r_out)) => {
+                    let minuend = self.materialize_as_simd(ops, lp, minuend);
+                    let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; sub W(r_out as u32), W(r_minuend), W(r_subtrahend.r())
+                        ; fsub S(r_out as u32), S(minuend.r()), S(subtrahend.r())
                     )
                 }
-                (DataType::F32, Register::SIMD(r_out), a, b) => {
-                    let a = self.materialize_as_simd(ops, lp, a);
-                    let b = self.materialize_as_simd(ops, lp, b);
+                (DataType::F64, Register::SIMD(r_out)) => {
+                    let minuend = self.materialize_as_simd(ops, lp, minuend);
+                    let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; fsub S(r_out as u32), S(a.r()), S(b.r())
-                    )
-                }
-                (DataType::F64, Register::SIMD(r_out), a, b) => {
-                    let a = self.materialize_as_simd(ops, lp, a);
-                    let b = self.materialize_as_simd(ops, lp, b);
-                    dynasm!(ops
-                        ; fsub D(r_out as u32), D(a.r()), D(b.r())
+                        ; fsub D(r_out as u32), D(minuend.r()), D(subtrahend.r())
                     )
                 }
                 _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
