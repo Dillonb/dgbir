@@ -345,64 +345,36 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     }
 
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
-        if a.is_const() && b.is_const() {
-            match tp {
-                DataType::U32 => load_32_bit_constant(
-                    ops,
-                    lp,
-                    r_out.expect_gpr() as u32,
-                    a.to_u64_const().unwrap() as u32 + b.to_u64_const().unwrap() as u32,
-                ),
-                DataType::S32 => {
-                    let result =
-                        (a.to_s64_const().unwrap() as i32).wrapping_add(b.to_s64_const().unwrap() as i32) as i64;
-                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr() as u32, result);
-                }
-                DataType::U64 => load_64_bit_constant(
-                    ops,
-                    lp,
-                    r_out.expect_gpr() as u32,
-                    a.to_u64_const().unwrap().wrapping_add(b.to_u64_const().unwrap()),
-                ),
-                DataType::S64 => {
-                    let result = a.to_s64_const().unwrap().wrapping_add(b.to_s64_const().unwrap());
-                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr() as u32, result);
-                }
-                _ => todo!("Unsupported Add operation with result type {} and constants: {:?} + {:?}", tp, a, b),
+        match (tp, r_out) {
+            (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; add W(r_out as u32), W(a.r()), W(b.r())
+                );
             }
-            return;
-        } else {
-            match (tp, r_out) {
-                (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
-                    let a = self.materialize_as_gpr(ops, lp, a);
-                    let b = self.materialize_as_gpr(ops, lp, b);
-                    dynasm!(ops
-                        ; add W(r_out as u32), W(a.r()), W(b.r())
-                    );
-                }
-                (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
-                    let a = self.materialize_as_gpr(ops, lp, a);
-                    let b = self.materialize_as_gpr(ops, lp, b);
-                    dynasm!(ops
-                        ; add X(r_out as u32), X(a.r()), X(b.r())
-                    );
-                }
-                (DataType::F32, Register::SIMD(r_out)) => {
-                    let a = self.materialize_as_simd(ops, lp, a);
-                    let b = self.materialize_as_simd(ops, lp, b);
-                    dynasm!(ops
-                        ; fadd S(r_out as u32), S(a.r()), S(b.r())
-                    );
-                }
-                (DataType::F64, Register::SIMD(r_out)) => {
-                    let a = self.materialize_as_simd(ops, lp, a);
-                    let b = self.materialize_as_simd(ops, lp, b);
-                    dynasm!(ops
-                        ; fadd D(r_out as u32), D(a.r()), D(b.r())
-                    );
-                }
-                _ => todo!("Unsupported Add operation: ({:?}, {:?})", tp, r_out),
+            (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; add X(r_out as u32), X(a.r()), X(b.r())
+                );
             }
+            (DataType::F32, Register::SIMD(r_out)) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; fadd S(r_out as u32), S(a.r()), S(b.r())
+                );
+            }
+            (DataType::F64, Register::SIMD(r_out)) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; fadd D(r_out as u32), D(a.r()), D(b.r())
+                );
+            }
+            _ => todo!("Unsupported Add operation: ({:?}, {:?})", tp, r_out),
         }
     }
 
