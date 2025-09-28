@@ -8,6 +8,7 @@ use crate::{
     register_allocator::{alloc_for, Register, RegisterAllocations},
 };
 use dynasmrt::{dynasm, x64::X64Relocation, Assembler, AssemblyOffset, VecAssembler};
+use log::{info, trace};
 
 impl GenericAssembler<X64Relocation> for Assembler<X64Relocation> {
     type R = X64Relocation;
