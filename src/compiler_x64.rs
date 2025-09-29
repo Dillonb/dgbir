@@ -279,108 +279,29 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     }
 
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
-        if a.is_const() && b.is_const() {
-            match tp {
-                DataType::U32 => {
-                    let result = a.to_u64_const().unwrap() as u32 + b.to_u64_const().unwrap() as u32;
-                    dynasm!(ops
-                        ; mov Rd(r_out.expect_gpr() as u8), result as i32
-                    )
-                }
-                DataType::S32 => {
-                    let result = (a.to_s64_const().unwrap() as i32).wrapping_add(b.to_s64_const().unwrap() as i32);
-                    dynasm!(ops
-                        ; mov Rd(r_out.expect_gpr() as u8), result as i32
-                        ; movsx Rq(r_out.expect_gpr() as u8), Rd(r_out.expect_gpr() as u8)
-                    )
-                }
-                DataType::U64 => {
-                    let result = a.to_u64_const().unwrap() + b.to_u64_const().unwrap();
-                    dynasm!(ops
-                        ; mov Rq(r_out.expect_gpr() as u8), QWORD result as i64
-                    )
-                }
-                _ => todo!("Unsupported Add operation with result type {} and constants: {:?} + {:?}", tp, a, b),
+        match (tp, r_out) {
+            (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
+                self.move_to_reg(ops, lp, a, Register::GPR(r_out));
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; add Rd(r_out as u8), Rd(b.r() as u8)
+                )
             }
-            return;
-        } else {
-            match (tp, r_out, a, b) {
-                (
-                    DataType::U32 | DataType::S32,
-                    Register::GPR(r_out),
-                    ConstOrReg::GPR(r),
-                    ConstOrReg::U32(_) | ConstOrReg::S16(_),
-                ) => {
-                    let c = b.to_u64_const().unwrap() as i64;
-                    dynasm!(ops
-                        ; mov Rd(r_out as u8), Rd(r as u8)
-                    );
-
-                    if c >= i32::MIN as i64 && c <= i32::MAX as i64 {
-                        dynasm!(ops
-                            ; add Rd(r_out as u8), c as i32
-                        )
-                    } else {
-                        // If the constant is too large, we need to move it to a temporary register
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        dynasm!(ops
-                            ; mov Rq(r_temp.r() as u8), c as i32
-                            ; add Rd(r_out as u8), Rd(r_temp.r() as u8)
-                        )
-                    }
-
-                    if tp == DataType::S32 {
-                        // Sign-extend the result to 64 bits for S32
-                        dynasm!(ops
-                            ; movsx Rq(r_out as u8), Rd(r_out as u8)
-                        );
-                    }
-                }
-                (
-                    DataType::U64 | DataType::S64,
-                    Register::GPR(r_out),
-                    ConstOrReg::GPR(r),
-                    ConstOrReg::U32(_) | ConstOrReg::S16(_),
-                ) => {
-                    let c = b.to_u64_const().unwrap() as i64;
-                    dynasm!(ops
-                        ; mov Rq(r_out as u8), Rq(r as u8)
-                    );
-
-                    if c >= i32::MIN as i64 && c <= i32::MAX as i64 {
-                        dynasm!(ops
-                            ; add Rq(r_out as u8), c as i32
-                        )
-                    } else {
-                        // If the constant is too large, we need to move it to a temporary register
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        dynasm!(ops
-                            ; mov Rq(r_temp.r() as u8), c as i32
-                            ; add Rq(r_out as u8), Rq(r_temp.r() as u8)
-                        )
-                    }
-                }
-                (DataType::U32 | DataType::S32, Register::GPR(r_out), ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
-                    dynasm!(ops
-                        ; mov Rd(r_out as u8), Rd(r1 as u8)
-                        ; add Rd(r_out as u8), Rd(r2 as u8)
-                    )
-                }
-                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r), ConstOrReg::F32(c)) => {
-                    let literal = Self::add_literal(ops, lp, Constant::F32(c));
-                    dynasm!(ops
-                        ; movss Rx(r_out as u8), Rx(r as u8)
-                        ; addss Rx(r_out as u8), DWORD [=>literal]
-                    )
-                }
-                (DataType::F32, Register::SIMD(r_out), ConstOrReg::SIMD(r1), ConstOrReg::SIMD(r2)) => {
-                    dynasm!(ops
-                        ; movss Rx(r_out as u8), Rx(r1 as u8)
-                        ; addss Rx(r_out as u8), Rx(r2 as u8)
-                    )
-                }
-                _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
+            (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
+                self.move_to_reg(ops, lp, a, Register::GPR(r_out));
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; add Rq(r_out as u8), Rq(b.r() as u8)
+                )
             }
+            (DataType::F32, Register::SIMD(r_out)) => {
+                self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; addss Rx(r_out as u8), Rx(b.r() as u8)
+                )
+            }
+            _ => todo!("Unsupported Add operation: {:?} + {:?} with type {:?}", a, b, tp),
         }
     }
 
@@ -426,7 +347,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; setne Rb(r_out as u8)
                 );
             }
-            (true, CompareType::LessThan) => todo!("Compare with type LessThanSigned"),
+            (true, CompareType::LessThan) => {
+                dynasm!(ops
+                    ; setl Rb(r_out as u8)
+                )
+            }
             (true, CompareType::GreaterThan) => todo!("Compare with type GreaterThanSigned"),
             (true, CompareType::LessThanOrEqual) => {
                 dynasm!(ops
@@ -942,15 +867,53 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn divide(
         &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_quotient: Option<Register>,
-        _r_remainder: Option<Register>,
-        _dividend: ConstOrReg,
-        _divisor: ConstOrReg,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_quotient: Option<Register>,
+        r_remainder: Option<Register>,
+        dividend: ConstOrReg,
+        divisor: ConstOrReg,
     ) {
-        todo!()
+        match tp {
+            DataType::U64 => {
+                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+
+                self.move_to_reg(ops, lp, dividend, rax.reg());
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
+
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+
+                dynasm!(ops
+                    ; xor edx, edx
+                    ; div Rq(divisor.r() as u8)
+                    ; mov Rq(r_quotient as u8), rax
+                    // Use the value here so it's obvious the `rdx` value continuing to live is important
+                    ; mov Rq(r_remainder as u8), Rq(rdx.r() as u8)
+                );
+            }
+            DataType::S64 => {
+                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+
+                self.move_to_reg(ops, lp, dividend, rax.reg());
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
+
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+
+                dynasm!(ops
+                    ; cqo
+                    ; idiv Rq(divisor.r() as u8)
+                    ; mov Rq(r_quotient as u8), rax
+                    // Use the value here so it's obvious the `rdx` value continuing to live is important
+                    ; mov Rq(r_remainder as u8), Rq(rdx.r() as u8)
+                );
+            }
+            _ => panic!("Divide with unknown type: {}", tp)
+        }
     }
 
     fn square_root(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
