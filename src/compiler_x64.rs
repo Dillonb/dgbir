@@ -802,7 +802,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; xor Rq(r_out as u8), Rq(b.r() as u8)
                 );
             }
-            _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp)
+            _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp),
         }
     }
 
@@ -864,16 +864,20 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             (DataType::S32, DataType::S32, 2) => {
-                let a = self.materialize_as_gpr(ops, lp, a);
+                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+
+                self.move_to_reg(ops, lp, a, eax.reg());
                 let b = self.materialize_as_gpr(ops, lp, b);
+
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
-                todo!()
-                // dynasm!(ops
-                //     ; smull X(r_out_hi as u32), W(a.r() as u32), W(b.r() as u32)
-                //     ; mov W(r_out_lo as u32), W(r_out_hi as u32)
-                //     ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
-                // );
+
+                dynasm!(ops
+                    ; imul Rd(b.r() as u8)
+                    ; mov Rd(r_out_lo as u8), Rd(eax.r() as u8)
+                    ; mov Rd(r_out_hi as u8), Rd(edx.r() as u8)
+                );
             }
             (DataType::U64, DataType::U64, 2) => {
                 let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
@@ -892,30 +896,35 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             (DataType::S64, DataType::S64, 2) => {
-                let a = self.materialize_as_gpr(ops, lp, a);
+                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+
+                self.move_to_reg(ops, lp, a, rax.reg());
                 let b = self.materialize_as_gpr(ops, lp, b);
+
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
-                todo!()
-                // dynasm!(ops
-                //     ; smulh X(r_out_hi as u32), X(a.r() as u32), X(b.r() as u32)
-                //     ; mul X(r_out_lo as u32), X(a.r() as u32), X(b.r() as u32)
-                // );
+
+                dynasm!(ops
+                    ; imul Rq(b.r() as u8)
+                    ; mov Rq(r_out_lo as u8), Rq(rax.r() as u8)
+                    ; mov Rq(r_out_hi as u8), Rq(rdx.r() as u8)
+                );
             }
             (DataType::F32, DataType::F32, 1) => {
-                let a = self.materialize_as_simd(ops, lp, a);
-                let b = self.materialize_as_simd(ops, lp, b);
-                let r_out = output_regs[0].unwrap().expect_simd();
-                todo!()
+                // let a = self.materialize_as_simd(ops, lp, a);
+                // let b = self.materialize_as_simd(ops, lp, b);
+                // let r_out = output_regs[0].unwrap().expect_simd();
+                todo!("F32 multiply")
                 // dynasm!(ops
                 //     ; fmul S(r_out as u32), S(a.r()), S(b.r())
                 // );
             }
             (DataType::F64, DataType::F64, 1) => {
-                let a = self.materialize_as_simd(ops, lp, a);
-                let b = self.materialize_as_simd(ops, lp, b);
-                let r_out = output_regs[0].unwrap().expect_simd();
-                todo!()
+                // let a = self.materialize_as_simd(ops, lp, a);
+                // let b = self.materialize_as_simd(ops, lp, b);
+                // let r_out = output_regs[0].unwrap().expect_simd();
+                todo!("F64 multiply")
                 // dynasm!(ops
                 //     ; fmul D(r_out as u32), D(a.r()), D(b.r())
                 // );
