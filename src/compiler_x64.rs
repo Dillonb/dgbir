@@ -170,6 +170,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movss Rx(r_to as u8), DWORD [=>literal]
                 );
             }
+            (ConstOrReg::SIMD(r_from), Register::GPR(r_to)) => {
+                dynasm!(ops
+                    ; movq Rq(r_to as u8), Rx(r_from as u8)
+                );
+            }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
@@ -390,19 +395,31 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         offset: u64,
     ) {
         match (r_out, ptr, tp) {
-            (Register::GPR(r_out), ptr, DataType::U32 | DataType::S32) => {
+            (Register::GPR(r_out), ptr, DataType::U32 | DataType::S32 | DataType::F32) => {
                 let ptr = self.materialize_as_gpr(ops, lp, ptr);
                 dynasm!(ops
                     ; mov Rd(r_out as u8), [Rq(ptr.r() as u8) + offset as i32]
                 );
             }
-            (Register::GPR(r_out), ptr, DataType::U64 | DataType::S64) => {
+            (Register::SIMD(r_out), ptr, DataType::U32 | DataType::S32 | DataType::F32) => {
+                let ptr = self.materialize_as_gpr(ops, lp, ptr);
+                dynasm!(ops
+                    ; movd Rx(r_out as u8), [Rq(ptr.r() as u8) + offset as i32]
+                );
+            }
+            (Register::GPR(r_out), ptr, DataType::U64 | DataType::S64 | DataType::F64) => {
                 let ptr = self.materialize_as_gpr(ops, lp, ptr);
                 dynasm!(ops
                     ; mov Rq(r_out as u8), [Rq(ptr.r() as u8) + offset as i32]
                 );
             }
-            _ => todo!("Unsupported LoadPtr operation: Load [{:?}] with type {}", ptr, tp),
+            (Register::SIMD(r_out), ptr, DataType::U64 | DataType::S64 | DataType::F64) => {
+                let ptr = self.materialize_as_gpr(ops, lp, ptr);
+                dynasm!(ops
+                    ; movq Rx(r_out as u8), QWORD [Rq(ptr.r() as u8) + offset as i32]
+                );
+            }
+            _ => todo!("Unsupported LoadPtr operation: Load {} from [{:?}] with type {}", r_out, ptr, tp),
         }
     }
 
@@ -416,7 +433,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         data_type: DataType,
     ) {
         match (ptr, value, data_type) {
-            (ptr, value, DataType::U32) => {
+            (ptr, value, DataType::U32 | DataType::S32 | DataType::F32) => {
                 let address = self.materialize_as_gpr(ops, lp, ptr);
                 let value = self.materialize_as_gpr(ops, lp, value);
 
@@ -424,25 +441,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov [Rq(address.r() as u8) + offset as i32], Rd(value.r() as u8)
                 );
             }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64) => {
+            (ptr, value, DataType::U64 | DataType::S64 | DataType::F64) => {
+                let ptr = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_gpr(ops, lp, value);
                 dynasm!(ops
-                    ; mov QWORD [Rq(r_ptr as u8) + offset as i32], Rq(r_value as u8)
+                    ; mov QWORD [Rq(ptr.r() as u8) + offset as i32], Rq(value.r() as u8)
                 );
-            }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(_) | ConstOrReg::S32(_), DataType::U64 | DataType::S64) => {
-                let c = value.to_u64_const().unwrap();
-                if c <= i32::MAX as u64 {
-                    dynasm!(ops
-                        ; mov QWORD [Rq(r_ptr as u8) + offset as i32], c as i32
-                    );
-                } else {
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    dynasm!(ops
-                        ; mov Rq(r_temp.r() as u8), QWORD c as i64
-                        ; mov QWORD [Rq(r_ptr as u8) + offset as i32], Rq(r_temp.r() as u8)
-                    );
-                }
-                dynasm!(ops)
             }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
@@ -466,6 +470,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rq(*r as u8)
+                )
+            }
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(location), DataType::F32) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; movd DWORD [rsp + offset], Rx(*r as u8)
                 )
             }
             _ => todo!(
@@ -665,6 +675,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
                     ; movsx Rq(r_out as u8), Rd(input.r() as u8)
+                );
+            }
+            (Register::SIMD(r_out), DataType::F32, input, DataType::S32) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; cvtsi2ss Rx(r_out as u8), Rd(input.r() as u8)
                 );
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
@@ -1030,7 +1046,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; mov [rsp + stack_offset], Rq(*r as u8)
                     );
                 }
-                Register::SIMD(_r) => todo!(),
+                Register::SIMD(r) => {
+                    dynasm!(ops
+                        ; movdqu [rsp + stack_offset], Rx(*r as u8)
+                    )
+                }
             }
             stack_offset += reg.size() as i32;
         }
@@ -1070,7 +1090,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; mov Rq(*r as u8), [rsp + stack_offsets[reg]]
                     );
                 }
-                Register::SIMD(_r) => todo!(),
+                Register::SIMD(r) => {
+                    dynasm!(ops
+                        ; movdqu Rx(*r as u8), [rsp + stack_offsets[reg]]
+                    )
+                }
             }
         }
         dynasm!(ops
