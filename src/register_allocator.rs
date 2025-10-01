@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min},
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashSet},
     fmt::Display,
     iter,
 };
@@ -942,7 +942,7 @@ impl RegisterAllocations {
 pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
     let mut done = false;
     let mut allocations = BTreeMap::new();
-    let mut spills = HashMap::new();
+    let mut already_spilled = HashSet::new();
     while !done {
         allocations.clear();
         let mut to_spill = None;
@@ -980,6 +980,8 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
                     to_spill = interference
                         .unwrap() // If we couldn't find a register, there must be interference
                         .iter()
+                        // Filter out values that have already been spilled
+                        .filter(|iv| !already_spilled.contains(*iv))
                         // Limit to only values that have been allocated to registers, and only to
                         // registers that can hold the datatype of the value we're allocating
                         .filter(|iv| {
@@ -1016,11 +1018,12 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
             let (to_spill_next_used, to_spill) = to_spill.unwrap();
             let to_spill_first_usage = to_spill.into_usage(&func);
 
-            // When a value that's already been spilled is chosen to be spilled again,
-            // all we need to do is insert new reloads to serve the new usages post-spill
-            let spilled_to = *spills
-                .entry(to_spill)
-                .or_insert_with(|| func.spill(&to_spill, &to_spill_first_usage));
+            if already_spilled.contains(&to_spill) {
+                panic!("Tried to spill a value that has already been spilled! This should never happen.")
+            }
+            already_spilled.insert(to_spill);
+
+            let spilled_to = func.spill(&to_spill, &to_spill_first_usage);
 
             let usages_post_spill = lifetimes.all_usages[&to_spill]
                 .iter()
