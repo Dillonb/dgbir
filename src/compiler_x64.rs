@@ -450,14 +450,20 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_location: ConstOrReg, tp: DataType) {
         match (&to_spill, &stack_location, tp) {
-            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U32) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::U32) as i32;
+            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U16 | DataType::S16) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov [rsp + offset], Rw(*r as u8)
+                )
+            }
+            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U32 | DataType::S32) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rd(*r as u8)
                 )
             }
             (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::Ptr | DataType::U64 | DataType::S64) => {
-                let offset = self.func.get_stack_offset_for_location(*location, DataType::Ptr) as i32;
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov [rsp + offset], Rq(*r as u8)
                 )
@@ -473,7 +479,14 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_location: ConstOrReg, tp: DataType) {
         match (r_out, &stack_location, tp) {
-            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32) => {
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U16 | DataType::S16) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov Rw(r_out as u8), [rsp + offset]
+                    ; movzx Rd(r_out as u8), Rw(r_out as u8)
+                )
+            }
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32 | DataType::S32) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rd(r_out as u8), [rsp + offset]
@@ -641,6 +654,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     // Mov r32 -> r32 zero-extends
                     ; mov Rd(r_out as u8), Rd(r_in as u8)
                 );
+            }
+            (Register::GPR(r_out), DataType::S64, input, DataType::S8) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; movsx Rq(r_out as u8), Rb(input.r() as u8)
+                )
             }
             (Register::GPR(r_out), DataType::S64, input, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
@@ -882,6 +901,42 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         divisor: ConstOrReg,
     ) {
         match tp {
+            DataType::U32 => {
+                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+
+                self.move_to_reg(ops, lp, dividend, eax.reg());
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
+
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+
+                dynasm!(ops
+                    ; xor edx, edx
+                    ; div Rd(divisor.r() as u8)
+                    ; mov Rd(r_quotient as u8), eax
+                    // Use the value here so it's obvious the `edx` value continuing to live is important
+                    ; mov Rd(r_remainder as u8), Rd(edx.r() as u8)
+                );
+            }
+            DataType::S32 => {
+                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+
+                self.move_to_reg(ops, lp, dividend, eax.reg());
+                let divisor = self.materialize_as_gpr(ops, lp, divisor);
+
+                let r_quotient = r_quotient.unwrap().expect_gpr();
+                let r_remainder = r_remainder.unwrap().expect_gpr();
+
+                dynasm!(ops
+                    ; cqo
+                    ; idiv Rd(divisor.r() as u8)
+                    ; mov Rd(r_quotient as u8), eax
+                    // Use the value here so it's obvious the `edx` value continuing to live is important
+                    ; mov Rd(r_remainder as u8), Rd(edx.r() as u8)
+                );
+            }
             DataType::U64 => {
                 let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
                 let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
@@ -998,17 +1053,10 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
         self.move_regs_multi(ops, lp, moves);
 
-        match address {
-            ConstOrReg::U64(ptr) => {
-                let temp_reg = self.scratch_regs.borrow::<register_type::GPR>();
-                // load_64_bit_constant(ops, lp, temp_reg.r(), ptr);
-                dynasm!(ops
-                    ; mov Rq(temp_reg.r() as u8), QWORD ptr as i64
-                    ; call Rq(temp_reg.r() as u8)
-                );
-            }
-            _ => todo!("Unsupported call to: {:?}", address),
-        }
+        let address = self.materialize_as_gpr(ops, lp, address);
+        dynasm!(ops
+            ; call Rq(address.r() as u8)
+        );
 
         if let Some(to) = r_out {
             trace!("Moving return value from {} to {}", get_return_value_registers()[0], to);
