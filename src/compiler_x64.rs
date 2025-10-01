@@ -123,7 +123,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         );
     }
 
-    fn move_to_reg(&self, ops: &mut Ops, _lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
+    fn move_to_reg(&self, ops: &mut Ops, lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
         trace!("move_to_reg(): Moving {:?} to {:?}", from, to);
         match (from, to) {
             (c, Register::GPR(r_to)) if c.is_const() => {
@@ -162,6 +162,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             (ConstOrReg::SIMD(r_from), Register::SIMD(r_to)) => {
                 dynasm!(ops
                     ; movdqa Rx(r_to as u8), Rx(r_from as u8)
+                );
+            }
+            (ConstOrReg::F32(c), Register::SIMD(r_to)) => {
+                let literal = X64Compiler::add_literal(ops, lp, Constant::F32(c));
+                dynasm!(ops
+                    ; movss Rx(r_to as u8), DWORD [=>literal]
                 );
             }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
