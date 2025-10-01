@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min},
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fmt::Display,
     iter,
 };
@@ -800,7 +800,7 @@ impl IRFunctionInternal {
             .position(|i| *i == instruction_index)
     }
 
-    fn spill(&mut self, to_spill: &Value, spill_after: &Usage, usages_post_spill: Vec<&Usage>) {
+    fn spill(&mut self, to_spill: &Value, spill_after: &Usage) -> usize {
         let to_spill_inputslot = to_spill.into_inputslot();
 
         let stack_location = self.new_stack_location(to_spill.data_type());
@@ -827,7 +827,10 @@ impl IRFunctionInternal {
                 .instructions
                 .splice(i..i, [spill_instr_index]);
         }
+        return stack_location;
+    }
 
+    fn reload(&mut self, to_spill: &Value, stack_location: usize, usages_post_spill: Vec<&Usage>) {
         // Maps block index of reload to an InputSlot referencing the reload
         let mut reloads: BTreeMap<usize, InputSlot> = BTreeMap::new();
 
@@ -939,6 +942,7 @@ impl RegisterAllocations {
 pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
     let mut done = false;
     let mut allocations = BTreeMap::new();
+    let mut spills = HashMap::new();
     while !done {
         allocations.clear();
         let mut to_spill = None;
@@ -1012,12 +1016,18 @@ pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
             let (to_spill_next_used, to_spill) = to_spill.unwrap();
             let to_spill_first_usage = to_spill.into_usage(&func);
 
+            // When a value that's already been spilled is chosen to be spilled again,
+            // all we need to do is insert new reloads to serve the new usages post-spill
+            let spilled_to = *spills
+                .entry(to_spill)
+                .or_insert_with(|| func.spill(&to_spill, &to_spill_first_usage));
+
             let usages_post_spill = lifetimes.all_usages[&to_spill]
                 .iter()
                 .filter(|u| u >= &&to_spill_next_used)
                 .collect::<Vec<_>>();
 
-            func.spill(&to_spill, &to_spill_first_usage, usages_post_spill);
+            func.reload(&to_spill, spilled_to, usages_post_spill);
         }
     }
 
