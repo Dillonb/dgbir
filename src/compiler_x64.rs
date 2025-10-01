@@ -175,6 +175,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movq Rq(r_to as u8), Rx(r_from as u8)
                 );
             }
+            (ConstOrReg::GPR(r_from), Register::SIMD(r_to)) => {
+                dynasm!(ops
+                    ; movq Rx(r_to as u8), Rq(r_from as u8)
+                );
+            }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
@@ -454,6 +459,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn spill_to_stack(&self, ops: &mut Ops, to_spill: ConstOrReg, stack_location: ConstOrReg, tp: DataType) {
         match (&to_spill, &stack_location, tp) {
+            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U8 | DataType::S8) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov [rsp + offset], Rb(*r as u8)
+                )
+            }
             (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::U16 | DataType::S16) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
@@ -489,6 +500,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn load_from_stack(&self, ops: &mut Ops, r_out: Register, stack_location: ConstOrReg, tp: DataType) {
         match (r_out, &stack_location, tp) {
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U8 | DataType::S8) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov Rb(r_out as u8), [rsp + offset]
+                    ; movzx Rd(r_out as u8), Rb(r_out as u8)
+                )
+            }
             (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U16 | DataType::S16) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
@@ -496,13 +514,19 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movzx Rd(r_out as u8), Rw(r_out as u8)
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32 | DataType::S32) => {
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::U32 | DataType::S32 | DataType::F32) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rd(r_out as u8), [rsp + offset]
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr | DataType::U64 | DataType::S64) => {
+            (Register::SIMD(r_out), ConstOrReg::U64(location), DataType::U32 | DataType::S32 | DataType::F32) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; movd Rx(r_out as u8), DWORD [rsp + offset]
+                )
+            }
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr | DataType::U64 | DataType::S64 | DataType::F64) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rq(r_out as u8), [rsp + offset]
@@ -671,6 +695,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movsx Rq(r_out as u8), Rb(input.r() as u8)
                 )
             }
+            (Register::GPR(r_out), DataType::S64, input, DataType::S16) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; movsx Rq(r_out as u8), Rw(input.r() as u8)
+                )
+            }
             (Register::GPR(r_out), DataType::S64, input, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
@@ -681,6 +711,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
                     ; cvtsi2ss Rx(r_out as u8), Rd(input.r() as u8)
+                );
+            }
+            (Register::GPR(r_out), DataType::S32, input, DataType::F32) => {
+                let input = self.materialize_as_simd(ops, lp, input);
+                dynasm!(ops
+                    ; cvtss2si Rd(r_out as u8), Rx(input.r() as u8)
                 );
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
@@ -987,6 +1023,19 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov Rq(r_quotient as u8), rax
                     // Use the value here so it's obvious the `rdx` value continuing to live is important
                     ; mov Rq(r_remainder as u8), Rq(rdx.r() as u8)
+                );
+            }
+            DataType::F32 => {
+                let r_out = r_quotient.unwrap().expect_simd();
+
+                if r_remainder.is_some() {
+                    panic!("Remainder is not supported for F32 division");
+                }
+
+                self.move_to_reg(ops, lp, dividend, Register::SIMD(r_out));
+                let divisor = self.materialize_as_simd(ops, lp, divisor);
+                dynasm!(ops
+                    ; divss Rx(r_out as u8), Rx(divisor.r() as u8)
                 );
             }
             _ => panic!("Divide with unknown type: {}", tp)
