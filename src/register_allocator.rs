@@ -17,7 +17,7 @@ use crate::{
 use itertools::Itertools;
 
 #[cfg(target_arch = "aarch64")]
-type RegisterIndex = usize;
+pub type RegisterIndex = u32;
 #[cfg(target_arch = "x86_64")]
 pub type RegisterIndex = u8;
 

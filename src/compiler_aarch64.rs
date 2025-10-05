@@ -5,7 +5,7 @@ use crate::{
     compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
-    register_allocator::{alloc_for, Register, RegisterAllocations},
+    register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
 use dynasmrt::{aarch64::Aarch64Relocation, dynasm, Assembler, AssemblyOffset, VecAssembler};
 use log::{debug, info, trace, warn};
@@ -27,7 +27,7 @@ impl GenericAssembler<Aarch64Relocation> for VecAssembler<Aarch64Relocation> {
 fn load_64_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
     ops: &mut Ops,
     lp: &mut LiteralPool,
-    reg: u32,
+    reg: RegisterIndex,
     value: u64,
 ) {
     trace!("Loading 64-bit constant: 0x{:X}", value);
@@ -48,7 +48,7 @@ fn load_64_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
 fn load_64_bit_signed_constant<Ops: GenericAssembler<Aarch64Relocation>>(
     ops: &mut Ops,
     lp: &mut LiteralPool,
-    reg: u32,
+    reg: RegisterIndex,
     value: i64,
 ) {
     if value >= 0 {
@@ -67,7 +67,7 @@ fn load_64_bit_signed_constant<Ops: GenericAssembler<Aarch64Relocation>>(
 fn load_32_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
     ops: &mut Ops,
     lp: &mut LiteralPool,
-    reg: u32,
+    reg: RegisterIndex,
     value: u32,
 ) {
     if value <= 0xFFFF {
@@ -172,7 +172,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     fn move_to_reg(&self, ops: &mut Ops, lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
         match (from, to) {
             (ConstOrReg::U16(c), Register::GPR(r_to)) => {
-                load_32_bit_constant(ops, lp, r_to, c);
+                load_32_bit_constant(ops, lp, r_to, c as u32);
             }
             (ConstOrReg::S16(c), Register::GPR(r_to)) => {
                 load_64_bit_signed_constant(ops, lp, r_to, c.into());
@@ -382,7 +382,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: usize,
+        r_out: RegisterIndex,
         data_type: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
@@ -392,7 +392,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             ops: &mut Ops,
             signed: bool,
             cmp_type: CompareType,
-            r_out: usize,
+            r_out: RegisterIndex,
         ) {
             // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/A64-General-Instructions/CSET
             // https://developer.arm.com/documentation/100076/0100/A64-Instruction-Set-Reference/Condition-Codes/Condition-code-suffixes-and-related-flags?lang=en
@@ -452,7 +452,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let c = c.to_u64_const().unwrap();
                     if c < 4096 {
                         dynasm!(ops
-                            ; cmp XSP(r), c
+                            ; cmp XSP(r), c as u32
                         );
                     } else {
                         let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
@@ -475,12 +475,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (c1, c2) if c1.is_const() && c2.is_const() => match (signed, cmp_type) {
                     (_, CompareType::Equal) => {
                         dynasm!(ops
-                            ; mov W(r_out), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap())
+                            ; mov W(r_out), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as u32
                         )
                     }
                     (_, CompareType::NotEqual) => {
                         dynasm!(ops
-                            ; mov W(r_out), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap())
+                            ; mov W(r_out), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as u32
                         )
                     }
                     (true, CompareType::LessThan) => todo!("Compare constants with type LessThanSigned"),
@@ -488,7 +488,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     (true, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualSigned"),
                     (true, CompareType::GreaterThanOrEqual) => {
                         dynasm!(ops
-                            ; mov W(r_out), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap())
+                            ; mov W(r_out), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap()) as u32
                         )
                     }
                     (false, CompareType::LessThan) => todo!("Compare constants with type LessThanUnsigned"),
@@ -546,27 +546,27 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
-                    ; ldr W(r_out), [X(r_ptr.r()), offset]
+                    ; ldr W(r_out), [X(r_ptr.r()), offset as u32]
                 );
             }
             (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U64) => {
                 dynasm!(ops
-                    ; ldr X(r_out), [X(r_ptr), offset]
+                    ; ldr X(r_out), [X(r_ptr), offset as u32]
                 );
             }
             (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
-                    ; ldr W(r_out), [X(r_ptr), offset]
+                    ; ldr W(r_out), [X(r_ptr), offset as u32]
                 );
             }
             (Register::SIMD(r_out), ConstOrReg::GPR(r_ptr), DataType::F64) => {
                 dynasm!(ops
-                    ; ldr D(r_out), [X(r_ptr), offset]
+                    ; ldr D(r_out), [X(r_ptr), offset as u32]
                 );
             }
             (Register::SIMD(r_out), ConstOrReg::GPR(r_ptr), DataType::F32) => {
                 dynasm!(ops
-                    ; ldr S(r_out), [X(r_ptr), offset]
+                    ; ldr S(r_out), [X(r_ptr), offset as u32]
                 );
             }
             _ => todo!("Unsupported LoadPtr operation: Load {:?} with address [{:?}] and type {}", r_out, ptr, tp),
@@ -590,55 +590,55 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 load_64_bit_constant(ops, lp, r_address.r(), ptr);
                 load_32_bit_constant(ops, lp, r_value.r(), value);
                 dynasm!(ops
-                    ; str W(r_value.r()), [X(r_address.r()), offset]
+                    ; str W(r_value.r()), [X(r_address.r()), offset as u32]
                 );
             }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
                 let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
-                    ; str W(r_value), [X(r_ptr.r()), offset]
+                    ; str W(r_value), [X(r_ptr.r()), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(c_value), DataType::U32) => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), c_value.into());
                 dynasm!(ops
-                    ; str W(r_value.r()), [X(r_ptr), offset]
+                    ; str W(r_value.r()), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
-                    ; str W(r_value), [X(r_ptr), offset]
+                    ; str W(r_value), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
-                    ; str S(r_value), [X(r_ptr), offset]
+                    ; str S(r_value), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
                 dynasm!(ops
-                    ; str X(r_value), [X(r_ptr), offset]
+                    ; str X(r_value), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(value), DataType::U64) => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), value);
                 dynasm!(ops
-                    ; str X(r_value.r()), [X(r_ptr), offset]
+                    ; str X(r_value.r()), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), c, DataType::U64 | DataType::S64) if c.is_const() => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), c.to_u64_const().unwrap());
                 dynasm!(ops
-                    ; str X(r_value.r()), [X(r_ptr), offset]
+                    ; str X(r_value.r()), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
                 dynasm!(ops
-                    ; str D(r_value), [X(r_ptr), offset]
+                    ; str D(r_value), [X(r_ptr), offset as u32]
                 );
             }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
@@ -731,7 +731,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: usize,
+        r_out: RegisterIndex,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
@@ -823,7 +823,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: usize,
+        r_out: RegisterIndex,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
