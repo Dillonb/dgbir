@@ -146,13 +146,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; str X(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                        ; str X(*r), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                     )
                 }
                 Register::SIMD(r) => {
                     assert_eq!(reg.size(), 16);
                     dynasm!(ops
-                        ; str Q(*r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
+                        ; str Q(*r), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     );
                 }
             }
@@ -172,46 +172,46 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     fn move_to_reg(&self, ops: &mut Ops, lp: &mut LiteralPool, from: ConstOrReg, to: Register) {
         match (from, to) {
             (ConstOrReg::U16(c), Register::GPR(r_to)) => {
-                load_32_bit_constant(ops, lp, r_to as u32, c as u32);
+                load_32_bit_constant(ops, lp, r_to, c);
             }
             (ConstOrReg::S16(c), Register::GPR(r_to)) => {
-                load_64_bit_signed_constant(ops, lp, r_to as u32, c.into());
+                load_64_bit_signed_constant(ops, lp, r_to, c.into());
             }
             (ConstOrReg::U32(c), Register::GPR(r_to)) => {
-                load_32_bit_constant(ops, lp, r_to as u32, c);
+                load_32_bit_constant(ops, lp, r_to, c);
             }
             (ConstOrReg::S32(c), Register::GPR(r_to)) => {
-                load_64_bit_signed_constant(ops, lp, r_to as u32, c.into());
+                load_64_bit_signed_constant(ops, lp, r_to, c.into());
             }
             (ConstOrReg::U64(c), Register::GPR(r)) => {
-                load_64_bit_constant(ops, lp, r as u32, c);
+                load_64_bit_constant(ops, lp, r, c);
             }
             (ConstOrReg::S64(c), Register::GPR(r)) => {
-                load_64_bit_signed_constant(ops, lp, r as u32, c);
+                load_64_bit_signed_constant(ops, lp, r, c);
             }
             (ConstOrReg::GPR(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
-                    ; mov X(r_to as u32), X(r_from as u32)
+                    ; mov X(r_to), X(r_from)
                 );
             }
             (ConstOrReg::GPR(r_from), Register::SIMD(r_to)) => {
                 dynasm!(ops
-                    ; fmov D(r_to as u32), X(r_from as u32)
+                    ; fmov D(r_to), X(r_from)
                 );
             }
             (ConstOrReg::SIMD(r_from), Register::GPR(r_to)) => {
                 dynasm!(ops
-                    ; fmov X(r_to as u32), D(r_from as u32)
+                    ; fmov X(r_to), D(r_from)
                 );
             }
             (ConstOrReg::SIMD(r_from), Register::SIMD(r_to)) => {
                 dynasm!(ops
-                    ; mov V(r_to as u32).B16, V(r_from as u32).B16
+                    ; mov V(r_to).B16, V(r_from).B16
                 )
             }
             (ConstOrReg::F32(value), Register::SIMD(r_to)) => {
                 dynasm!(ops
-                    ; fmov S(r_to as u32), *value
+                    ; fmov S(r_to), *value
                 )
             }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
@@ -321,13 +321,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 Register::GPR(r) => {
                     assert_eq!(reg.size(), 8);
                     dynasm!(ops
-                        ; ldr X(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
+                        ; ldr X(r), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U64)]
                     )
                 }
                 Register::SIMD(r) => {
                     assert_eq!(reg.size(), 16);
                     dynasm!(ops
-                        ; ldr Q(r as u32), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
+                        ; ldr Q(r), [sp, self.func.get_stack_offset_for_location(*stack_location as u64, DataType::U128)]
                     )
                 }
             }
@@ -350,28 +350,28 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; add W(r_out as u32), W(a.r()), W(b.r())
+                    ; add W(r_out), W(a.r()), W(b.r())
                 );
             }
             (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; add X(r_out as u32), X(a.r()), X(b.r())
+                    ; add X(r_out), X(a.r()), X(b.r())
                 );
             }
             (DataType::F32, Register::SIMD(r_out)) => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);
                 dynasm!(ops
-                    ; fadd S(r_out as u32), S(a.r()), S(b.r())
+                    ; fadd S(r_out), S(a.r()), S(b.r())
                 );
             }
             (DataType::F64, Register::SIMD(r_out)) => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);
                 dynasm!(ops
-                    ; fadd D(r_out as u32), D(a.r()), D(b.r())
+                    ; fadd D(r_out), D(a.r()), D(b.r())
                 );
             }
             _ => todo!("Unsupported Add operation: ({:?}, {:?})", tp, r_out),
@@ -399,37 +399,37 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             match (signed, cmp_type) {
                 (false, CompareType::LessThan) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), lo // unsigned "lower"
+                        ; cset W(r_out), lo // unsigned "lower"
                     )
                 }
                 (_, CompareType::Equal) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), eq // "equal"
+                        ; cset W(r_out), eq // "equal"
                     )
                 }
                 (_, CompareType::NotEqual) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), ne // "not equal"
+                        ; cset W(r_out), ne // "not equal"
                     )
                 }
                 (true, CompareType::LessThan) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), lt // signed "less than"
+                        ; cset W(r_out), lt // signed "less than"
                     )
                 }
                 (true, CompareType::GreaterThan) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), gt // signed "greater than"
+                        ; cset W(r_out), gt // signed "greater than"
                     )
                 }
                 (true, CompareType::LessThanOrEqual) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), le // signed "less than or equal"
+                        ; cset W(r_out), le // signed "less than or equal"
                     )
                 }
                 (true, CompareType::GreaterThanOrEqual) => {
                     dynasm!(ops
-                        ; cset W(r_out as u32), ge // signed "greater than or equal"
+                        ; cset W(r_out), ge // signed "greater than or equal"
                     )
                 }
                 (false, CompareType::GreaterThan) => todo!("Compare with type GreaterThanUnsigned"),
@@ -444,7 +444,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             match (a, b) {
                 (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
                     dynasm!(ops
-                        ; cmp X(r1 as u32), X(r2 as u32)
+                        ; cmp X(r1), X(r2)
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
@@ -452,13 +452,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let c = c.to_u64_const().unwrap();
                     if c < 4096 {
                         dynasm!(ops
-                            ; cmp XSP(r as u32), c as u32
+                            ; cmp XSP(r), c
                         );
                     } else {
                         let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
                         load_64_bit_constant(ops, lp, r_temp.r(), c);
                         dynasm!(ops
-                            ; cmp XSP(r as u32), X(r_temp.r() as u32)
+                            ; cmp XSP(r), X(r_temp.r())
                         );
                     }
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
@@ -468,19 +468,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
                     load_64_bit_constant(ops, lp, r_temp.r(), c);
                     dynasm!(ops
-                        ; cmp XSP(r_temp.r()), X(r as u32)
+                        ; cmp XSP(r_temp.r()), X(r)
                     );
                     set_reg_by_flags(ops, signed, cmp_type, r_out);
                 }
                 (c1, c2) if c1.is_const() && c2.is_const() => match (signed, cmp_type) {
                     (_, CompareType::Equal) => {
                         dynasm!(ops
-                            ; mov W(r_out as u32), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as u32
+                            ; mov W(r_out), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap())
                         )
                     }
                     (_, CompareType::NotEqual) => {
                         dynasm!(ops
-                            ; mov W(r_out as u32), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as u32
+                            ; mov W(r_out), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap())
                         )
                     }
                     (true, CompareType::LessThan) => todo!("Compare constants with type LessThanSigned"),
@@ -488,7 +488,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     (true, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualSigned"),
                     (true, CompareType::GreaterThanOrEqual) => {
                         dynasm!(ops
-                            ; mov W(r_out as u32), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap()) as u32
+                            ; mov W(r_out), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap())
                         )
                     }
                     (false, CompareType::LessThan) => todo!("Compare constants with type LessThanUnsigned"),
@@ -516,12 +516,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             match data_type {
                 DataType::F32 => {
                     dynasm!(ops
-                        ; fcmp S(a.r() as u32), S(b.r() as u32)
+                        ; fcmp S(a.r()), S(b.r())
                     );
                 }
                 DataType::F64 => {
                     dynasm!(ops
-                        ; fcmp D(a.r() as u32), D(b.r() as u32)
+                        ; fcmp D(a.r()), D(b.r())
                     );
                 }
                 _ => todo!("Unsupported float Compare operation with data type {:?}", data_type),
@@ -546,27 +546,27 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [X(r_ptr.r()), offset as u32]
+                    ; ldr W(r_out), [X(r_ptr.r()), offset]
                 );
             }
             (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U64) => {
                 dynasm!(ops
-                    ; ldr X(r_out as u32), [X(r_ptr), offset as u32]
+                    ; ldr X(r_out), [X(r_ptr), offset]
                 );
             }
             (Register::GPR(r_out), ConstOrReg::GPR(r_ptr), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [X(r_ptr), offset as u32]
+                    ; ldr W(r_out), [X(r_ptr), offset]
                 );
             }
             (Register::SIMD(r_out), ConstOrReg::GPR(r_ptr), DataType::F64) => {
                 dynasm!(ops
-                    ; ldr D(r_out as u32), [X(r_ptr), offset as u32]
+                    ; ldr D(r_out), [X(r_ptr), offset]
                 );
             }
             (Register::SIMD(r_out), ConstOrReg::GPR(r_ptr), DataType::F32) => {
                 dynasm!(ops
-                    ; ldr S(r_out as u32), [X(r_ptr), offset as u32]
+                    ; ldr S(r_out), [X(r_ptr), offset]
                 );
             }
             _ => todo!("Unsupported LoadPtr operation: Load {:?} with address [{:?}] and type {}", r_out, ptr, tp),
@@ -590,55 +590,55 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 load_64_bit_constant(ops, lp, r_address.r(), ptr);
                 load_32_bit_constant(ops, lp, r_value.r(), value);
                 dynasm!(ops
-                    ; str W(r_value.r()), [X(r_address.r()), offset as u32]
+                    ; str W(r_value.r()), [X(r_address.r()), offset]
                 );
             }
             (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
                 let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
                 dynasm!(ops
-                    ; str W(r_value as u32), [X(r_ptr.r()), offset as u32]
+                    ; str W(r_value), [X(r_ptr.r()), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(c_value), DataType::U32) => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), c_value.into());
                 dynasm!(ops
-                    ; str W(r_value.r() as u32), [X(r_ptr), offset as u32]
+                    ; str W(r_value.r()), [X(r_ptr), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
-                    ; str W(r_value as u32), [X(r_ptr as u32), offset as u32]
+                    ; str W(r_value), [X(r_ptr), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
-                    ; str S(r_value as u32), [X(r_ptr as u32), offset as u32]
+                    ; str S(r_value), [X(r_ptr), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
                 dynasm!(ops
-                    ; str X(r_value as u32), [X(r_ptr as u32), offset as u32]
+                    ; str X(r_value), [X(r_ptr), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(value), DataType::U64) => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), value);
                 dynasm!(ops
-                    ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
+                    ; str X(r_value.r()), [X(r_ptr), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), c, DataType::U64 | DataType::S64) if c.is_const() => {
                 let r_value = self.scratch_regs.borrow::<register_type::GPR>();
                 load_64_bit_constant(ops, lp, r_value.r(), c.to_u64_const().unwrap());
                 dynasm!(ops
-                    ; str X(r_value.r() as u32), [X(r_ptr as u32), offset as u32]
+                    ; str X(r_value.r()), [X(r_ptr), offset]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
                 dynasm!(ops
-                    ; str D(r_value as u32), [X(r_ptr as u32), offset as u32]
+                    ; str D(r_value), [X(r_ptr), offset]
                 );
             }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
@@ -649,17 +649,17 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         match (&to_spill, &stack_offset, tp) {
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U8 | DataType::S8 | DataType::Bool) => {
                 dynasm!(ops
-                    ; strb W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8) as u32]
+                    ; strb W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8)]
                 )
             }
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U16 | DataType::S16) => {
                 dynasm!(ops
-                    ; strh W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U16) as u32]
+                    ; strh W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U16)]
                 )
             }
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
-                    ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
+                    ; str W(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
                 )
             }
             (ConstOrReg::GPR(r), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
@@ -690,32 +690,32 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         match (r_out, &stack_offset, tp) {
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U8 | DataType::S8 | DataType::Bool) => {
                 dynasm!(ops
-                    ; ldrb W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8) as u32]
+                    ; ldrb W(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U8)]
                 )
             }
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U16 | DataType::S16) => {
                 dynasm!(ops
-                    ; ldrh W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U16) as u32]
+                    ; ldrh W(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U16)]
                 )
             }
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U32 | DataType::S32) => {
                 dynasm!(ops
-                    ; ldr W(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32) as u32]
+                    ; ldr W(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U32)]
                 )
             }
             (Register::GPR(r_out), ConstOrReg::U64(offset), DataType::U64 | DataType::S64 | DataType::Ptr) => {
                 dynasm!(ops
-                    ; ldr X(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64)]
+                    ; ldr X(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U64)]
                 )
             }
             (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::F32) => {
                 dynasm!(ops
-                    ; ldr S(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F32)]
+                    ; ldr S(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F32)]
                 )
             }
             (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::F64) => {
                 dynasm!(ops
-                    ; ldr D(r_out as u32), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
+                    ; ldr D(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
                 )
             }
             _ => todo!(
@@ -742,11 +742,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 match tp {
                     DataType::U64 | DataType::S64 => {
                         let result = base.wrapping_shl(amount);
-                        load_64_bit_constant(ops, lp, r_out as u32, result);
+                        load_64_bit_constant(ops, lp, r_out, result);
                     }
                     DataType::U32 | DataType::S32 => {
                         let result = (base as i32).wrapping_shl(amount) as i64;
-                        load_64_bit_constant(ops, lp, r_out as u32, result as u64);
+                        load_64_bit_constant(ops, lp, r_out, result as u64);
                     }
                     _ => todo!("LeftShift with constant base with tp {}", tp),
                 }
@@ -754,24 +754,24 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 match (tp, n) {
                     (DataType::U8 | DataType::S8, ConstOrReg::GPR(r_n)) => {
                         dynasm!(ops
-                            ; lsl W(r_out as u32), W(r_n as u32), amount & 0b111
-                            ; and WSP(r_out as u32), W(r_out as u32), 0xFF // Mask to 8 bits
+                            ; lsl W(r_out), W(r_n), amount & 0b111
+                            ; and WSP(r_out), W(r_out), 0xFF // Mask to 8 bits
                         );
                     }
                     (DataType::U16 | DataType::S16, ConstOrReg::GPR(r_n)) => {
                         dynasm!(ops
-                            ; lsl W(r_out as u32), W(r_n as u32), amount & 0b1111
-                            ; and WSP(r_out as u32), W(r_out as u32), 0xFFFF // Mask to 16
+                            ; lsl W(r_out), W(r_n), amount & 0b1111
+                            ; and WSP(r_out), W(r_out), 0xFFFF // Mask to 16
                         );
                     }
                     (DataType::U32 | DataType::S32, ConstOrReg::GPR(r_n)) => {
                         dynasm!(ops
-                            ; lsl W(r_out as u32), W(r_n as u32), amount & 0b11111
+                            ; lsl W(r_out), W(r_n), amount & 0b11111
                         );
                     }
                     (DataType::U64 | DataType::S64, ConstOrReg::GPR(r_n)) => {
                         dynasm!(ops
-                            ; lsl X(r_out as u32), X(r_n as u32), amount & 0b111111
+                            ; lsl X(r_out), X(r_n), amount & 0b111111
                         );
                     }
                     _ => todo!("Unsupported LeftShift operation: {:?} << {:?} with type {}", n, amount, tp),
@@ -785,7 +785,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::S16, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S16"),
                 (DataType::U32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lslv W(r_out as u32), W(r_n as u32), W(r_amount as u32)
+                        ; lslv W(r_out), W(r_n), W(r_amount)
                     );
                 }
                 (DataType::U32, c) if c.is_const() => {
@@ -793,13 +793,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
                     load_32_bit_constant(ops, lp, r_temp.r(), c);
                     dynasm!(ops
-                        ; lslv W(r_out as u32), W(r_temp.r() as u32), W(r_amount as u32)
+                        ; lslv W(r_out), W(r_temp.r()), W(r_amount)
                     );
                 }
                 (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S32"),
                 (DataType::U64, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lslv X(r_out as u32), X(r_n as u32), X(r_amount as u32)
+                        ; lslv X(r_out), X(r_n), X(r_amount)
                     );
                 }
                 (DataType::U64, c) if c.is_const() => {
@@ -807,7 +807,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
                     load_64_bit_constant(ops, lp, r_temp.r(), c);
                     dynasm!(ops
-                        ; lslv X(r_out as u32), X(r_temp.r() as u32), X(r_amount as u32)
+                        ; lslv X(r_out), X(r_temp.r()), X(r_amount)
                     );
                 }
                 (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("LeftShift with GPR amount for S64"),
@@ -833,57 +833,57 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             match (tp, n) {
                 (DataType::U8, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; and WSP(r_out as u32), W(r_n as u32), 0xFF
-                        ; lsr W(r_out as u32), W(r_out as u32), amount & 0b111
+                        ; and WSP(r_out), W(r_n), 0xFF
+                        ; lsr W(r_out), W(r_out), amount & 0b111
                     );
                 }
                 (DataType::S8, ConstOrReg::GPR(r_n)) => {
                     // Shift left to put the sign bit in the 32 bit sign bit position, then shift
                     // right.
                     dynasm!(ops
-                        ; lsl W(r_out as u32), W(r_n as u32), 24
-                        ; asr W(r_out as u32), W(r_out as u32), (amount & 0b111) + 24
-                        ; and WSP(r_out as u32), W(r_out as u32), 0xFF // Mask to 8 bits
+                        ; lsl W(r_out), W(r_n), 24
+                        ; asr W(r_out), W(r_out), (amount & 0b111) + 24
+                        ; and WSP(r_out), W(r_out), 0xFF // Mask to 8 bits
                     );
                 }
                 (DataType::U16, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; and WSP(r_out as u32), W(r_n as u32), 0xFFFF
-                        ; lsr W(r_out as u32), W(r_out as u32), amount & 0b1111
+                        ; and WSP(r_out), W(r_n), 0xFFFF
+                        ; lsr W(r_out), W(r_out), amount & 0b1111
                     );
                 }
                 (DataType::S16, ConstOrReg::GPR(r_n)) => {
                     // Shift left to put the sign bit in the 32 bit sign bit position, then shift
                     // right.
                     dynasm!(ops
-                        ; lsl W(r_out as u32), W(r_n as u32), 16
-                        ; asr W(r_out as u32), W(r_out as u32), (amount & 0b1111) + 16
-                        ; and WSP(r_out as u32), W(r_out as u32), 0xFFFF // Mask to 16 bits
+                        ; lsl W(r_out), W(r_n), 16
+                        ; asr W(r_out), W(r_out), (amount & 0b1111) + 16
+                        ; and WSP(r_out), W(r_out), 0xFFFF // Mask to 16 bits
                     );
                 }
                 (DataType::U32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lsr W(r_out as u32), W(r_n as u32), amount & 0b11111
+                        ; lsr W(r_out), W(r_n), amount & 0b11111
                     );
                 }
                 (DataType::U32, c) if c.is_const() => {
                     let c = c.to_u64_const().unwrap() as u32;
                     let c = c >> (amount & 0b11111);
-                    load_32_bit_constant(ops, lp, r_out as u32, c);
+                    load_32_bit_constant(ops, lp, r_out, c);
                 }
                 (DataType::S32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; asr W(r_out as u32), W(r_n as u32), amount & 0b11111
+                        ; asr W(r_out), W(r_n), amount & 0b11111
                     );
                 }
                 (DataType::U64, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lsr X(r_out as u32), X(r_n as u32), amount & 0b111111
+                        ; lsr X(r_out), X(r_n), amount & 0b111111
                     );
                 }
                 (DataType::S64, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; asr X(r_out as u32), X(r_n as u32), amount & 0b111111
+                        ; asr X(r_out), X(r_n), amount & 0b111111
                     );
                 }
                 _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
@@ -896,13 +896,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::S16, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S16"),
                 (DataType::U32, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lsrv W(r_out as u32), W(r_n as u32), W(r_amount as u32)
+                        ; lsrv W(r_out), W(r_n), W(r_amount)
                     );
                 }
                 (DataType::S32, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S32"),
                 (DataType::U64, ConstOrReg::GPR(r_n)) => {
                     dynasm!(ops
-                        ; lsrv X(r_out as u32), X(r_n as u32), X(r_amount as u32)
+                        ; lsrv X(r_out), X(r_n), X(r_amount)
                     );
                 }
                 (DataType::S64, ConstOrReg::GPR(_r_n)) => todo!("RightShift with GPR amount for S64"),
@@ -915,15 +915,15 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let c = c.to_u64_const().unwrap() as u32;
                     load_32_bit_constant(ops, lp, r_out as u32, c);
                     dynasm!(ops
-                        ; lsrv W(r_out as u32), W(r_out as u32), W(r_amount as u32)
+                        ; lsrv W(r_out), W(r_out), W(r_amount)
                     );
                 },
                 (DataType::S32, c) if c.is_const() => todo!("RightShift const with GPR amount for S32"),
                 (DataType::U64, c) if c.is_const() => {
                     let c = c.to_u64_const().unwrap();
-                    load_64_bit_constant(ops, lp, r_out as u32, c);
+                    load_64_bit_constant(ops, lp, r_out, c);
                     dynasm!(ops
-                        ; lsrv X(r_out as u32), X(r_out as u32), X(r_amount as u32)
+                        ; lsrv X(r_out), X(r_out), X(r_amount)
                     );
                 },
                 (DataType::S64, c) if c.is_const() => todo!("RightShift const with GPR amount for S64"),
@@ -949,67 +949,67 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
                     // mov to a 32 bit register zero extends it by default
-                    ; mov W(r_out as u32), W(input.r())
+                    ; mov W(r_out), W(input.r())
                 );
             }
             (Register::GPR(r_out), DataType::S64, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
-                    ; sxtw X(r_out as u32), W(input.r())
+                    ; sxtw X(r_out), W(input.r())
                 );
             }
             (Register::GPR(r_out), DataType::S64, DataType::S8) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
                     // Shift the sign bit into the 32 bit sign position
-                    ; lsl W(r_out as u32), W(input.r()), 24
+                    ; lsl W(r_out), W(input.r()), 24
                     // Sign extend to 64 bits
-                    ; sxtw X(r_out as u32), W(r_out as u32)
+                    ; sxtw X(r_out), W(r_out)
                     // Then shift arithmetic back to the original position
-                    ; asr X(r_out as u32), X(r_out as u32), 24
+                    ; asr X(r_out), X(r_out), 24
                 );
             }
             (Register::GPR(r_out), DataType::S64, DataType::S16) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
                     // Shift the sign bit into the 32 bit sign position
-                    ; lsl W(r_out as u32), W(input.r()), 16
+                    ; lsl W(r_out), W(input.r()), 16
                     // Sign extend to 64 bits
-                    ; sxtw X(r_out as u32), W(r_out as u32)
+                    ; sxtw X(r_out), W(r_out)
                     // Then shift arithmetic back to the original position
-                    ; asr X(r_out as u32), X(r_out as u32), 16
+                    ; asr X(r_out), X(r_out), 16
                 );
             }
             (Register::SIMD(r_out), DataType::F64, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
-                    ; scvtf D(r_out as u32), W(input.r())
+                    ; scvtf D(r_out), W(input.r())
                 );
             }
             (Register::SIMD(r_out), DataType::F32, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
-                    ; scvtf S(r_out as u32), W(input.r() as u32)
+                    ; scvtf S(r_out), W(input.r())
                 );
             }
             (Register::SIMD(r_out), DataType::F32, DataType::F64) => {
                 let input = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
-                    ; fcvt S(r_out as u32), D(input.r())
+                    ; fcvt S(r_out), D(input.r())
                 )
             }
             (Register::GPR(r_out), DataType::S32, DataType::F32) => {
                 warn!("TODO: this is assuming round towards zero in all cases, which is not always true");
                 let input = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
-                    ; fcvtzs W(r_out as u32), S(input.r())
+                    ; fcvtzs W(r_out), S(input.r())
                 )
             }
             (Register::GPR(r_out), DataType::S32, DataType::F64) => {
                 warn!("TODO: this is assuming round towards zero in all cases, which is not always true");
                 let value = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
-                    ; fcvtzs W(r_out as u32), D(value.r())
+                    ; fcvtzs W(r_out), D(value.r())
                 )
             }
             (r_out, DataType::U64, DataType::U64) => {
@@ -1021,7 +1021,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (Register::SIMD(r_out), DataType::F64, DataType::F32) => {
                 let value = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
-                    ; fcvt D(r_out as u32), S(value.r())
+                    ; fcvt D(r_out), S(value.r())
                 );
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
@@ -1034,14 +1034,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; and W(r_out as u32), W(a.r()), W(b.r())
+                    ; and W(r_out), W(a.r()), W(b.r())
                 );
             }
             (DataType::U64, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; and X(r_out as u32), X(a.r()), X(b.r())
+                    ; and X(r_out), X(a.r()), X(b.r())
                 );
             }
             (DataType::Bool, Register::GPR(r_out)) => {
@@ -1052,8 +1052,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; cmp XSP(a.r()), 0
                     ; cset X(r_temp.r()), ne
                     ; cmp XSP(b.r()), 0
-                    ; cset X(r_out as u32), ne
-                    ; and X(r_out as u32), X(r_temp.r()), X(r_out as u32)
+                    ; cset X(r_out), ne
+                    ; and X(r_out), X(r_temp.r()), X(r_out)
                 );
             }
             _ => todo!("Unsupported AND operation: {:?} = {:?} & {:?} with type {:?}", r_out, a, b, tp),
@@ -1066,14 +1066,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; orr W(r_out as u32), W(a.r()), W(b.r())
+                    ; orr W(r_out), W(a.r()), W(b.r())
                 );
             }
             (DataType::U64, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; orr X(r_out as u32), X(a.r()), X(b.r())
+                    ; orr X(r_out), X(a.r()), X(b.r())
                 );
             }
             _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
@@ -1086,20 +1086,20 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             DataType::U32 => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
-                    ; mvn W(r_out as u32), W(a.r())
+                    ; mvn W(r_out), W(a.r())
                 );
             }
             DataType::U64 => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
-                    ; mvn X(r_out as u32), X(a.r())
+                    ; mvn X(r_out), X(a.r())
                 );
             }
             DataType::Bool => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
                     ; cmp XSP(a.r()), 0
-                    ; cset X(r_out as u32), eq
+                    ; cset X(r_out), eq
                 )
             }
             _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a),
@@ -1112,14 +1112,14 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; eor W(r_out as u32), W(a.r()), W(b.r())
+                    ; eor W(r_out), W(a.r()), W(b.r())
                 );
             }
             (DataType::U64, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
                 dynasm!(ops
-                    ; eor X(r_out as u32), X(a.r()), X(b.r())
+                    ; eor X(r_out), X(a.r()), X(b.r())
                 );
             }
             _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp),
@@ -1140,19 +1140,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 DataType::U32 => load_32_bit_constant(
                     ops,
                     lp,
-                    r_out.expect_gpr() as u32,
+                    r_out.expect_gpr(),
                     minuend.to_u64_const().unwrap() as u32 - subtrahend.to_u64_const().unwrap() as u32,
                 ),
                 DataType::S32 => {
                     let result = (minuend.to_s64_const().unwrap() as i32)
                         .wrapping_sub(subtrahend.to_s64_const().unwrap() as i32)
                         as i64;
-                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr() as u32, result);
+                    load_64_bit_signed_constant(ops, lp, r_out.expect_gpr(), result);
                 }
                 DataType::U64 => load_64_bit_constant(
                     ops,
                     lp,
-                    r_out.expect_gpr() as u32,
+                    r_out.expect_gpr(),
                     minuend.to_u64_const().unwrap() - subtrahend.to_u64_const().unwrap(),
                 ),
                 _ => todo!(
@@ -1169,28 +1169,28 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     let minuend = self.materialize_as_gpr(ops, lp, minuend);
                     let subtrahend = self.materialize_as_gpr(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; sub W(r_out as u32), W(minuend.r()), W(subtrahend.r())
+                        ; sub W(r_out), W(minuend.r()), W(subtrahend.r())
                     )
                 }
                 (DataType::U64 | DataType::S64, Register::GPR(r_out)) => {
                     let minuend = self.materialize_as_gpr(ops, lp, minuend);
                     let subtrahend = self.materialize_as_gpr(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; sub X(r_out as u32), X(minuend.r()), X(subtrahend.r())
+                        ; sub X(r_out), X(minuend.r()), X(subtrahend.r())
                     )
                 }
                 (DataType::F32, Register::SIMD(r_out)) => {
                     let minuend = self.materialize_as_simd(ops, lp, minuend);
                     let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; fsub S(r_out as u32), S(minuend.r()), S(subtrahend.r())
+                        ; fsub S(r_out), S(minuend.r()), S(subtrahend.r())
                     )
                 }
                 (DataType::F64, Register::SIMD(r_out)) => {
                     let minuend = self.materialize_as_simd(ops, lp, minuend);
                     let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
                     dynasm!(ops
-                        ; fsub D(r_out as u32), D(minuend.r()), D(subtrahend.r())
+                        ; fsub D(r_out), D(minuend.r()), D(subtrahend.r())
                     )
                 }
                 _ => todo!("Unsupported Sub operation: {:?} - {:?} with type {:?}", minuend, subtrahend, tp),
@@ -1215,9 +1215,9 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; umull X(r_out_hi as u32), W(a.r() as u32), W(b.r() as u32)
-                    ; mov W(r_out_lo as u32), W(r_out_hi as u32)
-                    ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
+                    ; umull X(r_out_hi), W(a.r()), W(b.r())
+                    ; mov W(r_out_lo), W(r_out_hi)
+                    ; lsr X(r_out_hi), X(r_out_hi), 32
                 );
             }
             (DataType::S32, DataType::S32, 2) => {
@@ -1226,9 +1226,9 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; smull X(r_out_hi as u32), W(a.r() as u32), W(b.r() as u32)
-                    ; mov W(r_out_lo as u32), W(r_out_hi as u32)
-                    ; lsr X(r_out_hi as u32), X(r_out_hi as u32), 32
+                    ; smull X(r_out_hi), W(a.r()), W(b.r())
+                    ; mov W(r_out_lo), W(r_out_hi)
+                    ; lsr X(r_out_hi), X(r_out_hi), 32
                 );
             }
             (DataType::U64, DataType::U64, 2) => {
@@ -1237,8 +1237,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; umulh X(r_out_hi as u32), X(a.r() as u32), X(b.r() as u32)
-                    ; mul X(r_out_lo as u32), X(a.r() as u32), X(b.r() as u32)
+                    ; umulh X(r_out_hi), X(a.r()), X(b.r())
+                    ; mul X(r_out_lo), X(a.r()), X(b.r())
                 );
             }
             (DataType::S64, DataType::S64, 2) => {
@@ -1247,8 +1247,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_out_lo = output_regs[0].unwrap().expect_gpr();
                 let r_out_hi = output_regs[1].unwrap().expect_gpr();
                 dynasm!(ops
-                    ; smulh X(r_out_hi as u32), X(a.r() as u32), X(b.r() as u32)
-                    ; mul X(r_out_lo as u32), X(a.r() as u32), X(b.r() as u32)
+                    ; smulh X(r_out_hi), X(a.r()), X(b.r())
+                    ; mul X(r_out_lo), X(a.r()), X(b.r())
                 );
             }
             (DataType::F32, DataType::F32, 1) => {
@@ -1256,7 +1256,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let b = self.materialize_as_simd(ops, lp, b);
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
-                    ; fmul S(r_out as u32), S(a.r()), S(b.r())
+                    ; fmul S(r_out), S(a.r()), S(b.r())
                 );
             }
             (DataType::F64, DataType::F64, 1) => {
@@ -1264,7 +1264,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let b = self.materialize_as_simd(ops, lp, b);
                 let r_out = output_regs[0].unwrap().expect_simd();
                 dynasm!(ops
-                    ; fmul D(r_out as u32), D(a.r()), D(b.r())
+                    ; fmul D(r_out), D(a.r()), D(b.r())
                 );
             }
             _ => todo!(
@@ -1295,8 +1295,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; sdiv W(r_quotient as u32), W(dividend.r()), W(divisor.r())
-                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(divisor.r()), W(dividend.r())
+                    ; sdiv W(r_quotient), W(dividend.r()), W(divisor.r())
+                    ; msub W(r_remainder), W(r_quotient), W(divisor.r()), W(dividend.r())
                 );
             }
             DataType::S64 => {
@@ -1305,8 +1305,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; sdiv X(r_quotient as u32), X(dividend.r()), X(divisor.r())
-                    ; msub X(r_remainder as u32), X(r_quotient as u32), X(divisor.r()), X(dividend.r())
+                    ; sdiv X(r_quotient), X(dividend.r()), X(divisor.r())
+                    ; msub X(r_remainder), X(r_quotient), X(divisor.r()), X(dividend.r())
                 );
             }
             DataType::U32 => {
@@ -1315,8 +1315,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; udiv W(r_quotient as u32), W(dividend.r() as u32), W(divisor.r() as u32)
-                    ; msub W(r_remainder as u32), W(r_quotient as u32), W(divisor.r() as u32), W(dividend.r() as u32)
+                    ; udiv W(r_quotient), W(dividend.r()), W(divisor.r())
+                    ; msub W(r_remainder), W(r_quotient), W(divisor.r()), W(dividend.r())
                 );
             }
             DataType::U64 => {
@@ -1325,8 +1325,8 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_quotient = r_quotient.unwrap().expect_gpr();
                 let r_remainder = r_remainder.unwrap().expect_gpr();
                 dynasm!(ops
-                    ; udiv X(r_quotient as u32), X(dividend.r() as u32), X(divisor.r() as u32)
-                    ; msub X(r_remainder as u32), X(r_quotient as u32), X(divisor.r() as u32), X(dividend.r() as u32)
+                    ; udiv X(r_quotient), X(dividend.r()), X(divisor.r())
+                    ; msub X(r_remainder), X(r_quotient), X(divisor.r()), X(dividend.r())
                 );
             }
             DataType::F32 => {
@@ -1339,7 +1339,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_quotient = r_quotient.unwrap().expect_simd();
 
                 dynasm!(ops
-                    ; fdiv S(r_quotient as u32), S(dividend.r()), S(divisor.r())
+                    ; fdiv S(r_quotient), S(dividend.r()), S(divisor.r())
                 );
             }
             DataType::F64 => {
@@ -1351,7 +1351,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 let r_quotient = r_quotient.unwrap().expect_simd();
 
                 dynasm!(ops
-                    ; fdiv D(r_quotient as u32), D(dividend.r()), D(divisor.r())
+                    ; fdiv D(r_quotient), D(dividend.r()), D(divisor.r())
                 );
             }
             _ => todo!("Unsupported Divide operation: {:?} / {:?} with type {:?}", dividend, divisor, tp),
@@ -1363,13 +1363,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (Register::SIMD(r_out), DataType::F32) => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fsqrt S(r_out as u32), S(value.r())
+                    ; fsqrt S(r_out), S(value.r())
                 );
             }
             (Register::SIMD(r_out), DataType::F64) => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fsqrt D(r_out as u32), D(value.r())
+                    ; fsqrt D(r_out), D(value.r())
                 );
             }
             _ => todo!("Unsupported SquareRoot operation: ({:?}, {:?}, {:?})", r_out, tp, value),
@@ -1381,13 +1381,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (DataType::F32, Register::SIMD(r_out)) => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fabs S(r_out as u32), S(value.r())
+                    ; fabs S(r_out), S(value.r())
                 );
             }
             (DataType::F64, Register::SIMD(r_out)) => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fabs D(r_out as u32), D(value.r())
+                    ; fabs D(r_out), D(value.r())
                 );
             }
             _ => todo!("Unsupported AbsoluteValue operation: ({:?}, {:?})", tp, r_out),
@@ -1399,13 +1399,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (DataType::F32, Register::SIMD(r_out)) => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fneg S(r_out as u32), S(value.r())
+                    ; fneg S(r_out), S(value.r())
                 );
             }
             (DataType::F64, Register::SIMD(r_out)) => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
-                    ; fneg D(r_out as u32), D(value.r())
+                    ; fneg D(r_out), D(value.r())
                 );
             }
             _ => todo!("Unsupported Negate operation: ({:?}, {:?}) with value {:?}", tp, r_out, value),
@@ -1444,7 +1444,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             match reg {
                 Register::GPR(r) => {
                     dynasm!(ops
-                        ; str X(*r as u32), [sp, stack_offset]
+                        ; str X(*r), [sp, stack_offset]
                     );
                 }
                 Register::SIMD(_r) => todo!(),
@@ -1479,7 +1479,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             match reg {
                 Register::GPR(r) => {
                     dynasm!(ops
-                        ; ldr X(*r as u32), [sp, stack_offsets[reg]]
+                        ; ldr X(*r), [sp, stack_offsets[reg]]
                     );
                 }
                 Register::SIMD(_r) => todo!(),

@@ -16,10 +16,16 @@ use crate::{
 
 use itertools::Itertools;
 
+#[cfg(target_arch = "aarch64")]
+type RegisterIndex = usize;
+#[cfg(target_arch = "x86_64")]
+pub type RegisterIndex = u8;
+
+
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
 pub enum Register {
-    GPR(usize),
-    SIMD(usize),
+    GPR(RegisterIndex),
+    SIMD(RegisterIndex),
 }
 
 impl Register {
@@ -54,7 +60,7 @@ impl Register {
         }
     }
 
-    pub fn expect_gpr(&self) -> usize {
+    pub fn expect_gpr(&self) -> RegisterIndex {
         match self {
             Register::GPR(r) => *r,
             _ => panic!("Expected GPR, found {:?}", self),
@@ -68,7 +74,7 @@ impl Register {
         }
     }
 
-    pub fn expect_simd(&self) -> usize {
+    pub fn expect_simd(&self) -> RegisterIndex {
         match self {
             Register::SIMD(r) => *r,
             _ => panic!("Expected SIMD, found {:?}", self),
@@ -87,8 +93,8 @@ impl Register {
 
     pub fn to_const_or_reg(&self) -> ConstOrReg {
         match self {
-            Register::GPR(r) => ConstOrReg::GPR(*r as u32),
-            Register::SIMD(r) => ConstOrReg::SIMD(*r as u32),
+            Register::GPR(r) => ConstOrReg::GPR(*r),
+            Register::SIMD(r) => ConstOrReg::SIMD(*r),
         }
     }
     pub fn is_volatile(&self) -> bool {
@@ -108,7 +114,7 @@ impl Register {
         }
     }
 
-    pub fn index(&self) -> usize {
+    pub fn index(&self) -> RegisterIndex {
         match self {
             Register::GPR(r) => *r,
             Register::SIMD(r) => *r,

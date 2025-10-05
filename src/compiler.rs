@@ -19,6 +19,7 @@ use crate::compiler_x64;
 use crate::ir::{IRFunction, IRFunctionInternal};
 use crate::reg_pool::register_type::{GPR, SIMD};
 use crate::reg_pool::{register_type, BorrowedReg, RegPool};
+use crate::register_allocator::RegisterIndex;
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
@@ -41,18 +42,18 @@ pub enum ConstOrReg {
     S32(i32),
     U64(u64),
     F32(OrderedFloat<f32>),
-    GPR(u32),
-    SIMD(u32),
+    GPR(RegisterIndex),
+    SIMD(RegisterIndex),
     S64(i64),
 }
 
 pub enum MaterializedGpr {
-    AlreadyGPR(u32),
+    AlreadyGPR(RegisterIndex),
     TemporaryGPR(BorrowedReg<GPR>),
 }
 
 impl MaterializedGpr {
-    pub fn r(&self) -> u32 {
+    pub fn r(&self) -> RegisterIndex {
         match self {
             MaterializedGpr::AlreadyGPR(r) => *r,
             MaterializedGpr::TemporaryGPR(temp) => temp.r(),
@@ -61,12 +62,12 @@ impl MaterializedGpr {
 }
 
 pub enum MaterializedSimd {
-    AlreadySIMD(u32),
+    AlreadySIMD(RegisterIndex),
     TemporarySIMD(BorrowedReg<SIMD>),
 }
 
 impl MaterializedSimd {
-    pub fn r(&self) -> u32 {
+    pub fn r(&self) -> RegisterIndex {
         match self {
             MaterializedSimd::AlreadySIMD(r) => *r,
             MaterializedSimd::TemporarySIMD(temp) => temp.r(),
@@ -77,8 +78,8 @@ impl MaterializedSimd {
 impl ConstOrReg {
     pub fn to_reg(&self) -> Option<Register> {
         match self {
-            ConstOrReg::GPR(r) => Some(Register::GPR(*r as usize)),
-            ConstOrReg::SIMD(r) => Some(Register::SIMD(*r as usize)),
+            ConstOrReg::GPR(r) => Some(Register::GPR(*r)),
+            ConstOrReg::SIMD(r) => Some(Register::SIMD(*r)),
             ConstOrReg::U16(_) => None,
             ConstOrReg::S16(_) => None,
             ConstOrReg::U32(_) => None,
@@ -442,8 +443,8 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         match *s {
             InputSlot::InstructionOutput { .. } | InputSlot::BlockInput { .. } => {
                 match self.get_allocations().allocations[&s.to_value(&self.get_func()).unwrap()] {
-                    Register::GPR(r) => ConstOrReg::GPR(r as u32),
-                    Register::SIMD(r) => ConstOrReg::SIMD(r as u32),
+                    Register::GPR(r) => ConstOrReg::GPR(r),
+                    Register::SIMD(r) => ConstOrReg::SIMD(r),
                 }
             }
             InputSlot::Constant(constant) => match constant {
@@ -504,7 +505,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
             assert_eq!(pending_move_targets.insert(*to), true);
             if let ConstOrReg::GPR(r) = *from {
                 // assert true: A register can be the source of only one move per run of this algorithm
-                assert_eq!(pending_move_sources.insert(Register::GPR(r as usize)), true);
+                assert_eq!(pending_move_sources.insert(Register::GPR(r)), true);
             }
         }
 
@@ -696,7 +697,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: usize,
+        r_out: RegisterIndex,
         data_type: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
@@ -731,7 +732,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: usize,
+        r_out: RegisterIndex,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
@@ -741,7 +742,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: usize,
+        r_out: RegisterIndex,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,

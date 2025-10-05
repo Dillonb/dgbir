@@ -2,26 +2,26 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use register_type::RegPoolRegister;
 
-use crate::register_allocator::Register;
+use crate::register_allocator::{Register, RegisterIndex};
 
 pub mod register_type {
-    use crate::register_allocator::Register;
+    use crate::register_allocator::{Register, RegisterIndex};
 
     pub trait RegPoolRegister {
-        fn idx(&self) -> u32;
+        fn idx(&self) -> RegisterIndex;
         fn is_same(r: Register) -> bool;
-        fn new(idx: u32) -> Self;
+        fn new(idx: RegisterIndex) -> Self;
     }
 
     // This needs to be a separate type than the main Register type because enum variants are not first
     // class types in Rust, so they can't be used as type parameters.
     // https://github.com/rust-lang/rfcs/pull/1450
     // https://github.com/rust-lang/rfcs/pull/2593
-    pub struct GPR(u32);
-    pub struct SIMD(u32);
+    pub struct GPR(RegisterIndex);
+    pub struct SIMD(RegisterIndex);
 
     impl RegPoolRegister for GPR {
-        fn idx(&self) -> u32 {
+        fn idx(&self) -> RegisterIndex {
             self.0
         }
 
@@ -32,13 +32,13 @@ pub mod register_type {
             }
         }
 
-        fn new(idx: u32) -> Self {
+        fn new(idx: RegisterIndex) -> Self {
             GPR(idx)
         }
     }
 
     impl RegPoolRegister for SIMD {
-        fn idx(&self) -> u32 {
+        fn idx(&self) -> RegisterIndex {
             self.0
         }
 
@@ -49,7 +49,7 @@ pub mod register_type {
             }
         }
 
-        fn new(idx: u32) -> Self {
+        fn new(idx: RegisterIndex) -> Self {
             SIMD(idx)
         }
     }
@@ -100,7 +100,7 @@ impl RegPool {
 
         BorrowedReg {
             reg,
-            pool_reg: T::new(reg.index() as u32),
+            pool_reg: T::new(reg.index()),
             pool: self.pool.clone(), // Increment refcount
         }
     }
@@ -119,7 +119,7 @@ impl RegPool {
 
         BorrowedReg {
             reg,
-            pool_reg: T::new(reg.index() as u32),
+            pool_reg: T::new(reg.index()),
             pool: self.pool.clone(), // Increment refcount
         }
     }
@@ -141,7 +141,7 @@ pub struct BorrowedReg<T: RegPoolRegister> {
 }
 
 impl<T: RegPoolRegister> BorrowedReg<T> {
-    pub fn r(&self) -> u32 {
+    pub fn r(&self) -> RegisterIndex {
         self.pool_reg.idx()
     }
 
