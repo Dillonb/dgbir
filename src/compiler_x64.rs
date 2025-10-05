@@ -337,14 +337,45 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         );
 
         let signed = tp.is_signed();
-        if tp.is_integer() {
-            let a = self.materialize_as_gpr(ops, lp, a);
-            let b = self.materialize_as_gpr(ops, lp, b);
-            dynasm!(ops
-                ; cmp Rq(a.r() as u8), Rq(b.r() as u8)
-            );
-        } else {
-            todo!("Compare with non-integer type: {}", tp);
+        match tp {
+            DataType::Bool => {
+                assert!(matches!(cmp_type, CompareType::Equal | CompareType::NotEqual));
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; cmp Rq(a.r() as u8), Rq(b.r() as u8)
+                );
+            }
+            DataType::U8
+            | DataType::S8
+            | DataType::U16
+            | DataType::S16
+            | DataType::U32
+            | DataType::S32
+            | DataType::U64
+            | DataType::S64
+            | DataType::Ptr => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; cmp Rq(a.r() as u8), Rq(b.r() as u8)
+                );
+            }
+            DataType::U128 => todo!("Compare with 128-bit integer type"),
+            DataType::F32 => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; comiss Rx(a.r() as u8), Rx(b.r() as u8)
+                );
+            }
+            DataType::F64 => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; comisd Rx(a.r() as u8), Rx(b.r() as u8)
+                );
+            }
         }
 
         match (signed, cmp_type) {
@@ -368,7 +399,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; setl Rb(r_out as u8)
                 )
             }
-            (true, CompareType::GreaterThan) => todo!("Compare with type GreaterThanSigned"),
+            (true, CompareType::GreaterThan) => {
+                dynasm!(ops
+                    ; setg Rb(r_out as u8)
+                );
+            },
             (true, CompareType::LessThanOrEqual) => {
                 dynasm!(ops
                     ; setle Rb(r_out as u8)
@@ -489,6 +524,18 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movd DWORD [rsp + offset], Rx(*r as u8)
                 )
             }
+            (ConstOrReg::GPR(r), ConstOrReg::U64(location), DataType::Bool) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov [rsp + offset], Rb(*r as u8)
+                )
+            }
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(location), DataType::F64) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; movq QWORD [rsp + offset], Rx(*r as u8)
+                )
+            }
             _ => todo!(
                 "Unsupported SpillToStack operation: {:?} to offset {:?} with datatype {}",
                 to_spill,
@@ -526,10 +573,27 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movd Rx(r_out as u8), DWORD [rsp + offset]
                 )
             }
-            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Ptr | DataType::U64 | DataType::S64 | DataType::F64) => {
+            (
+                Register::GPR(r_out),
+                ConstOrReg::U64(location),
+                DataType::Ptr | DataType::U64 | DataType::S64 | DataType::F64,
+            ) => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; mov Rq(r_out as u8), [rsp + offset]
+                )
+            }
+            (Register::GPR(r_out), ConstOrReg::U64(location), DataType::Bool) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; mov Rb(r_out as u8), [rsp + offset]
+                    ; movzx Rd(r_out as u8), Rb(r_out as u8)
+                )
+            }
+            (Register::SIMD(r_out), ConstOrReg::U64(location), DataType::F64) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; movq Rx(r_out as u8), QWORD [rsp + offset]
                 )
             }
             _ => todo!(
@@ -588,7 +652,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; shlx Rd(r_out as u8), Rd(r_out as u8), Rd(amount.r() as u8)
                     );
                 }
-                _ => todo!("RightShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
+                DataType::U64 | DataType::S64 => {
+                    dynasm!(ops
+                        ; shlx Rq(r_out as u8), Rq(r_out as u8), Rq(amount.r() as u8)
+                    );
+                }
+                _ => todo!("LeftShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
             }
         }
     }
@@ -604,7 +673,6 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     ) {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
-            // let n = self.materialize_as_gpr(ops, lp, n);
             self.move_to_reg(ops, lp, n, Register::GPR(r_out));
             match tp {
                 DataType::U8 => {
@@ -662,6 +730,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; shrx Rd(r_out as u8), Rd(r_out as u8), Rd(amount.r() as u8)
                     );
                 }
+                DataType::U64 => {
+                    dynasm!(ops
+                        ; shrx Rq(r_out as u8), Rq(r_out as u8), Rq(amount.r() as u8)
+                    );
+                }
                 _ => todo!("RightShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
             }
         }
@@ -717,6 +790,24 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let input = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
                     ; cvtss2si Rd(r_out as u8), Rx(input.r() as u8)
+                );
+            }
+            (Register::SIMD(r_out), DataType::F64, input, DataType::S32) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; cvtsi2sd Rx(r_out as u8), Rd(input.r() as u8)
+                );
+            }
+            (Register::SIMD(r_out), DataType::F32, input, DataType::F64) => {
+                let input = self.materialize_as_simd(ops, lp, input);
+                dynasm!(ops
+                    ; cvtsd2ss Rx(r_out as u8), Rx(input.r() as u8)
+                );
+            }
+            (Register::SIMD(r_out), DataType::F64, input, DataType::F32) => {
+                let input = self.materialize_as_simd(ops, lp, input);
+                dynasm!(ops
+                    ; cvtss2sd Rx(r_out as u8), Rx(input.r() as u8)
                 );
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
@@ -784,6 +875,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; not Rd(r_out.expect_gpr() as u8)
                 );
             }
+            DataType::U64 => {
+                self.move_to_reg(ops, lp, a, r_out);
+                dynasm!(ops
+                    ; not Rq(r_out.expect_gpr() as u8)
+                );
+            }
             _ => todo!("Unsupported NOT operation with type {:?}", tp),
         }
     }
@@ -832,6 +929,22 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; mov Rq(r_out as u8), Rq(minuend.r() as u8)
                     ; sub Rq(r_out as u8), Rq(subtrahend.r() as u8)
+                );
+            }
+            (DataType::F32, Register::SIMD(r_out)) => {
+                let minuend = self.materialize_as_simd(ops, lp, minuend);
+                let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
+                dynasm!(ops
+                    ; movss Rx(r_out as u8), Rx(minuend.r() as u8)
+                    ; subss Rx(r_out as u8), Rx(subtrahend.r() as u8)
+                );
+            }
+            (DataType::F64, Register::SIMD(r_out)) => {
+                let minuend = self.materialize_as_simd(ops, lp, minuend);
+                let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
+                dynasm!(ops
+                    ; movsd Rx(r_out as u8), Rx(minuend.r() as u8)
+                    ; subsd Rx(r_out as u8), Rx(subtrahend.r() as u8)
                 );
             }
             _ => todo!("Unsupported Subtract operation with type {:?}", tp),
@@ -914,22 +1027,20 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             (DataType::F32, DataType::F32, 1) => {
-                // let a = self.materialize_as_simd(ops, lp, a);
-                // let b = self.materialize_as_simd(ops, lp, b);
-                // let r_out = output_regs[0].unwrap().expect_simd();
-                todo!("F32 multiply")
-                // dynasm!(ops
-                //     ; fmul S(r_out as u32), S(a.r()), S(b.r())
-                // );
+                self.move_to_reg(ops, lp, a, output_regs[0].unwrap());
+                let b = self.materialize_as_simd(ops, lp, b);
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    ; mulss Rx(r_out as u8), Rx(b.r() as u8)
+                );
             }
             (DataType::F64, DataType::F64, 1) => {
-                // let a = self.materialize_as_simd(ops, lp, a);
-                // let b = self.materialize_as_simd(ops, lp, b);
-                // let r_out = output_regs[0].unwrap().expect_simd();
-                todo!("F64 multiply")
-                // dynasm!(ops
-                //     ; fmul D(r_out as u32), D(a.r()), D(b.r())
-                // );
+                self.move_to_reg(ops, lp, a, output_regs[0].unwrap());
+                let b = self.materialize_as_simd(ops, lp, b);
+                let r_out = output_regs[0].unwrap().expect_simd();
+                dynasm!(ops
+                    ; mulsd Rx(r_out as u8), Rx(b.r() as u8)
+                );
             }
             _ => todo!(
                 "Unsupported Multiply operation: {:?} * {:?} with result type {} ({} regs) and arg type {}",
@@ -1038,7 +1149,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; divss Rx(r_out as u8), Rx(divisor.r() as u8)
                 );
             }
-            _ => panic!("Divide with unknown type: {}", tp)
+            _ => panic!("Divide with unknown type: {}", tp),
         }
     }
 
