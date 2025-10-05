@@ -180,6 +180,18 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movq Rx(r_to), Rq(r_from)
                 );
             }
+            (ConstOrReg::U32(c), Register::SIMD(r_to)) => {
+                let literal = X64Compiler::add_literal(ops, lp, Constant::U32(c));
+                dynasm!(ops
+                    ; movd Rx(r_to), DWORD [=>literal]
+                );
+            }
+            (ConstOrReg::U64(c), Register::SIMD(r_to)) => {
+                let literal = X64Compiler::add_literal(ops, lp, Constant::U64(c));
+                dynasm!(ops
+                    ; movq Rx(r_to), QWORD [=>literal]
+                );
+            }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
         }
     }
@@ -838,7 +850,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             );
         } else {
             match (tp, r_out) {
-                (DataType::U32, Register::GPR(r_out)) => {
+                (DataType::U32 | DataType::Bool, Register::GPR(r_out)) => {
                     let a = self.materialize_as_gpr(ops, lp, a);
                     let b = self.materialize_as_gpr(ops, lp, b);
                     dynasm!(ops
@@ -1187,8 +1199,22 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn square_root(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
-        todo!()
+    fn square_root(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
+        match (r_out, tp) {
+            (Register::SIMD(r_out), DataType::F32) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; sqrtss Rx(r_out), Rx(value.r())
+                );
+            }
+            (Register::SIMD(r_out), DataType::F64) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; sqrtsd Rx(r_out), Rx(value.r())
+                );
+            }
+            _ => panic!("Square root: {} = sqrt({})", r_out, tp),
+        }
     }
 
     fn absolute_value(
@@ -1202,8 +1228,24 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         todo!()
     }
 
-    fn negate(&self, _ops: &mut Ops, _lp: &mut LiteralPool, _tp: DataType, _r_out: Register, _value: ConstOrReg) {
-        todo!()
+    fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
+        match (r_out, tp) {
+            (Register::SIMD(r_out), DataType::F32) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                self.move_to_reg(ops, lp, ConstOrReg::U32(0x80000000), Register::SIMD(r_out));
+                dynasm!(ops
+                    ; xorps Rx(r_out), Rx(value.r())
+                );
+            }
+            (Register::SIMD(r_out), DataType::F64) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                self.move_to_reg(ops, lp, ConstOrReg::U64(0x8000000000000000), Register::SIMD(r_out));
+                dynasm!(ops
+                    ; xorps Rx(r_out), Rx(value.r())
+                );
+            }
+            _ => todo!("Negate: {} = -({:?}) with type {}", r_out, value, tp),
+        }
     }
 
     fn call_function(
