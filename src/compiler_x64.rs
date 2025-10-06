@@ -809,7 +809,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             (Register::GPR(r_out), DataType::S32, input, DataType::F32) => {
                 let input = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
-                    ; cvtss2si Rd(r_out), Rx(input.r())
+                    ; cvttss2si Rd(r_out), Rx(input.r())
                 );
             }
             (Register::SIMD(r_out), DataType::F64, input, DataType::S32) => {
