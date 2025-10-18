@@ -10,7 +10,7 @@
     {
       devShells = forAllSystems (system: {
         default = pkgs.${system}.mkShell {
-          buildInputs = with pkgs.${system}; [ cargo rustc rust-analyzer rustfmt lldb bacon cargo-nextest ];
+          buildInputs = with pkgs.${system}; [ cargo cargo-outdated rustc rust-analyzer rustfmt lldb bacon cargo-nextest ];
         };
       });
     };
