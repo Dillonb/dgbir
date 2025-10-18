@@ -16,11 +16,7 @@ use crate::{
 
 use itertools::Itertools;
 
-#[cfg(target_arch = "aarch64")]
-pub type RegisterIndex = u32;
-#[cfg(target_arch = "x86_64")]
 pub type RegisterIndex = u8;
-
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
 pub enum Register {

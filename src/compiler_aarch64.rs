@@ -288,7 +288,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         match cond {
             ConstOrReg::GPR(c) => {
                 dynasm!(ops
-                    ; cbz W(c), >if_false
+                    ; cbz W(*c), >if_false
                 );
             }
             _ => todo!("Unsupported branch condition: {:?}", cond),
@@ -913,7 +913,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 (DataType::S16, c) if c.is_const() => todo!("RightShift const with GPR amount for S16"),
                 (DataType::U32, c) if c.is_const() => {
                     let c = c.to_u64_const().unwrap() as u32;
-                    load_32_bit_constant(ops, lp, r_out as u32, c);
+                    load_32_bit_constant(ops, lp, r_out, c);
                     dynasm!(ops
                         ; lsrv W(r_out), W(r_out), W(r_amount)
                     );
