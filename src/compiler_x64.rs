@@ -397,6 +397,9 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             }
         }
 
+        dynasm!(ops
+            ; xor Rd(r_out), Rd(r_out)
+        );
         match (signed, cmp_type) {
             (false, CompareType::LessThan) => {
                 dynasm!(ops
@@ -898,6 +901,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             DataType::Bool => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
+                    ; xor Rd(r_out.expect_gpr()), Rd(r_out.expect_gpr())
                     ; test Rb(a.r()), Rb(a.r())
                     ; sete Rb(r_out.expect_gpr())
                 )
