@@ -815,6 +815,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             (Register::SIMD(r_out), DataType::F32, input, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
+                    ; pxor Rx(r_out), Rx(r_out)
                     ; cvtsi2ss Rx(r_out), Rd(input.r())
                 );
             }
@@ -833,6 +834,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             (Register::SIMD(r_out), DataType::F32, input, DataType::F64) => {
                 let input = self.materialize_as_simd(ops, lp, input);
                 dynasm!(ops
+                    ; pxor Rx(r_out), Rx(r_out)
                     ; cvtsd2ss Rx(r_out), Rx(input.r())
                 );
             }
