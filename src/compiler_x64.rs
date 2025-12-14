@@ -397,9 +397,6 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             }
         }
 
-        dynasm!(ops
-            ; xor Rd(r_out), Rd(r_out)
-        );
         match (signed, cmp_type) {
             (false, CompareType::LessThan) => {
                 dynasm!(ops
