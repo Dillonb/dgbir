@@ -355,7 +355,11 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             ; xor Rd(r_out), Rd(r_out)
         );
 
-        let signed = tp.is_signed();
+         // Consider floats to be unsigned for the purposes of comparison here
+        // comiss doesn't set the flags needed by the signed setCC instructions
+        let is_float = tp.is_float();
+        let signed = tp.is_signed() && !is_float;
+
         match tp {
             DataType::Bool => {
                 assert!(matches!(cmp_type, CompareType::Equal | CompareType::NotEqual));
@@ -434,8 +438,16 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
 
-            (false, CompareType::GreaterThan) => todo!("Compare with type GreaterThanUnsigned"),
-            (false, CompareType::LessThanOrEqual) => todo!("Compare with type LessThanOrEqualUnsigned"),
+            (false, CompareType::GreaterThan) => {
+                dynasm!(ops
+                    ; seta Rb(r_out)
+                );
+            }
+            (false, CompareType::LessThanOrEqual) => {
+                dynasm!(ops
+                    ; setbe Rb(r_out)
+                );
+            }
             (false, CompareType::GreaterThanOrEqual) => {
                 dynasm!(ops
                     ; setae Rb(r_out)
