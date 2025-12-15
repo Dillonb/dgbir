@@ -8,7 +8,7 @@ use crate::{
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
 use dynasmrt::{dynasm, x64::X64Relocation, Assembler, AssemblyOffset, VecAssembler};
-use log::{info, trace};
+use log::{info, trace, warn};
 
 impl GenericAssembler<X64Relocation> for Assembler<X64Relocation> {
     type R = X64Relocation;
@@ -850,8 +850,9 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             }
             (Register::GPR(r_out), DataType::S32, input, DataType::F64) => {
                 let input = self.materialize_as_simd(ops, lp, input);
+                warn!("TODO: this is assuming round towards zero in all cases, which is not always true");
                 dynasm!(ops
-                    ; cvtsd2si Rd(r_out), Rx(input.r())
+                    ; cvttsd2si Rd(r_out), Rx(input.r())
                 );
             }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
