@@ -1211,7 +1211,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 self.move_to_reg(ops, lp, dividend, Register::SIMD(r_out));
                 let divisor = self.materialize_as_simd(ops, lp, divisor);
                 dynasm!(ops
-                    ; divss Rx(r_out), Rx(divisor.r())
+                    ; divsd Rx(r_out), Rx(divisor.r())
                 );
             }
             _ => panic!("Divide with unknown type: {}", tp),
