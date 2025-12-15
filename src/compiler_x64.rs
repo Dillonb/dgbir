@@ -216,6 +216,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; .u32 c
                     );
                 }
+                Constant::U64(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .u64 c
+                    );
+                }
                 Constant::F32(c) => {
                     dynasm!(ops
                         ; =>label
