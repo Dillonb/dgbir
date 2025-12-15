@@ -33,6 +33,15 @@ pub struct X64Compiler<'a, Ops> {
     phantom: PhantomData<Ops>,
 }
 
+fn trim_xmm_to_32_bits<Ops: GenericAssembler<X64Relocation>>(ops: &mut Ops, scratch_regs: &RegPool, reg: RegisterIndex) {
+    let r_temp = scratch_regs.borrow::<register_type::GPR>();
+    dynasm!(ops
+        // Zero upper bits by moving to GPR and back
+        ; movd Rd(r_temp.r()), Rx(reg)
+        ; movd Rx(reg), Rd(r_temp.r())
+    )
+}
+
 impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> for X64Compiler<'a, Ops> {
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
         ops.new_dynamic_label()
@@ -167,8 +176,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             (ConstOrReg::F32(c), Register::SIMD(r_to)) => {
                 let literal = X64Compiler::add_literal(ops, lp, Constant::F32(c));
                 dynasm!(ops
-                    ; pxor Rx(r_to), Rx(r_to)
-                    ; movss Rx(r_to), DWORD [=>literal]
+                    ; movd Rx(r_to), DWORD [=>literal]
                 );
             }
             (ConstOrReg::SIMD(r_from), Register::GPR(r_to)) => {
@@ -178,21 +186,18 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             }
             (ConstOrReg::GPR(r_from), Register::SIMD(r_to)) => {
                 dynasm!(ops
-                    ; pxor Rx(r_to), Rx(r_to)
                     ; movq Rx(r_to), Rq(r_from)
                 );
             }
             (ConstOrReg::U32(c), Register::SIMD(r_to)) => {
                 let literal = X64Compiler::add_literal(ops, lp, Constant::U32(c));
                 dynasm!(ops
-                    ; pxor Rx(r_to), Rx(r_to)
                     ; movd Rx(r_to), DWORD [=>literal]
                 );
             }
             (ConstOrReg::U64(c), Register::SIMD(r_to)) => {
                 let literal = X64Compiler::add_literal(ops, lp, Constant::U64(c));
                 dynasm!(ops
-                    ; pxor Rx(r_to), Rx(r_to)
                     ; movq Rx(r_to), QWORD [=>literal]
                 );
             }
@@ -331,7 +336,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let b = self.materialize_as_simd(ops, lp, b);
                 dynasm!(ops
                     ; addss Rx(r_out), Rx(b.r())
-                )
+                );
+                trim_xmm_to_32_bits(ops, &self.scratch_regs, r_out);
             }
             (DataType::F64, Register::SIMD(r_out)) => {
                 self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
@@ -359,7 +365,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             ; xor Rd(r_out), Rd(r_out)
         );
 
-         // Consider floats to be unsigned for the purposes of comparison here
+        // Consider floats to be unsigned for the purposes of comparison here
         // comiss doesn't set the flags needed by the signed setCC instructions
         let is_float = tp.is_float();
         let signed = tp.is_signed() && !is_float;
@@ -430,7 +436,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; setg Rb(r_out)
                 );
-            },
+            }
             (true, CompareType::LessThanOrEqual) => {
                 dynasm!(ops
                     ; setle Rb(r_out)
@@ -991,6 +997,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movss Rx(r_out), Rx(minuend.r())
                     ; subss Rx(r_out), Rx(subtrahend.r())
                 );
+                trim_xmm_to_32_bits(ops, &self.scratch_regs, r_out);
             }
             (DataType::F64, Register::SIMD(r_out)) => {
                 let minuend = self.materialize_as_simd(ops, lp, minuend);
@@ -1086,6 +1093,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; mulss Rx(r_out), Rx(b.r())
                 );
+                trim_xmm_to_32_bits(ops, &self.scratch_regs, r_out);
             }
             (DataType::F64, DataType::F64, 1) => {
                 self.move_to_reg(ops, lp, a, output_regs[0].unwrap());
@@ -1201,6 +1209,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; divss Rx(r_out), Rx(divisor.r())
                 );
+                trim_xmm_to_32_bits(ops, &self.scratch_regs, r_out);
             }
             DataType::F64 => {
                 let r_out = r_quotient.unwrap().expect_simd();
@@ -1226,6 +1235,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; sqrtss Rx(r_out), Rx(value.r())
                 );
+                trim_xmm_to_32_bits(ops, &self.scratch_regs, r_out);
             }
             (Register::SIMD(r_out), DataType::F64) => {
                 let value = self.materialize_as_simd(ops, lp, value);
@@ -1256,6 +1266,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; xorps Rx(r_out), Rx(value.r())
                 );
+                trim_xmm_to_32_bits(ops, &self.scratch_regs, r_out);
             }
             (Register::SIMD(r_out), DataType::F64) => {
                 let value = self.materialize_as_simd(ops, lp, value);
