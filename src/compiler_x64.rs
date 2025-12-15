@@ -167,6 +167,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             (ConstOrReg::F32(c), Register::SIMD(r_to)) => {
                 let literal = X64Compiler::add_literal(ops, lp, Constant::F32(c));
                 dynasm!(ops
+                    ; pxor Rx(r_to), Rx(r_to)
                     ; movss Rx(r_to), DWORD [=>literal]
                 );
             }
@@ -177,18 +178,21 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             }
             (ConstOrReg::GPR(r_from), Register::SIMD(r_to)) => {
                 dynasm!(ops
+                    ; pxor Rx(r_to), Rx(r_to)
                     ; movq Rx(r_to), Rq(r_from)
                 );
             }
             (ConstOrReg::U32(c), Register::SIMD(r_to)) => {
                 let literal = X64Compiler::add_literal(ops, lp, Constant::U32(c));
                 dynasm!(ops
+                    ; pxor Rx(r_to), Rx(r_to)
                     ; movd Rx(r_to), DWORD [=>literal]
                 );
             }
             (ConstOrReg::U64(c), Register::SIMD(r_to)) => {
                 let literal = X64Compiler::add_literal(ops, lp, Constant::U64(c));
                 dynasm!(ops
+                    ; pxor Rx(r_to), Rx(r_to)
                     ; movq Rx(r_to), QWORD [=>literal]
                 );
             }
