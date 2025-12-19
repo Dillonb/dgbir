@@ -867,6 +867,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; cvttsd2si Rd(r_out), Rx(input.r())
                 );
             }
+            (Register::GPR(r_out), DataType::U32, input, DataType::S64) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; mov Rd(r_out), Rd(input.r()) // Truncate
+                );
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
