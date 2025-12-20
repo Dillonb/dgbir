@@ -1259,15 +1259,26 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
-    fn absolute_value(
-        &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _tp: DataType,
-        _r_out: Register,
-        _value: ConstOrReg,
-    ) {
-        todo!()
+    fn absolute_value(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
+        let abs_32 : u32 = 0x7fffffff;
+        let abs_64 : u64 = 0x7fffffffffffffff;
+        match (tp, r_out) {
+            (DataType::F32, Register::SIMD(r_out)) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                self.move_to_reg(ops, lp, ConstOrReg::U32(abs_32), Register::SIMD(r_out));
+                dynasm!(ops
+                    ; andps Rx(r_out), Rx(value.r())
+                );
+            }
+            (DataType::F64, Register::SIMD(r_out)) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                self.move_to_reg(ops, lp, ConstOrReg::U64(abs_64), Register::SIMD(r_out));
+                dynasm!(ops
+                    ; andps Rx(r_out), Rx(value.r())
+                );
+            }
+            _ => todo!("Unsupported AbsoluteValue operation: ({:?}, {:?})", tp, r_out),
+        }
     }
 
     fn negate(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
