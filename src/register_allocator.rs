@@ -941,7 +941,12 @@ impl RegisterAllocations {
 /// Allocates registers for the given function. This will modify the function to spill values as
 /// needed. Also calculates which callee-saved registers are needed and reserves space on the stack
 /// for them.
+
 pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
+    return regalloc_graphcolor(func);
+}
+
+fn regalloc_graphcolor(func: &mut IRFunctionInternal) -> RegisterAllocations {
     let mut done = false;
     let mut allocations = BTreeMap::new();
     let mut already_spilled = HashSet::new();
