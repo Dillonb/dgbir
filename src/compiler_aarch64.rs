@@ -1024,6 +1024,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; fcvt D(r_out), S(value.r())
                 );
             }
+            (Register::GPR(r_out), DataType::U32, DataType::S64) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; mov W(r_out), W(input.r())
+                );
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
