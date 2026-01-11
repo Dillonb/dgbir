@@ -23,6 +23,7 @@ pub enum DataType {
     U64,
     S64,
     U128,
+    S128,
     F32,
     F64,
     Bool,
@@ -41,6 +42,7 @@ impl DataType {
             DataType::U64 => 8,
             DataType::S64 => 8,
             DataType::U128 => 16,
+            DataType::S128 => 16,
             DataType::F32 => 4,
             DataType::F64 => 8,
             DataType::Bool => 1,
@@ -52,7 +54,7 @@ impl DataType {
     pub fn is_signed(&self) -> bool {
         match self {
             // Integers
-            DataType::S8 | DataType::S16 | DataType::S32 | DataType::S64 => true,
+            DataType::S8 | DataType::S16 | DataType::S32 | DataType::S64 | DataType::S128 => true,
             DataType::U8 | DataType::U16 | DataType::U32 | DataType::U64 | DataType::U128 => false,
 
             // Consider floats to be signed since unsigned floats don't exist
@@ -74,7 +76,8 @@ impl DataType {
             | DataType::S32
             | DataType::U64
             | DataType::S64
-            | DataType::U128 => true,
+            | DataType::U128
+            | DataType::S128 => true,
             DataType::F32 | DataType::F64 => false,
             DataType::Bool => true,
             DataType::Ptr => true,
@@ -98,6 +101,7 @@ impl DataType {
             DataType::U64 => DataType::U32,
             DataType::S64 => DataType::S32,
             DataType::U128 => DataType::U64,
+            DataType::S128 => DataType::S64,
             DataType::F32 => panic!("Cannot take half type of F32"),
             DataType::F64 => DataType::F32,
             DataType::Bool => panic!("Cannot take half type of Bool"),

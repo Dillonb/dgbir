@@ -401,6 +401,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             DataType::U128 => todo!("Compare with 128-bit integer type"),
+            DataType::S128 => todo!("Compare with 128-bit signed integer type"),
             DataType::F32 => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);

@@ -183,6 +183,7 @@ fn evaluate_write_ptr(inputs: &Vec<Constant>) {
             DataType::S64 => *raw_ptr.cast() = value as i64,
 
             DataType::U128 => *raw_ptr.cast() = value as u128,
+            DataType::S128 => *raw_ptr.cast() = value as i128,
 
             DataType::Bool => *raw_ptr.cast() = value != 0,
 
