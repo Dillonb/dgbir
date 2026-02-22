@@ -20,6 +20,14 @@ fn get_capstone() -> Capstone {
         .unwrap()
 }
 
+fn get_mips_capstone() -> Capstone {
+    Capstone::new()
+        .mips()
+        .mode(capstone::arch::mips::ArchMode::Mips64)
+        .build()
+        .unwrap()
+}
+
 fn disassemble_internal(code: &[u8], addr: u64, debug_info: &CompiledFunctionDebugInfo) -> String {
     // Disassemble the code
 
@@ -56,4 +64,18 @@ pub fn disassemble_function(func: &CompiledFunction) -> String {
 
 pub fn disassemble(code: &[u8], addr: u64) -> String {
     disassemble_internal(code, addr, &CompiledFunctionDebugInfo::new())
+}
+
+pub fn disassemble_mips(code: &[u8], addr: u64) -> String {
+    let cs = get_mips_capstone();
+    let insns = cs.disasm_all(code, addr).unwrap();
+    insns
+        .iter()
+        .map(|insn| format!("0x{:x}:\t{}\t{}", insn.address(), insn.mnemonic().unwrap(), insn.op_str().unwrap()))
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
+pub fn disassemble_mips_instruction(instr: u32, addr: u64) -> String {
+    disassemble_mips(&instr.to_le_bytes(), addr)
 }
