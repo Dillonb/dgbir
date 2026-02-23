@@ -33,7 +33,11 @@ pub struct X64Compiler<'a, Ops> {
     phantom: PhantomData<Ops>,
 }
 
-fn trim_xmm_to_32_bits<Ops: GenericAssembler<X64Relocation>>(ops: &mut Ops, scratch_regs: &RegPool, reg: RegisterIndex) {
+fn trim_xmm_to_32_bits<Ops: GenericAssembler<X64Relocation>>(
+    ops: &mut Ops,
+    scratch_regs: &RegPool,
+    reg: RegisterIndex,
+) {
     let r_temp = scratch_regs.borrow::<register_type::GPR>();
     dynasm!(ops
         // Zero upper bits by moving to GPR and back
@@ -323,6 +327,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         match (tp, r_out) {
+            (DataType::U16 | DataType::S16, Register::GPR(r_out)) => {
+                self.move_to_reg(ops, lp, a, Register::GPR(r_out));
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; add Rd(r_out), Rd(b.r())
+                )
+            }
             (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
                 self.move_to_reg(ops, lp, a, Register::GPR(r_out));
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -521,6 +532,14 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         data_type: DataType,
     ) {
         match (ptr, value, data_type) {
+            (ptr, value, DataType::U16 | DataType::S16) => {
+                let address = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_gpr(ops, lp, value);
+
+                dynasm!(ops
+                    ; mov [Rq(address.r()) + offset as i32], Rw(value.r())
+                );
+            }
             (ptr, value, DataType::U32 | DataType::S32 | DataType::F32) => {
                 let address = self.materialize_as_gpr(ops, lp, ptr);
                 let value = self.materialize_as_gpr(ops, lp, value);
@@ -1261,8 +1280,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     }
 
     fn absolute_value(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, value: ConstOrReg) {
-        let abs_32 : u32 = 0x7fffffff;
-        let abs_64 : u64 = 0x7fffffffffffffff;
+        let abs_32: u32 = 0x7fffffff;
+        let abs_64: u64 = 0x7fffffffffffffff;
         match (tp, r_out) {
             (DataType::F32, Register::SIMD(r_out)) => {
                 let value = self.materialize_as_simd(ops, lp, value);
