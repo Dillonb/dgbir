@@ -346,6 +346,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
         match (tp, r_out) {
+            (DataType::U16 | DataType::S16, Register::GPR(r_out)) => {
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let b = self.materialize_as_gpr(ops, lp, b);
+                dynasm!(ops
+                    ; add W(r_out), W(a.r()), W(b.r())
+                );
+            }
             (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -641,6 +648,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str D(r_value), [X(r_ptr), offset as u32]
                 );
             }
+            (ptr, value, DataType::U16 | DataType::S16) => {
+                let address = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_gpr(ops, lp, value);
+                dynasm!(ops
+                    ; strh W(value.r()), [X(address.r()), offset as u32]
+                )
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -830,63 +844,60 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     ) {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
-            match (tp, n) {
-                (DataType::U8, ConstOrReg::GPR(r_n)) => {
+            let orig_n = n;
+            let n = self.materialize_as_gpr(ops, lp, n);
+            match tp {
+                DataType::U8 => {
                     dynasm!(ops
-                        ; and WSP(r_out), W(r_n), 0xFF
+                        ; and WSP(r_out), W(n.r()), 0xFF
                         ; lsr W(r_out), W(r_out), amount & 0b111
                     );
                 }
-                (DataType::S8, ConstOrReg::GPR(r_n)) => {
+                DataType::S8 => {
                     // Shift left to put the sign bit in the 32 bit sign bit position, then shift
                     // right.
                     dynasm!(ops
-                        ; lsl W(r_out), W(r_n), 24
+                        ; lsl W(r_out), W(n.r()), 24
                         ; asr W(r_out), W(r_out), (amount & 0b111) + 24
                         ; and WSP(r_out), W(r_out), 0xFF // Mask to 8 bits
                     );
                 }
-                (DataType::U16, ConstOrReg::GPR(r_n)) => {
+                DataType::U16 => {
                     dynasm!(ops
-                        ; and WSP(r_out), W(r_n), 0xFFFF
+                        ; and WSP(r_out), W(n.r()), 0xFFFF
                         ; lsr W(r_out), W(r_out), amount & 0b1111
                     );
                 }
-                (DataType::S16, ConstOrReg::GPR(r_n)) => {
+                DataType::S16 => {
                     // Shift left to put the sign bit in the 32 bit sign bit position, then shift
                     // right.
                     dynasm!(ops
-                        ; lsl W(r_out), W(r_n), 16
+                        ; lsl W(r_out), W(n.r()), 16
                         ; asr W(r_out), W(r_out), (amount & 0b1111) + 16
                         ; and WSP(r_out), W(r_out), 0xFFFF // Mask to 16 bits
                     );
                 }
-                (DataType::U32, ConstOrReg::GPR(r_n)) => {
+                DataType::U32 => {
                     dynasm!(ops
-                        ; lsr W(r_out), W(r_n), amount & 0b11111
+                        ; lsr W(r_out), W(n.r()), amount & 0b11111
                     );
                 }
-                (DataType::U32, c) if c.is_const() => {
-                    let c = c.to_u64_const().unwrap() as u32;
-                    let c = c >> (amount & 0b11111);
-                    load_32_bit_constant(ops, lp, r_out, c);
-                }
-                (DataType::S32, ConstOrReg::GPR(r_n)) => {
+                DataType::S32 => {
                     dynasm!(ops
-                        ; asr W(r_out), W(r_n), amount & 0b11111
+                        ; asr W(r_out), W(n.r()), amount & 0b11111
                     );
                 }
-                (DataType::U64, ConstOrReg::GPR(r_n)) => {
+                DataType::U64 => {
                     dynasm!(ops
-                        ; lsr X(r_out), X(r_n), amount & 0b111111
+                        ; lsr X(r_out), X(n.r()), amount & 0b111111
                     );
                 }
-                (DataType::S64, ConstOrReg::GPR(r_n)) => {
+                DataType::S64 => {
                     dynasm!(ops
-                        ; asr X(r_out), X(r_n), amount & 0b111111
+                        ; asr X(r_out), X(n.r()), amount & 0b111111
                     );
                 }
-                _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
+                _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", orig_n, amount, tp),
             }
         } else if let Some(Register::GPR(r_amount)) = amount.to_reg() {
             match (tp, n) {
