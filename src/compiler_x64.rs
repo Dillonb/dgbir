@@ -848,6 +848,18 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movsx Rq(r_out), Rd(input.r())
                 );
             }
+            (Register::GPR(r_out), DataType::S32, input, DataType::S8) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; movsx Rd(r_out), Rb(input.r())
+                );
+            }
+            (Register::GPR(r_out), DataType::S32, input, DataType::S16) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; movsx Rd(r_out), Rw(input.r())
+                );
+            }
             (Register::SIMD(r_out), DataType::F32, input, DataType::S32) => {
                 let input = self.materialize_as_gpr(ops, lp, input);
                 dynasm!(ops
