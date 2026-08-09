@@ -46,6 +46,64 @@ fn trim_xmm_to_32_bits<Ops: GenericAssembler<X64Relocation>>(
     )
 }
 
+/// Shuffle indices for [`variable_byte_shift_128`]. `pshufb` zeroes any lane whose index byte has
+/// bit 7 set, so the 0x80 padding either side of 0x00..0x0F supplies the zero fill.
+#[rustfmt::skip]
+static BYTE_SHIFT_SHUFFLES: [u8; 48] = [
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+];
+
+/// Shifts the 128 bit value in `r_out` by a byte granular amount only known at runtime.
+///
+/// The 16 byte window of [`BYTE_SHIFT_SHUFFLES`] at `16 - d` is the shuffle mask for a left shift
+/// of `d` bytes, and the window at `16 + d` is the mask for a right shift of `d` bytes.
+///
+/// `r_amount` is in bits to match the constant amount path; sub-byte amounts are not supported
+/// for 128 bit shifts.
+fn variable_byte_shift_128<Ops: GenericAssembler<X64Relocation>>(
+    ops: &mut Ops,
+    scratch_regs: &RegPool,
+    r_out: RegisterIndex,
+    r_amount: RegisterIndex,
+    left: bool,
+) {
+    let r_shift = scratch_regs.borrow::<register_type::GPR>();
+    let r_window = scratch_regs.borrow::<register_type::GPR>();
+    let r_table = scratch_regs.borrow::<register_type::GPR>();
+    let r_index = scratch_regs.borrow::<register_type::SIMD>();
+
+    dynasm!(ops
+        ; mov Rd(r_shift.r()), Rd(r_amount)
+        ; shr Rd(r_shift.r()), 3
+        // Clamp to 16, which already shifts everything out, and keeps the window in the table.
+        ; mov Rd(r_window.r()), 16
+        ; cmp Rd(r_shift.r()), 16
+        ; cmova Rd(r_shift.r()), Rd(r_window.r())
+    );
+    // r_window holds 16, so it becomes the left window with a single subtract.
+    let r_window = if left {
+        dynasm!(ops
+            ; sub Rd(r_window.r()), Rd(r_shift.r())
+        );
+        r_window.r()
+    } else {
+        dynasm!(ops
+            ; add Rd(r_shift.r()), 16
+        );
+        r_shift.r()
+    };
+    dynasm!(ops
+        ; mov Rq(r_table.r()), QWORD BYTE_SHIFT_SHUFFLES.as_ptr() as i64
+        ; movdqu Rx(r_index.r()), OWORD [Rq(r_table.r()) + Rq(r_window)]
+        ; pshufb Rx(r_out), Rx(r_index.r())
+    );
+}
+
 impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> for X64Compiler<'a, Ops> {
     fn new_dynamic_label(ops: &mut Ops) -> dynasmrt::DynamicLabel {
         ops.new_dynamic_label()
@@ -766,6 +824,9 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; shlx Rq(r_out), Rq(r_out), Rq(amount.r())
                     );
                 }
+                DataType::U128 | DataType::S128 => {
+                    variable_byte_shift_128(ops, &self.scratch_regs, r_out.expect_simd(), amount.r(), true);
+                }
                 _ => todo!("LeftShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
             }
         }
@@ -851,19 +912,23 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
             }
         } else if let Some(r_amount) = amount.to_reg() {
-            let r_out = r_out.expect_gpr();
-            self.move_to_reg(ops, lp, n, Register::GPR(r_out));
+            self.move_to_reg(ops, lp, n, r_out);
             let amount = self.materialize_as_gpr(ops, lp, amount);
             match tp {
                 DataType::U32 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; shrx Rd(r_out), Rd(r_out), Rd(amount.r())
                     );
                 }
                 DataType::U64 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; shrx Rq(r_out), Rq(r_out), Rq(amount.r())
                     );
+                }
+                DataType::U128 | DataType::S128 => {
+                    variable_byte_shift_128(ops, &self.scratch_regs, r_out.expect_simd(), amount.r(), false);
                 }
                 _ => todo!("RightShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
             }

@@ -1047,3 +1047,51 @@ fn unused_function_arguments_dont_shift_later_ones() {
     let f: extern "C" fn(u64, u64, u64) -> u64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
     assert_eq!(f(111, 222, 7), 8);
 }
+
+/// 128 bit shifts by an amount that is only known at runtime, which take a different
+/// code path (pshufb) than the constant amount shifts.
+#[test]
+fn simd_u128_variable_shifts() {
+    let results: Vec<u64> = vec![0; U128_VALUES.len() * 4];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::U32]);
+    let result_ptr = block.input(0);
+    let amount = block.input(1);
+
+    let mut index = 0;
+    for value in U128_VALUES.iter() {
+        // Deliberately reused for both shifts, so a shift that clobbers its input is caught.
+        let v = u128_const(&mut block, *value);
+        let left = block.left_shift(DataType::U128, v, amount);
+        write_u128(&mut block, result_ptr, index, left.val());
+        index += 2;
+        let right = block.right_shift(DataType::U128, v, amount);
+        write_u128(&mut block, result_ptr, index, right.val());
+        index += 2;
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, u32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    // 16 and 17 bytes shift everything out, and must not wrap back around to a small shift.
+    for bytes in 0..=17u32 {
+        f(results.as_ptr() as usize, bytes * 8);
+
+        let expected = U128_VALUES
+            .iter()
+            .flat_map(|v| {
+                if bytes >= 16 {
+                    [0, 0]
+                } else {
+                    [v << (bytes * 8), v >> (bytes * 8)]
+                }
+            })
+            .collect::<Vec<_>>();
+        println!("Shift of {} bytes", bytes);
+        validate(&results, &split_u128(&expected));
+    }
+}
