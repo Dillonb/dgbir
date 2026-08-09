@@ -751,57 +751,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         data_type: DataType,
     ) {
         match (ptr, value, data_type) {
-            (ConstOrReg::U64(ptr), ConstOrReg::U32(value), DataType::U32) => {
-                let r_address = self.scratch_regs.borrow::<register_type::GPR>();
-                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
-
-                load_64_bit_constant(ops, lp, r_address.r(), ptr);
-                load_32_bit_constant(ops, lp, r_value.r(), value);
-                dynasm!(ops
-                    ; str W(r_value.r()), [X(r_address.r()), offset as u32]
-                );
-            }
-            (ConstOrReg::U64(ptr), ConstOrReg::GPR(r_value), DataType::U32) => {
-                let r_ptr = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_ptr.r(), ptr);
-                dynasm!(ops
-                    ; str W(r_value), [X(r_ptr.r()), offset as u32]
-                );
-            }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::U32(c_value), DataType::U32) => {
-                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_value.r(), c_value.into());
-                dynasm!(ops
-                    ; str W(r_value.r()), [X(r_ptr), offset as u32]
-                );
-            }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
-                dynasm!(ops
-                    ; str W(r_value), [X(r_ptr), offset as u32]
-                );
-            }
+            // Store directly from SIMD instead of falling through to the generic materialize_as_gpr
+            // path below
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U32 | DataType::S32 | DataType::F32) => {
                 dynasm!(ops
                     ; str S(r_value), [X(r_ptr), offset as u32]
-                );
-            }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::GPR(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
-                dynasm!(ops
-                    ; str X(r_value), [X(r_ptr), offset as u32]
-                );
-            }
-            (ConstOrReg::GPR(r_ptr), ConstOrReg::U64(value), DataType::U64) => {
-                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_value.r(), value);
-                dynasm!(ops
-                    ; str X(r_value.r()), [X(r_ptr), offset as u32]
-                );
-            }
-            (ConstOrReg::GPR(r_ptr), c, DataType::U64 | DataType::S64) if c.is_const() => {
-                let r_value = self.scratch_regs.borrow::<register_type::GPR>();
-                load_64_bit_constant(ops, lp, r_value.r(), c.to_u64_const().unwrap());
-                dynasm!(ops
-                    ; str X(r_value.r()), [X(r_ptr), offset as u32]
                 );
             }
             (ConstOrReg::GPR(r_ptr), ConstOrReg::SIMD(r_value), DataType::U64 | DataType::S64 | DataType::F64) => {
@@ -809,11 +763,32 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str D(r_value), [X(r_ptr), offset as u32]
                 );
             }
+            (ptr, value, DataType::U8 | DataType::S8 | DataType::Bool) => {
+                let address = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_gpr(ops, lp, value);
+                dynasm!(ops
+                    ; strb W(value.r()), [X(address.r()), offset as u32]
+                )
+            }
             (ptr, value, DataType::U16 | DataType::S16) => {
                 let address = self.materialize_as_gpr(ops, lp, ptr);
                 let value = self.materialize_as_gpr(ops, lp, value);
                 dynasm!(ops
                     ; strh W(value.r()), [X(address.r()), offset as u32]
+                )
+            }
+            (ptr, value, DataType::U32 | DataType::S32 | DataType::F32) => {
+                let address = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_gpr(ops, lp, value);
+                dynasm!(ops
+                    ; str W(value.r()), [X(address.r()), offset as u32]
+                )
+            }
+            (ptr, value, DataType::Ptr | DataType::U64 | DataType::S64 | DataType::F64) => {
+                let address = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_gpr(ops, lp, value);
+                dynasm!(ops
+                    ; str X(value.r()), [X(address.r()), offset as u32]
                 )
             }
             (ptr, value, DataType::U128 | DataType::S128) => {
@@ -830,7 +805,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     );
                 }
             }
-            _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
 
@@ -1186,6 +1160,18 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; sxtw X(r_out), W(r_out)
                     // Then shift arithmetic back to the original position
                     ; asr X(r_out), X(r_out), 16
+                );
+            }
+            (Register::GPR(r_out), DataType::S32, DataType::S8) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; sxtb W(r_out), W(input.r())
+                );
+            }
+            (Register::GPR(r_out), DataType::S32, DataType::S16) => {
+                let input = self.materialize_as_gpr(ops, lp, input);
+                dynasm!(ops
+                    ; sxth W(r_out), W(input.r())
                 );
             }
             (Register::SIMD(r_out), DataType::F64, DataType::S32) => {
