@@ -518,6 +518,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movq Rx(r_out), QWORD [Rq(ptr.r()) + offset as i32]
                 );
             }
+            (Register::SIMD(r_out), ptr, DataType::U128 | DataType::S128) => {
+                let ptr = self.materialize_as_gpr(ops, lp, ptr);
+                dynasm!(ops
+                    ; movdqu Rx(r_out), OWORD [Rq(ptr.r()) + offset as i32]
+                );
+            }
             _ => todo!("Unsupported LoadPtr operation: Load {} from [{:?}] with type {}", r_out, ptr, tp),
         }
     }
@@ -553,6 +559,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let value = self.materialize_as_gpr(ops, lp, value);
                 dynasm!(ops
                     ; mov QWORD [Rq(ptr.r()) + offset as i32], Rq(value.r())
+                );
+            }
+            (ptr, value, DataType::U128 | DataType::S128) => {
+                let ptr = self.materialize_as_gpr(ops, lp, ptr);
+                let value = self.materialize_as_simd(ops, lp, value);
+                dynasm!(ops
+                    ; movdqu OWORD [Rq(ptr.r()) + offset as i32], Rx(value.r())
                 );
             }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
@@ -601,6 +614,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; movq QWORD [rsp + offset], Rx(*r)
+                )
+            }
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(location), DataType::U128 | DataType::S128) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; movdqu OWORD [rsp + offset], Rx(*r)
                 )
             }
             _ => todo!(
@@ -661,6 +680,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; movq Rx(r_out), QWORD [rsp + offset]
+                )
+            }
+            (Register::SIMD(r_out), ConstOrReg::U64(location), DataType::U128 | DataType::S128) => {
+                let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
+                dynasm!(ops
+                    ; movdqu Rx(r_out), OWORD [rsp + offset]
                 )
             }
             _ => todo!(

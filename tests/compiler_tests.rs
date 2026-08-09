@@ -1,6 +1,7 @@
 use std::mem::{self, offset_of};
 
 use dgbir::{
+    abi::get_registers,
     compiler::compile,
     disassembler::disassemble_function,
     ir::{
@@ -853,4 +854,96 @@ fn simd_u128_mask_merge() {
         })
         .collect::<Vec<_>>();
     validate(&results, &split_u128(&expected));
+}
+
+#[test]
+fn simd_u128_load_write_ptr() {
+    let src: Vec<u128> = U128_VALUES.to_vec();
+    let dst: Vec<u128> = vec![0; U128_VALUES.len()];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src_ptr = block.input(0);
+    let dst_ptr = block.input(1);
+
+    for i in 0..U128_VALUES.len() {
+        let value = block.load_ptr(DataType::U128, src_ptr, i * size_of::<u128>());
+        block.write_ptr(DataType::U128, dst_ptr, i * size_of::<u128>(), value.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(src.as_ptr() as usize, dst.as_ptr() as usize);
+    validate(&dst, &src);
+}
+
+/// 128 bit loads and stores must not require a 16 byte aligned address.
+#[test]
+fn simd_u128_load_write_ptr_unaligned() {
+    const OFFSET: usize = 1;
+    let mut src = vec![0u8; U128_VALUES.len() * size_of::<u128>() + OFFSET];
+    for (i, value) in U128_VALUES.iter().enumerate() {
+        let start = OFFSET + i * size_of::<u128>();
+        src[start..start + size_of::<u128>()].copy_from_slice(&value.to_le_bytes());
+    }
+    let dst = vec![0u8; U128_VALUES.len() * size_of::<u128>() + OFFSET];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src_ptr = block.input(0);
+    let dst_ptr = block.input(1);
+
+    for i in 0..U128_VALUES.len() {
+        let offset = OFFSET + i * size_of::<u128>();
+        let value = block.load_ptr(DataType::U128, src_ptr, offset);
+        block.write_ptr(DataType::U128, dst_ptr, offset, value.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(src.as_ptr() as usize, dst.as_ptr() as usize);
+    validate(&dst[OFFSET..], &src[OFFSET..]);
+    assert_eq!(dst[0], 0, "Wrote before the start of the destination buffer");
+}
+
+/// Keeps more 128 bit values live at once than there are SIMD registers, forcing the
+/// register allocator to spill them to the stack and reload them.
+#[test]
+fn simd_u128_spill() {
+    // Derived from the register set rather than hardcoded, so this keeps forcing spills on
+    // targets with a different number of SIMD registers.
+    let simd_regs = get_registers().iter().filter(|r| r.is_simd()).count();
+    assert!(simd_regs > 0, "Target has no SIMD registers to allocate");
+    let count = simd_regs * 3;
+
+    let values: Vec<u128> = (0..count)
+        .map(|i| ((0xF00D_0000 + i as u128) << 64) | (0xBEEF_0000 + i as u128))
+        .collect();
+    let results: Vec<u128> = vec![0; count];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    let live = values.iter().map(|v| u128_const(&mut block, *v)).collect::<Vec<_>>();
+    for (i, value) in live.iter().enumerate() {
+        block.write_ptr(DataType::U128, result_ptr, i * size_of::<u128>(), *value);
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(results.as_ptr() as usize);
+    validate(&results, &values);
 }
