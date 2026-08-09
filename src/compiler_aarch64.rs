@@ -4,7 +4,7 @@ use crate::{
     abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
-    reg_pool::{register_type, RegPool},
+    reg_pool::{register_type, BorrowedReg, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
 use dynasmrt::{aarch64::Aarch64Relocation, dynasm, Assembler, AssemblyOffset, VecAssembler};
@@ -80,6 +80,139 @@ fn load_32_bit_constant<Ops: GenericAssembler<Aarch64Relocation>>(
             ; ldr W(reg), =>literal
         );
     }
+}
+
+/// Detect whether an immediate can be encoded in `fmov`
+fn f32_fits_fmov_immediate(value: f32) -> bool {
+    let bits = value.to_bits();
+    let b = (bits >> 29) & 1;
+    let expected_exponent_rest = if b == 1 { 0b11111 } else { 0 };
+    bits & 0x7FFFF == 0 && (bits >> 30) & 1 == b ^ 1 && (bits >> 25) & 0b11111 == expected_exponent_rest
+}
+
+/// Shuffle indices for [`variable_byte_shift_128`]. `tbl` zeroes any lane whose index byte is out
+/// of range, so the 0x80 padding either side of 0x00..0x0F supplies the zero fill.
+#[rustfmt::skip]
+static BYTE_SHIFT_SHUFFLES: [u8; 48] = [
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+];
+
+/// Shifts the 128 bit value in `r_out` by a byte granular amount only known at runtime.
+///
+/// The 16 byte window of [`BYTE_SHIFT_SHUFFLES`] at `16 - d` is the shuffle mask for a left shift
+/// of `d` bytes, and the window at `16 + d` is the mask for a right shift of `d` bytes.
+///
+/// `r_amount` is in bits to match the constant amount path; sub-byte amounts are not supported
+/// for 128 bit shifts.
+fn variable_byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    scratch_regs: &RegPool,
+    r_out: RegisterIndex,
+    r_amount: RegisterIndex,
+    left: bool,
+) {
+    let r_shift = scratch_regs.borrow::<register_type::GPR>();
+    let r_window = scratch_regs.borrow::<register_type::GPR>();
+    let r_table = scratch_regs.borrow::<register_type::GPR>();
+    let r_index = scratch_regs.borrow::<register_type::SIMD>();
+
+    dynasm!(ops
+        ; lsr W(r_shift.r()), W(r_amount), 3
+        // Clamp to 16, which already shifts everything out, and keeps the window in the table.
+        ; movz W(r_window.r()), 16
+        ; cmp W(r_shift.r()), W(r_window.r())
+        ; csel W(r_shift.r()), W(r_shift.r()), W(r_window.r()), lo
+    );
+    // r_window holds 16, so it becomes the window index with a single add or subtract.
+    if left {
+        dynasm!(ops
+            ; sub W(r_window.r()), W(r_window.r()), W(r_shift.r())
+        );
+    } else {
+        dynasm!(ops
+            ; add W(r_window.r()), W(r_window.r()), W(r_shift.r())
+        );
+    }
+    load_64_bit_constant(ops, lp, r_table.r(), BYTE_SHIFT_SHUFFLES.as_ptr() as u64);
+    dynasm!(ops
+        ; add X(r_table.r()), X(r_table.r()), X(r_window.r())
+        ; ldr Q(r_index.r()), [X(r_table.r())]
+        ; tbl V(r_out).B16, {V(r_out).B16 * 1}, V(r_index.r()).B16
+    );
+}
+
+/// Shifts the 128 bit value in `r_out` by a byte granular amount. Both directions are a shuffle of
+/// the 16 lanes, with zeroes shifted in.
+fn byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    scratch_regs: &RegPool,
+    r_out: RegisterIndex,
+    amount: ConstOrReg,
+    left: bool,
+) {
+    if let Some(amount) = amount.to_u64_const() {
+        assert!(amount % 8 == 0, "128 bit shift by non-byte-aligned amount ({}) not yet supported", amount);
+        let bytes = (amount / 8) as u32;
+        if bytes == 0 {
+            return;
+        }
+        if bytes >= 16 {
+            dynasm!(ops
+                ; eor V(r_out).B16, V(r_out).B16, V(r_out).B16
+            );
+            return;
+        }
+        let r_zero = scratch_regs.borrow::<register_type::SIMD>();
+        dynasm!(ops
+            ; eor V(r_zero.r()).B16, V(r_zero.r()).B16, V(r_zero.r()).B16
+        );
+        if left {
+            // ext takes a 16 byte window of r_zero:r_out starting at 16 - bytes, which is the value
+            // with `bytes` zero bytes shifted into the bottom.
+            let index = 16 - bytes;
+            dynasm!(ops
+                ; ext V(r_out).B16, V(r_zero.r()).B16, V(r_out).B16, index
+            );
+        } else {
+            dynasm!(ops
+                ; ext V(r_out).B16, V(r_out).B16, V(r_zero.r()).B16, bytes
+            );
+        }
+    } else if let Some(Register::GPR(r_amount)) = amount.to_reg() {
+        variable_byte_shift_128(ops, lp, scratch_regs, r_out, r_amount, left);
+    } else {
+        panic!("128 bit shift amount must be a constant or a GPR, got: {:?}", amount);
+    }
+}
+
+/// `ldr`/`str` of a Q register can only encode a 16 byte aligned immediate offset, so any other
+/// offset has to be folded into the address register instead.
+fn q_offset_is_encodable(offset: u64) -> bool {
+    offset % 16 == 0 && offset <= 0xFFF * 16
+}
+
+/// Computes `r_ptr + offset` into a scratch register, for the 128 bit loads and stores that can't
+/// always encode the offset themselves.
+fn address_in_gpr<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    lp: &mut LiteralPool,
+    scratch_regs: &RegPool,
+    r_ptr: RegisterIndex,
+    offset: u64,
+) -> BorrowedReg<register_type::GPR> {
+    let r_addr = scratch_regs.borrow::<register_type::GPR>();
+    load_64_bit_constant(ops, lp, r_addr.r(), offset);
+    dynasm!(ops
+        ; add X(r_addr.r()), X(r_ptr), X(r_addr.r())
+    );
+    r_addr
 }
 
 pub struct Aarch64Compiler<'a, Ops> {
@@ -210,8 +343,23 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                 )
             }
             (ConstOrReg::F32(value), Register::SIMD(r_to)) => {
+                if f32_fits_fmov_immediate(*value) {
+                    dynasm!(ops
+                        ; fmov S(r_to), *value
+                    )
+                } else {
+                    let literal = Self::add_literal(ops, lp, Constant::F32(value));
+                    dynasm!(ops
+                        ; ldr S(r_to), =>literal
+                    )
+                }
+            }
+            (c, Register::SIMD(r_to)) if c.is_const() => {
+                // Zero extended into the low 64 bits, matching what a move from a GPR does.
+                let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
+                load_64_bit_constant(ops, lp, r_temp.r(), c.to_u64_const().unwrap());
                 dynasm!(ops
-                    ; fmov S(r_to), *value
+                    ; fmov D(r_to), X(r_temp.r())
                 )
             }
             _ => todo!("Unimplemented move operation: {:?} to {:?}", from, to),
@@ -576,6 +724,19 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr S(r_out), [X(r_ptr), offset as u32]
                 );
             }
+            (Register::SIMD(r_out), ptr, DataType::U128 | DataType::S128) => {
+                let r_ptr = self.materialize_as_gpr(ops, lp, ptr);
+                if q_offset_is_encodable(offset) {
+                    dynasm!(ops
+                        ; ldr Q(r_out), [X(r_ptr.r()), offset as u32]
+                    );
+                } else {
+                    let r_addr = address_in_gpr(ops, lp, &self.scratch_regs, r_ptr.r(), offset);
+                    dynasm!(ops
+                        ; ldr Q(r_out), [X(r_addr.r())]
+                    );
+                }
+            }
             _ => todo!("Unsupported LoadPtr operation: Load {:?} with address [{:?}] and type {}", r_out, ptr, tp),
         }
     }
@@ -655,6 +816,20 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; strh W(value.r()), [X(address.r()), offset as u32]
                 )
             }
+            (ptr, value, DataType::U128 | DataType::S128) => {
+                let value = self.materialize_as_simd(ops, lp, value);
+                let r_ptr = self.materialize_as_gpr(ops, lp, ptr);
+                if q_offset_is_encodable(offset) {
+                    dynasm!(ops
+                        ; str Q(value.r()), [X(r_ptr.r()), offset as u32]
+                    );
+                } else {
+                    let r_addr = address_in_gpr(ops, lp, &self.scratch_regs, r_ptr.r(), offset);
+                    dynasm!(ops
+                        ; str Q(value.r()), [X(r_addr.r())]
+                    );
+                }
+            }
             _ => todo!("Unsupported WritePtr operation: {:?} = {:?} with type {}", ptr, value, data_type),
         }
     }
@@ -689,6 +864,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
             (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::F64) => {
                 dynasm!(ops
                     ; str D(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
+                )
+            }
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::U128 | DataType::S128) => {
+                dynasm!(ops
+                    ; str Q(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U128)]
                 )
             }
             _ => todo!(
@@ -732,6 +912,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr D(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
                 )
             }
+            (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::U128 | DataType::S128) => {
+                dynasm!(ops
+                    ; ldr Q(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U128)]
+                )
+            }
             _ => todo!(
                 "Unsupported LoadFromStack operation: load {} from offset {:?} with datatype {}",
                 r_out,
@@ -750,6 +935,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         amount: ConstOrReg,
         tp: DataType,
     ) -> () {
+        if matches!(tp, DataType::U128 | DataType::S128) {
+            self.move_to_reg(ops, lp, n, r_out);
+            byte_shift_128(ops, lp, &self.scratch_regs, r_out.expect_simd(), amount, true);
+            return;
+        }
         let r_out = r_out.expect_gpr();
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
@@ -843,6 +1033,11 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         amount: ConstOrReg,
         tp: DataType,
     ) {
+        if matches!(tp, DataType::U128 | DataType::S128) {
+            self.move_to_reg(ops, lp, n, r_out);
+            byte_shift_128(ops, lp, &self.scratch_regs, r_out.expect_simd(), amount, false);
+            return;
+        }
         let r_out = r_out.expect_gpr();
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
@@ -1075,6 +1270,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; and X(r_out), X(r_temp.r()), X(r_out)
                 );
             }
+            (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; and V(r_out).B16, V(a.r()).B16, V(b.r()).B16
+                );
+            }
             _ => todo!("Unsupported AND operation: {:?} = {:?} & {:?} with type {:?}", r_out, a, b, tp),
         }
     }
@@ -1095,11 +1297,25 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; orr X(r_out), X(a.r()), X(b.r())
                 );
             }
+            (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; orr V(r_out).B16, V(a.r()).B16, V(b.r()).B16
+                );
+            }
             _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
         }
     }
 
     fn not(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg) {
+        if matches!(tp, DataType::U128 | DataType::S128) {
+            let a = self.materialize_as_simd(ops, lp, a);
+            dynasm!(ops
+                ; mvn V(r_out.expect_simd()).B16, V(a.r()).B16
+            );
+            return;
+        }
         let r_out = r_out.expect_gpr();
         match tp {
             DataType::U32 => {
