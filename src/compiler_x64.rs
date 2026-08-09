@@ -972,6 +972,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; and Rq(r_out), Rq(b.r())
                     );
                 }
+                (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+                    self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                    let b = self.materialize_as_simd(ops, lp, b);
+                    dynasm!(ops
+                        ; pand Rx(r_out), Rx(b.r())
+                    );
+                }
                 _ => todo!("Unsupported AND operation: {:?} & {:?} with type {:?}", a, b, tp),
             }
         }
@@ -993,6 +1000,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 dynasm!(ops
                     ; mov Rq(r_out), Rq(a.r())
                     ; or Rq(r_out), Rq(b.r())
+                );
+            }
+            (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+                self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; por Rx(r_out), Rx(b.r())
                 );
             }
             _ => todo!("Unsupported OR operation: {:?} | {:?} with type {:?}", a, b, tp),
@@ -1019,6 +1033,15 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 self.move_to_reg(ops, lp, a, r_out);
                 dynasm!(ops
                     ; not Rq(r_out.expect_gpr())
+                );
+            }
+            DataType::U128 | DataType::S128 => {
+                self.move_to_reg(ops, lp, a, r_out);
+                let r_out = r_out.expect_simd();
+                let r_ones = self.scratch_regs.borrow::<register_type::SIMD>();
+                dynasm!(ops
+                    ; pcmpeqd Rx(r_ones.r()), Rx(r_ones.r())
+                    ; pxor Rx(r_out), Rx(r_ones.r())
                 );
             }
             _ => todo!("Unsupported NOT operation with type {:?}", tp),

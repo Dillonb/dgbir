@@ -3,7 +3,10 @@ use std::mem::{self, offset_of};
 use dgbir::{
     compiler::compile,
     disassembler::disassemble_function,
-    ir::{const_f32, const_ptr, const_u32, CompareType, Constant, DataType, IRContext, IRFunction},
+    ir::{
+        const_f32, const_ptr, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle, IRContext,
+        IRFunction, InputSlot,
+    },
     ir_interpreter::interpret_func,
 };
 
@@ -677,3 +680,177 @@ fn call_external_function() {
 
 // TODO: test for calling a function when a volatile reg is active. Both from the scratch regs
 // struct and from a normal allocated register (like any SSE register on x64)
+
+const U128_VALUES: [u128; 6] = [
+    0,
+    u128::MAX,
+    0x0123456789ABCDEF_FEDCBA9876543210,
+    0xFFFFFFFFFFFFFFFF_0000000000000000,
+    0x0000000000000000_FFFFFFFFFFFFFFFF,
+    0x8000000000000000_0000000000000001,
+];
+
+/// There is no 128 bit constant yet, so build one from two 64 bit halves.
+fn u128_const(block: &mut IRBlockHandle, value: u128) -> InputSlot {
+    let high = block.left_shift(DataType::U128, const_u64((value >> 64) as u64), const_u32(64));
+    block.or(DataType::U128, high.val(), const_u64(value as u64)).val()
+}
+
+/// WritePtr has no 128 bit form yet, so store the halves into two consecutive u64 slots.
+fn write_u128(block: &mut IRBlockHandle, result_ptr: InputSlot, index: usize, value: InputSlot) {
+    let high = block.right_shift(DataType::U128, value, const_u32(64));
+    block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), value);
+    block.write_ptr(DataType::U64, result_ptr, (index + 1) * size_of::<u64>(), high.val());
+}
+
+fn split_u128(values: &[u128]) -> Vec<u64> {
+    values.iter().flat_map(|v| [*v as u64, (*v >> 64) as u64]).collect()
+}
+
+#[test]
+fn simd_u128_roundtrip() {
+    let results: Vec<u64> = vec![0; U128_VALUES.len() * 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    for (i, value) in U128_VALUES.iter().enumerate() {
+        let v = u128_const(&mut block, *value);
+        write_u128(&mut block, result_ptr, i * 2, v);
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(results.as_ptr() as usize);
+    validate(&results, &split_u128(&U128_VALUES));
+}
+
+#[test]
+fn simd_u128_not() {
+    let results: Vec<u64> = vec![0; U128_VALUES.len() * 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    for (i, value) in U128_VALUES.iter().enumerate() {
+        let v = u128_const(&mut block, *value);
+        let notted = block.not(DataType::U128, v);
+        write_u128(&mut block, result_ptr, i * 2, notted.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(results.as_ptr() as usize);
+    let expected = U128_VALUES.iter().map(|v| !*v).collect::<Vec<_>>();
+    validate(&results, &split_u128(&expected));
+}
+
+#[test]
+fn simd_u128_and() {
+    let pairs = U128_VALUES
+        .iter()
+        .flat_map(|a| U128_VALUES.iter().map(move |b| (*a, *b)))
+        .collect::<Vec<_>>();
+    let results: Vec<u64> = vec![0; pairs.len() * 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    for (i, (a, b)) in pairs.iter().enumerate() {
+        let a = u128_const(&mut block, *a);
+        let b = u128_const(&mut block, *b);
+        let anded = block.and(DataType::U128, a, b);
+        write_u128(&mut block, result_ptr, i * 2, anded.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(results.as_ptr() as usize);
+    let expected = pairs.iter().map(|(a, b)| a & b).collect::<Vec<_>>();
+    validate(&results, &split_u128(&expected));
+}
+
+#[test]
+fn simd_u128_or() {
+    let pairs = U128_VALUES
+        .iter()
+        .flat_map(|a| U128_VALUES.iter().map(move |b| (*a, *b)))
+        .collect::<Vec<_>>();
+    let results: Vec<u64> = vec![0; pairs.len() * 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    for (i, (a, b)) in pairs.iter().enumerate() {
+        let a = u128_const(&mut block, *a);
+        let b = u128_const(&mut block, *b);
+        let ored = block.or(DataType::U128, a, b);
+        write_u128(&mut block, result_ptr, i * 2, ored.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(results.as_ptr() as usize);
+    let expected = pairs.iter().map(|(a, b)| a | b).collect::<Vec<_>>();
+    validate(&results, &split_u128(&expected));
+}
+
+/// Replaces an 8 byte window of a 128 bit value, exercising and/or/not together in a common way
+#[test]
+fn simd_u128_mask_merge() {
+    let reg: u128 = 0x0011223344556677_8899AABBCCDDEEFF;
+    let loaded: u128 = 0xA0A1A2A3A4A5A6A7;
+
+    let results: Vec<u64> = vec![0; 16 * 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    for e in 0..16u32 {
+        let shift = e * 8;
+        let mask = block.left_shift(DataType::U128, const_u64(u64::MAX), const_u32(shift));
+        let inv_mask = block.not(DataType::U128, mask.val());
+        let r = u128_const(&mut block, reg);
+        let masked = block.and(DataType::U128, r, inv_mask.val());
+        let placed = block.left_shift(DataType::U128, const_u64(loaded as u64), const_u32(shift));
+        let merged = block.or(DataType::U128, masked.val(), placed.val());
+        write_u128(&mut block, result_ptr, e as usize * 2, merged.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(results.as_ptr() as usize);
+
+    let expected = (0..16u32)
+        .map(|e| {
+            let mask = (u64::MAX as u128) << (e * 8);
+            (reg & !mask) | (loaded << (e * 8))
+        })
+        .collect::<Vec<_>>();
+    validate(&results, &split_u128(&expected));
+}
