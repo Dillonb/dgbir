@@ -1,20 +1,12 @@
-use std::{
-    cmp::{max, min},
-    collections::{BTreeMap, HashSet},
-    fmt::Display,
-    iter,
-};
+use std::{collections::BTreeMap, fmt::Display};
 
 use crate::{
-    abi::{get_registers, is_register_volatile},
+    abi::is_register_volatile,
     compiler::ConstOrReg,
-    ir::{
-        const_ptr, BlockReference, CompareType, Constant, DataType, IRBasicBlock, IRFunctionInternal,
-        IndexedInstruction, InputSlot, Instruction, InstructionType, OutputSlot, RoundingMode,
-    },
+    ir::{CompareType, Constant, DataType, IRFunctionInternal, InputSlot, RoundingMode},
 };
 
-use itertools::Itertools;
+mod linear_scan;
 
 pub type RegisterIndex = u8;
 
@@ -43,8 +35,7 @@ impl Register {
                 return VALID_GPR_TYPES.contains(&tp);
             }
             Register::SIMD(_) => {
-                const VALID_SIMD_TYPES: [DataType; 4] =
-                    [DataType::F32, DataType::F64, DataType::U128, DataType::S128];
+                const VALID_SIMD_TYPES: [DataType; 4] = [DataType::F32, DataType::F64, DataType::U128, DataType::S128];
                 return VALID_SIMD_TYPES.contains(&tp);
             }
         }
@@ -142,26 +133,6 @@ pub enum Value {
 }
 
 impl Value {
-    /// Get the "first usage" of this value
-    fn into_usage(&self, func: &IRFunctionInternal) -> Usage {
-        match self {
-            Value::InstructionOutput {
-                block_index,
-                instruction_index,
-                ..
-            } => Usage {
-                block_index: *block_index,
-                instruction_index: *instruction_index,
-                instruction_index_in_block: func.get_index_in_block(*block_index, *instruction_index).unwrap(),
-            },
-            Value::BlockInput { block_index, .. } => Usage {
-                block_index: *block_index,
-                instruction_index: 0,
-                instruction_index_in_block: 0,
-            },
-        }
-    }
-
     fn into_inputslot(&self) -> InputSlot {
         match self {
             Value::InstructionOutput {
@@ -280,36 +251,6 @@ impl Ord for Value {
 }
 
 impl InputSlot {
-    fn references_value(&self, value: &Value) -> bool {
-        match self {
-            InputSlot::InstructionOutput {
-                instruction_index,
-                output_index,
-                ..
-            } => match value {
-                Value::InstructionOutput {
-                    instruction_index: v_instruction_index,
-                    output_index: v_output_index,
-                    ..
-                } => *instruction_index == *v_instruction_index && *output_index == *v_output_index,
-                _ => false,
-            },
-            InputSlot::BlockInput {
-                block_index,
-                input_index,
-                ..
-            } => match value {
-                Value::BlockInput {
-                    block_index: v_block_index,
-                    input_index: v_input_index,
-                    ..
-                } => *block_index == *v_block_index && *input_index == *v_input_index,
-                _ => false,
-            },
-            InputSlot::Constant(..) => false,
-        }
-    }
-
     pub fn to_value(self, func: &IRFunctionInternal) -> Option<Value> {
         match self {
             InputSlot::InstructionOutput {
@@ -401,94 +342,6 @@ impl InputSlot {
     }
 }
 
-struct IRFunctionValueIterator<'a> {
-    pub function: &'a IRFunctionInternal,
-    block_index: usize,
-    block_input_index: usize,
-    instruction_index: usize,
-    output_index: usize,
-}
-
-impl IRFunctionValueIterator<'_> {
-    fn skip_instruction(&mut self, block: &IRBasicBlock) {
-        self.output_index = 0;
-        self.instruction_index += 1;
-        if self.instruction_index >= block.instructions.len() {
-            self.block_index += 1;
-            self.block_input_index = 0;
-            self.instruction_index = 0;
-        }
-    }
-}
-
-impl Iterator for IRFunctionValueIterator<'_> {
-    type Item = Value;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.block_index >= self.function.blocks.len() {
-                return None;
-            }
-
-            let block = &self.function.blocks[self.block_index];
-
-            // If we're not done iterating through the inputs, self.block_input_index will be less than
-            // the number of inputs
-            if self.block_input_index < block.inputs.len() {
-                let result = Some(Value::BlockInput {
-                    data_type: block.inputs[self.block_input_index],
-                    block_index: self.block_index,
-                    input_index: self.block_input_index,
-                });
-                self.block_input_index += 1;
-                return result;
-            }
-
-            let fn_instruction_index = block.instructions[self.instruction_index];
-            let instruction = &self.function.instructions[fn_instruction_index];
-
-            match &instruction.instruction {
-                Instruction::Instruction { outputs, .. } => {
-                    let v = if self.output_index < outputs.len() {
-                        let temp = Some(Value::InstructionOutput {
-                            block_index: instruction.block_index,
-                            instruction_index: instruction.index,
-                            output_index: self.output_index,
-                            data_type: outputs[self.output_index].tp,
-                        });
-                        self.output_index += 1;
-                        return temp;
-                    } else {
-                        // We're out of range for our outputs, move to the next instruction
-                        self.output_index = 0;
-                        self.instruction_index += 1;
-                        if self.instruction_index >= block.instructions.len() {
-                            self.block_index += 1;
-                            self.block_input_index = 0;
-                            self.instruction_index = 0;
-                        }
-
-                        None
-                    };
-
-                    if v.is_some() {
-                        return v;
-                    }
-                }
-
-                // These aren't values, so skip
-                Instruction::Branch { .. } | Instruction::Jump { .. } | Instruction::Return { .. } => {
-                    self.skip_instruction(block);
-                }
-                #[cfg(feature = "ir_comments")]
-                Instruction::Comment(_) => {
-                    self.skip_instruction(block);
-                }
-            }
-        }
-    }
-}
-
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -524,14 +377,14 @@ pub struct Usage {
 }
 
 impl Usage {
-    fn recalculate_index_in_block(&self, func: &IRFunctionInternal) -> Self {
-        Usage {
-            block_index: self.block_index,
-            instruction_index: self.instruction_index,
-            instruction_index_in_block: func
-                .get_index_in_block(self.block_index, self.instruction_index)
-                .unwrap(),
-        }
+    /// The block this usage is in.
+    pub fn block_index(&self) -> usize {
+        self.block_index
+    }
+
+    /// The index of the using instruction within its block.
+    pub fn instruction_index_in_block(&self) -> usize {
+        self.instruction_index_in_block
     }
 }
 
@@ -569,202 +422,57 @@ impl Display for Usage {
     }
 }
 
+/// Where every value is live, in the allocator's linearized program-point space.
+///
+/// This exists solely to answer [`Lifetimes::get_active_at_index`]; the representation is private,
+/// so a different allocator is free to store whatever it needs behind that method.
 #[derive(Clone)]
 pub struct Lifetimes {
-    #[allow(dead_code)] // Maybe I'll need this later
-    pub last_used: BTreeMap<Value, Usage>,
-    pub interference: BTreeMap<Value, Vec<Value>>,
-    /// A list of all usages of a value. Guaranteed to be sorted.
-    pub all_usages: BTreeMap<Value, Vec<Usage>>,
+    /// Live ranges over the linearized program-point space, sorted by `start`.
+    pub(crate) live_ranges: Vec<LiveRange>,
+    /// `block_starts[b]` is the program point of the first instruction of block `b`.
+    pub(crate) block_starts: Vec<u32>,
+}
+
+/// A half-open-free (i.e. inclusive on both ends) live range in the linearized program point space.
+#[derive(Clone, Copy)]
+pub(crate) struct LiveRange {
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+    /// The program point at which this value is defined, or `u32::MAX` for block inputs.
+    pub(crate) def: u32,
+    pub(crate) value: Value,
 }
 
 impl Lifetimes {
+    /// All values that are live across the given instruction, excluding any value that is defined
+    /// by that very instruction.
+    ///
+    /// Used by the compiler to decide which volatile registers must be preserved around a call.
     pub fn get_active_at_index(
         &self,
-        func: &IRFunctionInternal,
+        _func: &IRFunctionInternal,
         block_index: usize,
         instruction_index_in_block: usize,
     ) -> Vec<Value> {
-        self.last_used
-            .iter()
-            .filter_map(|(value, last_usage)| {
-                let first_usage = value.into_usage(func);
+        let Some(block_start) = self.block_starts.get(block_index) else {
+            return Vec::new();
+        };
+        let point = block_start.saturating_add(instruction_index_in_block as u32);
 
-                let first_used_before = first_usage.block_index < block_index
-                    || (first_usage.block_index == block_index
-                        && first_usage.instruction_index_in_block <= instruction_index_in_block);
+        // `live_ranges` is sorted by `start`, so everything that could contain `point` lies in the
+        // prefix ending at the first range starting after it.
+        let upper = self.live_ranges.partition_point(|r| r.start <= point);
 
-                let last_used_after = last_usage.block_index > block_index
-                    || (last_usage.block_index == block_index
-                        && last_usage.instruction_index_in_block >= instruction_index_in_block);
-
-                if first_used_before && last_used_after {
-                    Some(*value)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-}
-
-fn calculate_lifetimes(func: &IRFunctionInternal) -> Lifetimes {
-    let mut last_used = BTreeMap::new();
-    let mut all_usages: BTreeMap<Value, Vec<Usage>> = BTreeMap::new();
-    let mut interference = BTreeMap::new();
-
-    func.blocks
-        .iter()
-        .enumerate()
-        .flat_map(|(block_index, block)| {
-            block
-                .instructions
-                .iter()
-                .enumerate()
-                .map(move |(instruction_index_in_block, instruction_index)| {
-                    (block_index, instruction_index_in_block, instruction_index)
-                })
-        })
-        .for_each(|(block_index, instruction_index_in_block, instruction_index)| {
-            match &func.instructions[*instruction_index].instruction {
-                #[cfg(feature = "ir_comments")]
-                Instruction::Comment(_) => {}
-                Instruction::Instruction { inputs, .. } => {
-                    inputs.iter().map(|input| input.to_value(&func)).for_each(|input| {
-                        if let Some(value) = input {
-                            let u = Usage {
-                                block_index,
-                                instruction_index: *instruction_index,
-                                instruction_index_in_block,
-                            };
-                            last_used.insert(value, u);
-                            all_usages.entry(value).or_insert_with(Vec::new).push(u);
-                        };
-                    });
-                }
-                Instruction::Branch {
-                    cond,
-                    if_true,
-                    if_false,
-                } => {
-                    if_true
-                        .arguments
-                        .iter()
-                        .chain(if_false.arguments.iter())
-                        .chain(iter::once(cond))
-                        .flat_map(|i| i.to_value(&func))
-                        .for_each(|value| {
-                            let usage = Usage {
-                                block_index,
-                                instruction_index: *instruction_index,
-                                instruction_index_in_block,
-                            };
-                            last_used.insert(value, usage);
-                            all_usages.entry(value).or_insert_with(Vec::new).push(usage);
-                        });
-                }
-                Instruction::Jump { target } => {
-                    target
-                        .arguments
-                        .iter()
-                        .flat_map(|i| i.to_value(&func))
-                        .for_each(|value| {
-                            let usage = Usage {
-                                block_index,
-                                instruction_index: *instruction_index,
-                                instruction_index_in_block,
-                            };
-                            last_used.insert(value, usage);
-                            all_usages.entry(value).or_insert_with(Vec::new).push(usage);
-                        });
-                }
-                Instruction::Return { value } => value.into_iter().for_each(|input| {
-                    if let Some(value) = input.to_value(&func) {
-                        let u = Usage {
-                            block_index,
-                            instruction_index: *instruction_index,
-                            instruction_index_in_block,
-                        };
-                        last_used.insert(value, u);
-                        all_usages.entry(value).or_insert_with(Vec::new).push(u);
-                    }
-                }),
+        let mut out = Vec::new();
+        for range in &self.live_ranges[..upper] {
+            if range.end >= point && range.def != point {
+                out.push(range.value);
             }
-        });
-
-    last_used.keys().combinations(2).for_each(|x| {
-        let a = x[0];
-        let b = x[1];
-
-        let a_first = a.into_usage(func);
-        let b_first = b.into_usage(func);
-
-        let a_last = &last_used[a];
-        let b_last = &last_used[b];
-
-        // If the live ranges of the two values overlap, add them to the interference graph
-        let overlap = max(a_first, b_first) <= *min(a_last, b_last);
-
-        if overlap {
-            interference.entry(*a).or_insert_with(Vec::new).push(*b);
-            interference.entry(*b).or_insert_with(Vec::new).push(*a);
         }
-    });
-
-    let mut result = Lifetimes {
-        last_used,
-        all_usages,
-        interference,
-    };
-
-    // Add interference graph edges for jumps and branches so that moving values into block
-    // argument registers is safe
-
-    func.blocks
-        .iter()
-        .enumerate()
-        .flat_map(|(block_index, block)| {
-            block
-                .instructions
-                .iter()
-                .enumerate()
-                .map(move |(instruction_index_in_block, instruction_index)| {
-                    (block_index, instruction_index_in_block, instruction_index)
-                })
-        })
-        .for_each(|(block_index, instruction_index_in_block, instruction_index)| {
-            let mut interference_for = |target: &BlockReference| {
-                let target_block = &func.blocks[target.block_index];
-                result
-                    .get_active_at_index(func, block_index, instruction_index_in_block)
-                    .iter()
-                    .for_each(|v| {
-                        for (input_index, input_dt) in target_block.inputs.iter().enumerate() {
-                            let input = Value::BlockInput {
-                                block_index: target.block_index,
-                                input_index,
-                                data_type: *input_dt,
-                            };
-
-                            result.interference.entry(*v).or_insert_with(Vec::new).push(input);
-                            result.interference.entry(input).or_insert_with(Vec::new).push(*v);
-                        }
-                    });
-            };
-            match &func.instructions[*instruction_index].instruction {
-                #[cfg(feature = "ir_comments")]
-                Instruction::Comment(_) => {}
-                Instruction::Instruction { .. } => {}
-                Instruction::Branch { if_true, if_false, .. } => {
-                    interference_for(if_true);
-                    interference_for(if_false);
-                }
-                Instruction::Jump { target } => interference_for(target),
-                Instruction::Return { .. } => {}
-            }
-        });
-
-    return result;
+        out.sort();
+        out
+    }
 }
 
 impl Display for Register {
@@ -795,136 +503,6 @@ impl IRFunctionInternal {
     pub fn get_stack_offset_for_location(&self, location: u64, tp: DataType) -> u32 {
         (self.stack_bytes_used - location as usize - tp.size()) as u32
     }
-
-    fn get_index_in_block(&self, block_index: usize, instruction_index: usize) -> Option<usize> {
-        self.blocks[block_index]
-            .instructions
-            .iter()
-            .position(|i| *i == instruction_index)
-    }
-
-    fn spill(&mut self, to_spill: &Value, spill_after: &Usage) -> usize {
-        let to_spill_inputslot = to_spill.into_inputslot();
-
-        let stack_location = self.new_stack_location(to_spill.data_type());
-
-        let spill_instr_index = self.instructions.len();
-        let spill_instr = IndexedInstruction {
-            block_index: spill_after.block_index,
-            index: spill_instr_index,
-            instruction: Instruction::Instruction {
-                tp: InstructionType::SpillToStack,
-                inputs: vec![
-                    to_spill_inputslot,
-                    const_ptr(stack_location),
-                    InputSlot::Constant(Constant::DataType(to_spill.data_type())),
-                ],
-                outputs: vec![],
-            },
-        };
-        self.instructions.push(spill_instr);
-
-        {
-            let i = spill_after.instruction_index_in_block + 1; // Insert immediately after the last usage pre-spill
-            self.blocks[spill_after.block_index]
-                .instructions
-                .splice(i..i, [spill_instr_index]);
-        }
-        return stack_location;
-    }
-
-    fn reload(&mut self, to_spill: &Value, stack_location: usize, usages_post_spill: Vec<&Usage>) {
-        // Maps block index of reload to an InputSlot referencing the reload
-        let mut reloads: BTreeMap<usize, InputSlot> = BTreeMap::new();
-
-        let dominators = self.calculate_dominance_graph();
-
-        // Then rewrite all references post-spill to a reload. Insert several reloads if needed.
-        for usage in usages_post_spill {
-            // Iterate in reverse over all the existing loads to find the _farthest out_ usage, to
-            // be kinder to the register allocator.
-            // Only consider reloads in blocks that dominate the block with the usage.
-            let reload = reloads
-                .iter()
-                .rev()
-                .find(|(reload_block, _)| dominators.dominates(**reload_block, usage.block_index));
-
-            let reloaded_inputslot = if let Some((_, reloaded_inputslot)) = reload {
-                *reloaded_inputslot
-            } else {
-                let usage = usage.recalculate_index_in_block(self);
-
-                let reload_instr_index = self.instructions.len();
-                let reload_instr_block_index = usage.block_index;
-                let reload_instr = IndexedInstruction {
-                    block_index: reload_instr_block_index,
-                    index: reload_instr_index,
-                    instruction: Instruction::Instruction {
-                        tp: InstructionType::LoadFromStack,
-                        inputs: vec![const_ptr(stack_location)],
-                        outputs: vec![OutputSlot {
-                            tp: to_spill.data_type(),
-                        }],
-                    },
-                };
-                self.instructions.push(reload_instr);
-
-                {
-                    let i = usage.instruction_index_in_block; // Insert immediately before the usage
-                    self.blocks[usage.block_index]
-                        .instructions
-                        .splice(i..i, [reload_instr_index]);
-                }
-
-                let reloaded_inputslot = InputSlot::InstructionOutput {
-                    instruction_index: reload_instr_index,
-                    output_index: 0,
-                    tp: to_spill.data_type(),
-                };
-                reloads.insert(usage.block_index, reloaded_inputslot);
-                reloaded_inputslot
-            };
-
-            let instruction = &mut self.instructions[usage.instruction_index];
-            match &mut instruction.instruction {
-                #[cfg(feature = "ir_comments")]
-                Instruction::Comment(_) => {}
-                Instruction::Instruction { inputs, .. } => {
-                    let indices = inputs
-                        .into_iter()
-                        .positions(|input| input.references_value(to_spill))
-                        .collect::<Vec<usize>>();
-
-                    for i in indices {
-                        inputs[i] = reloaded_inputslot;
-                    }
-                }
-                Instruction::Branch { cond, .. } => {
-                    if cond.references_value(to_spill) {
-                        *cond = reloaded_inputslot;
-                    }
-                }
-                Instruction::Jump { .. } => {}
-                Instruction::Return { value } => {
-                    if let Some(v) = value {
-                        if v.references_value(to_spill) {
-                            *v = reloaded_inputslot;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn value_iter(&self) -> IRFunctionValueIterator<'_> {
-        IRFunctionValueIterator {
-            function: self,
-            block_index: 0,
-            block_input_index: 0,
-            instruction_index: 0,
-            output_index: 0,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -944,121 +522,5 @@ impl RegisterAllocations {
 /// for them.
 
 pub fn alloc_for(func: &mut IRFunctionInternal) -> RegisterAllocations {
-    return regalloc_graphcolor(func);
-}
-
-fn regalloc_graphcolor(func: &mut IRFunctionInternal) -> RegisterAllocations {
-    let mut done = false;
-    let mut allocations = BTreeMap::new();
-    let mut already_spilled = HashSet::new();
-    while !done {
-        allocations.clear();
-        let mut to_spill = None;
-        let lifetimes = calculate_lifetimes(&func);
-
-        for value in func.value_iter() {
-            if !lifetimes
-                .all_usages
-                .get(&value)
-                .map(|usages| usages.is_empty())
-                .unwrap_or(true)
-            {
-                let interference = lifetimes.interference.get(&value);
-
-                let mut found_reg = false;
-                for reg in get_registers()
-                    .iter()
-                    .filter(|r| r.can_hold_datatype(value.data_type()))
-                {
-                    // Check if the register is already allocated to an interfering value
-                    let already_allocated = interference.is_some()
-                        && interference
-                            .unwrap()
-                            .iter()
-                            .flat_map(|iv| allocations.get(iv))
-                            .any(|r| r == reg);
-                    if !already_allocated {
-                        allocations.insert(value, *reg);
-                        found_reg = true;
-                        break;
-                    }
-                }
-
-                if !found_reg {
-                    to_spill = interference
-                        .unwrap() // If we couldn't find a register, there must be interference
-                        .iter()
-                        // Filter out values that have already been spilled
-                        .filter(|iv| !already_spilled.contains(*iv))
-                        // Limit to only values that have been allocated to registers, and only to
-                        // registers that can hold the datatype of the value we're allocating
-                        .filter(|iv| {
-                            allocations
-                                .get(iv)
-                                .map(|r| r.can_hold_datatype(value.data_type()))
-                                .is_some()
-                        })
-                        // Pair each interfering value with its next usage
-                        .flat_map(|iv| {
-                            lifetimes.all_usages[iv]
-                                .iter()
-                                .find(|u| u >= &&value.into_usage(&func))
-                                .map(|u| (*u, *iv))
-                        })
-                        // Find the one with the farthest out next usage
-                        .max_by(|(u1, _iv1), (u2, _iv2)| u1.cmp(u2))
-                        .clone();
-                    if to_spill.is_none() {
-                        panic!("Couldn't find a value to spill!");
-                    }
-                    let (to_spill_next_used, _to_spill) = to_spill.unwrap();
-                    if to_spill_next_used == value.into_usage(&func) {
-                        panic!("Tried to spill a value next used at the same time as the one we're allocating (??? are we out of registers?)");
-                    }
-                    break;
-                }
-            }
-        }
-
-        if to_spill.is_none() {
-            done = true;
-        } else {
-            let (to_spill_next_used, to_spill) = to_spill.unwrap();
-            let to_spill_first_usage = to_spill.into_usage(&func);
-
-            if already_spilled.contains(&to_spill) {
-                panic!("Tried to spill a value that has already been spilled! This should never happen.")
-            }
-            already_spilled.insert(to_spill);
-
-            let spilled_to = func.spill(&to_spill, &to_spill_first_usage);
-
-            let usages_post_spill = lifetimes.all_usages[&to_spill]
-                .iter()
-                .filter(|u| u >= &&to_spill_next_used)
-                .collect::<Vec<_>>();
-
-            func.reload(&to_spill, spilled_to, usages_post_spill);
-        }
-    }
-
-    let callee_saved = allocations
-        .iter()
-        .map(|(_, reg)| *reg)
-        .unique()
-        .flat_map(|reg| {
-            if !reg.is_volatile() {
-                Some((reg, func.new_sized_stack_location(reg.size())))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let lifetimes = calculate_lifetimes(&func);
-    RegisterAllocations {
-        allocations,
-        callee_saved,
-        lifetimes,
-    }
+    linear_scan::regalloc(func)
 }

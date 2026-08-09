@@ -679,9 +679,6 @@ fn call_external_function() {
     assert_eq!(f(2), 12);
 }
 
-// TODO: test for calling a function when a volatile reg is active. Both from the scratch regs
-// struct and from a normal allocated register (like any SSE register on x64)
-
 const U128_VALUES: [u128; 6] = [
     0,
     u128::MAX,
@@ -946,4 +943,107 @@ fn simd_u128_spill() {
 
     f(results.as_ptr() as usize);
     validate(&results, &values);
+}
+
+/// A value held in a volatile register must survive a call. The call is placed in a
+/// non-entry block so that its position within the block differs from its index in the
+/// function, and the callee clobbers every allocatable SIMD register.
+#[test]
+fn volatile_reg_live_across_call_in_later_block() {
+    extern "C" fn clobber(x: u64) -> u64 {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            let junk = f32::from_bits(0x7F7F_7F7F);
+            core::arch::asm!(
+                "",
+                inout("xmm8") junk => _,
+                inout("xmm9") junk => _,
+                inout("xmm10") junk => _,
+                inout("xmm11") junk => _,
+                inout("xmm12") junk => _,
+                inout("xmm13") junk => _,
+                inout("xmm14") junk => _,
+                inout("xmm15") junk => _,
+                options(nostack, preserves_flags)
+            );
+        }
+        x.wrapping_add(1)
+    }
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut entry = func.new_block(vec![DataType::Ptr, DataType::U64, DataType::F32]);
+    let ptr = entry.input(0);
+    let x = entry.input(1);
+    let f = entry.input(2);
+
+    // Pad so that function-level instruction indices diverge from in-block positions.
+    let mut acc = x;
+    for i in 0..6 {
+        acc = entry.add(DataType::U64, acc, const_u64(i)).val();
+    }
+    let g = entry.add(DataType::F32, f, const_f32(1.0)).val();
+
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::U64, DataType::F32]);
+    entry.jump(block.call(vec![ptr, acc, g]));
+
+    let b_ptr = block.input(0);
+    let b_acc = block.input(1);
+    let b_f = block.input(2);
+    let called = block
+        .call_function(const_ptr(clobber as *const () as usize), Some(DataType::U64), vec![b_acc])
+        .val();
+    // b_f is live across the call above and dies right here.
+    let f_sum = block.add(DataType::F32, b_f, const_f32(2.0)).val();
+    let mut pad = called;
+    for i in 0..6 {
+        pad = block.add(DataType::U64, pad, const_u64(i)).val();
+    }
+    block.write_ptr(DataType::U64, b_ptr, 0, pad);
+    block.write_ptr(DataType::F32, b_ptr, 8, f_sum);
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let compiled_fn: extern "C" fn(usize, u64, f32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    #[repr(C)]
+    struct Results {
+        int_result: u64,
+        float_result: f32,
+    }
+    let results = Results {
+        int_result: 0,
+        float_result: 0.0,
+    };
+    compiled_fn(&results as *const Results as usize, 10, 5.0);
+
+    let expected_int = {
+        let mut a = 10u64;
+        for i in 0..6 {
+            a = a.wrapping_add(i);
+        }
+        let mut p = clobber(a);
+        for i in 0..6 {
+            p = p.wrapping_add(i);
+        }
+        p
+    };
+    assert_eq!(results.int_result, expected_int);
+    assert_eq!(results.float_result, 5.0 + 1.0 + 2.0);
+}
+
+/// Unused parameters must still consume their ABI argument register, otherwise every
+/// later argument is read from the wrong register.
+#[test]
+fn unused_function_arguments_dont_shift_later_ones() {
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::U64, DataType::U64, DataType::U64]);
+    let third = block.input(2);
+    let result = block.add(DataType::U64, third, const_u64(1)).val();
+    block.ret(Some(result));
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(u64, u64, u64) -> u64 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    assert_eq!(f(111, 222, 7), 8);
 }

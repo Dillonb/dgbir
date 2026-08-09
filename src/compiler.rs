@@ -586,29 +586,49 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     }
 
     fn call_block(&self, ops: &mut Ops, lp: &mut LiteralPool, target: &BlockReference) {
-        let moves = target
-            .arguments
-            .iter()
-            .enumerate()
-            .flat_map(|(input_index, arg)| {
-                let data_type = self.get_func().blocks[target.block_index].inputs[input_index];
+        // `move_regs_multi` performs a parallel move, so it can only handle one destination per
+        // source. The same value may legitimately be passed as several block arguments, so group by
+        // source: one representative destination goes through the parallel move, and the remaining
+        // destinations are copied from the representative afterwards (all destinations are distinct
+        // registers, and every source has been consumed by the time the parallel move returns, so
+        // these copies can't clobber anything).
+        let mut moves: BTreeMap<ConstOrReg, Register> = BTreeMap::new();
+        let mut fanout: Vec<(Register, Register)> = Vec::new();
 
-                let in_block_value = Value::BlockInput {
-                    block_index: target.block_index,
-                    input_index,
-                    data_type,
-                };
+        for (input_index, arg) in target.arguments.iter().enumerate() {
+            let data_type = self.get_func().blocks[target.block_index].inputs[input_index];
 
-                // If an argument isn't used, there will be no allocated register for it, so don't
-                // bother moving that value into place
-                self.get_allocations()
-                    .get(&in_block_value)
-                    .map(|block_arg_reg| (self.to_imm_or_reg(&arg), block_arg_reg))
-            })
-            .collect::<BTreeMap<_, _>>();
+            let in_block_value = Value::BlockInput {
+                block_index: target.block_index,
+                input_index,
+                data_type,
+            };
+
+            // If an argument isn't used, there will be no allocated register for it, so don't
+            // bother moving that value into place
+            let Some(block_arg_reg) = self.get_allocations().get(&in_block_value) else {
+                continue;
+            };
+
+            let from = self.to_imm_or_reg(&arg);
+            match moves.entry(from) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(block_arg_reg);
+                }
+                std::collections::btree_map::Entry::Occupied(e) => {
+                    let representative = *e.get();
+                    if representative != block_arg_reg {
+                        fanout.push((representative, block_arg_reg));
+                    }
+                }
+            }
+        }
 
         if moves.len() > 0 {
             self.move_regs_multi(ops, lp, moves);
+        }
+        for (from, to) in fanout {
+            self.move_to_reg(ops, lp, from.to_const_or_reg(), to);
         }
 
         // TODO: figure out when we can elide this jump. If it's a jmp instruction to the next block,
@@ -631,6 +651,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
             .iter()
             .enumerate()
             .for_each(|(input_index, input)| {
+                // Every parameter consumes an argument register of its class, whether or not it is
+                // used. Skipping unused ones would shift every later argument into the wrong
+                // register.
+                let arg_reg = *arg_regs
+                    .iter()
+                    .find(|r| r.can_hold_datatype(*input) && !allocated_arg_regs.contains(*r))
+                    .unwrap();
+                allocated_arg_regs.insert(arg_reg);
+
                 let block_input = Value::BlockInput {
                     block_index: 0,
                     input_index,
@@ -638,11 +667,6 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 };
                 // If the argument is unused, it won't have a register allocated to it.
                 if let Some(input_reg) = self.get_allocations().get(&block_input) {
-                    let arg_reg = arg_regs
-                        .iter()
-                        .find(|r| r.is_same_type_as(&input_reg) && !allocated_arg_regs.contains(r))
-                        .unwrap();
-                    allocated_arg_regs.insert(arg_reg);
                     self.move_to_reg(ops, lp, arg_reg.to_const_or_reg(), input_reg);
                 }
             });
@@ -892,10 +916,11 @@ fn compile_common<'a, R: Relocation, Ops: GenericAssembler<R>, C: Compiler<'a, R
         block
             .instructions
             .iter()
-            .map(|i_in_block| (i_in_block, &compiler.get_func().instructions[*i_in_block]))
-            .for_each(|(i_in_block, instruction)| {
+            .enumerate()
+            .map(|(position, i)| (position, &compiler.get_func().instructions[*i]))
+            .for_each(|(position, instruction)| {
                 debug_info.add_comment(C::offset(ops), format!("{}", instruction));
-                compile_instruction(ops, &mut lp, compiler, *i_in_block, instruction);
+                compile_instruction(ops, &mut lp, compiler, position, instruction);
             })
     }
     debug_info.add_comment(C::offset(ops), format!("Function epilogue"));
