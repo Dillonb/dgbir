@@ -676,51 +676,67 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
     ) {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
-            let n = self.materialize_as_gpr(ops, lp, n);
+            self.move_to_reg(ops, lp, n, r_out);
             match tp {
                 DataType::U8 | DataType::S8 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
-                        ; movzx Rd(r_out), Rb(n.r()) // zero out all but the lower 8 bits
+                        ; movzx Rd(r_out), Rb(r_out)
                         ; shl Rb(r_out), amount as i8 & 0b111
                     );
                 }
                 DataType::U16 | DataType::S16 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
-                        ; movzx Rd(r_out), Rw(n.r()) // zero out all but the lower 16 bits
+                        ; movzx Rd(r_out), Rw(r_out)
                         ; shl Rw(r_out), amount as i8 & 0b1111
                     );
                 }
                 DataType::U32 | DataType::S32 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
-                        ; mov Rd(r_out), Rd(n.r())
                         ; shl Rd(r_out), amount as i8 & 0b11111
                     );
                 }
                 DataType::U64 | DataType::S64 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
-                        ; mov Rq(r_out), Rq(n.r())
                         ; shl Rq(r_out), amount as i8 & 0b111111
+                    );
+                }
+                DataType::U128 | DataType::S128 => {
+                    assert!(
+                        amount % 8 == 0,
+                        "U128 LeftShift by non-byte-aligned amount ({}) not yet supported",
+                        amount
+                    );
+                    let r_out = r_out.expect_simd();
+                    let bytes = (amount / 8) as i8;
+                    dynasm!(ops
+                        ; pslldq Rx(r_out), bytes
                     );
                 }
                 _ => todo!("Unsupported LeftShift operation with type {}", tp),
             }
         } else if let Some(r_amount) = amount.to_reg() {
-            self.move_to_reg(ops, lp, n, Register::GPR(r_out));
+            self.move_to_reg(ops, lp, n, r_out);
             let amount = self.materialize_as_gpr(ops, lp, amount);
             match tp {
                 DataType::U32 | DataType::S32 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; shlx Rd(r_out), Rd(r_out), Rd(amount.r())
                     );
                 }
                 DataType::U64 | DataType::S64 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; shlx Rq(r_out), Rq(r_out), Rq(amount.r())
                     );
@@ -734,62 +750,83 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
     ) {
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
-            self.move_to_reg(ops, lp, n, Register::GPR(r_out));
+            self.move_to_reg(ops, lp, n, r_out);
             match tp {
                 DataType::U8 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; movzx Rd(r_out), Rb(r_out)
                         ; shr Rb(r_out), amount as i8 & 0b111
                     );
                 }
                 DataType::S8 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; movzx Rd(r_out), Rb(r_out)
                         ; sar Rb(r_out), amount as i8 & 0b111
                     );
                 }
                 DataType::U16 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; movzx Rd(r_out), Rw(r_out)
                         ; shr Rw(r_out), amount as i8 & 0b1111
                     );
                 }
                 DataType::S16 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; movzx Rd(r_out), Rw(r_out)
                         ; sar Rw(r_out), amount as i8 & 0b1111
                     );
                 }
                 DataType::U32 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; shr Rd(r_out), amount as i8 & 0b11111
                     );
                 }
                 DataType::S32 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; sar Rd(r_out), amount as i8 & 0b11111
                     );
                 }
                 DataType::U64 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; shr Rq(r_out), amount as i8 & 0b111111
                     );
                 }
                 DataType::S64 => {
+                    let r_out = r_out.expect_gpr();
                     dynasm!(ops
                         ; sar Rq(r_out), amount as i8 & 0b111111
+                    );
+                }
+                DataType::U128 | DataType::S128 => {
+                    assert!(
+                        amount % 8 == 0,
+                        "U128 RightShift by non-byte-aligned amount ({}) not yet supported",
+                        amount
+                    );
+                    let r_out = r_out.expect_simd();
+                    let bytes = (amount / 8) as i8;
+                    dynasm!(ops
+                        ; psrldq Rx(r_out), bytes
                     );
                 }
                 _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
             }
         } else if let Some(r_amount) = amount.to_reg() {
+            let r_out = r_out.expect_gpr();
             self.move_to_reg(ops, lp, n, Register::GPR(r_out));
             let amount = self.materialize_as_gpr(ops, lp, amount);
             match tp {

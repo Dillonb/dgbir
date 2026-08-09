@@ -43,7 +43,8 @@ impl Register {
                 return VALID_GPR_TYPES.contains(&tp);
             }
             Register::SIMD(_) => {
-                const VALID_SIMD_TYPES: [DataType; 2] = [DataType::F32, DataType::F64];
+                const VALID_SIMD_TYPES: [DataType; 4] =
+                    [DataType::F32, DataType::F64, DataType::U128, DataType::S128];
                 return VALID_SIMD_TYPES.contains(&tp);
             }
         }

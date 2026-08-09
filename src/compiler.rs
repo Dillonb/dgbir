@@ -253,7 +253,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.left_shift(ops, lp, r_out.expect_gpr(), n, amount, tp);
+                        compiler.left_shift(ops, lp, *r_out, n, amount, tp);
                     });
                 }
                 InstructionType::RightShift => {
@@ -263,7 +263,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.right_shift(ops, lp, r_out.expect_gpr(), n, amount, tp);
+                        compiler.right_shift(ops, lp, *r_out, n, amount, tp);
                     });
                 }
                 InstructionType::Convert => {
@@ -732,7 +732,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
@@ -742,7 +742,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,

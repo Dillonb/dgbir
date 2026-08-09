@@ -745,11 +745,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
     ) -> () {
+        let r_out = r_out.expect_gpr();
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             if let Some(base) = n.to_u64_const() {
@@ -837,11 +838,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
     ) {
+        let r_out = r_out.expect_gpr();
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
             let orig_n = n;
