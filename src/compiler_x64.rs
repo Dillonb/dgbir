@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, marker::PhantomData};
 
 use crate::{
-    abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
+    abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
@@ -1266,8 +1266,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     ) {
         match (result_tp, arg_tp, output_regs.len()) {
             (DataType::U32, DataType::U32, 2) => {
-                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let edx = self.scratch_regs.reserve(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, a, eax.reg());
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -1282,8 +1282,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             (DataType::S32, DataType::S32, 2) => {
-                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let edx = self.scratch_regs.reserve(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, a, eax.reg());
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -1298,8 +1298,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             (DataType::U64, DataType::U64, 2) => {
-                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let rdx = self.scratch_regs.reserve(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, a, rax.reg());
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -1314,8 +1314,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             (DataType::S64, DataType::S64, 2) => {
-                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let rdx = self.scratch_regs.reserve(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, a, rax.reg());
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -1369,8 +1369,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
     ) {
         match tp {
             DataType::U32 => {
-                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let edx = self.scratch_regs.reserve(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, dividend, eax.reg());
                 let divisor = self.materialize_as_gpr(ops, lp, divisor);
@@ -1387,8 +1387,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             DataType::S32 => {
-                let edx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let eax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let edx = self.scratch_regs.reserve(reg_constants::RDX);
+                let eax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, dividend, eax.reg());
                 let divisor = self.materialize_as_gpr(ops, lp, divisor);
@@ -1405,8 +1405,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             DataType::U64 => {
-                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let rdx = self.scratch_regs.reserve(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, dividend, rax.reg());
                 let divisor = self.materialize_as_gpr(ops, lp, divisor);
@@ -1423,8 +1423,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                 );
             }
             DataType::S64 => {
-                let rdx = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RDX);
-                let rax = self.scratch_regs.reserve::<register_type::GPR>(reg_constants::RAX);
+                let rdx = self.scratch_regs.reserve(reg_constants::RDX);
+                let rax = self.scratch_regs.reserve(reg_constants::RAX);
 
                 self.move_to_reg(ops, lp, dividend, rax.reg());
                 let divisor = self.materialize_as_gpr(ops, lp, divisor);
@@ -1577,20 +1577,15 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
 
         // Move the arguments into place
+        let arg_regs = assign_argument_registers(&args);
         let moves = args
             .into_iter()
-            .zip(get_function_argument_registers().into_iter())
+            .zip(arg_regs.into_iter())
             .collect::<BTreeMap<ConstOrReg, Register>>();
 
         // TODO: rework this so that the output of this is used as the input to `move_regs_multi`
         // so I don't have to mark this as unused with the underscore.
-        let _reservations = moves
-            .values()
-            .map(|r| match r {
-                Register::GPR(_) => self.scratch_regs.reserve::<register_type::GPR>(*r),
-                Register::SIMD(_) => todo!("Reserving SIMD registers for arguments"),
-            })
-            .collect::<Vec<_>>();
+        let _reservations = moves.values().map(|r| self.scratch_regs.reserve(*r)).collect::<Vec<_>>();
 
         self.move_regs_multi(ops, lp, moves);
 
@@ -1600,8 +1595,12 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         );
 
         if let Some(to) = r_out {
-            trace!("Moving return value from {} to {}", get_return_value_registers()[0], to);
-            self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
+            let from = *get_return_value_registers()
+                .iter()
+                .find(|r| r.is_simd() == to.is_simd())
+                .unwrap();
+            trace!("Moving return value from {} to {}", from, to);
+            self.move_to_reg(ops, lp, from.to_const_or_reg(), to);
         }
 
         for reg in active_regs.iter() {

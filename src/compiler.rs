@@ -11,7 +11,7 @@ use dynasmrt::{AssemblyOffset, DynamicLabel, DynasmApi, DynasmLabelApi, Executab
 use log::info;
 use ordered_float::OrderedFloat;
 
-use crate::abi::get_function_argument_registers;
+use crate::abi::assign_argument_registers;
 #[cfg(target_arch = "aarch64")]
 use crate::compiler_aarch64;
 #[cfg(target_arch = "x86_64")]
@@ -662,34 +662,22 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     }
 
     fn handle_function_arguments(&self, ops: &mut Ops, lp: &mut LiteralPool) {
-        // Move all arguments into the correct registers
+        // Every parameter consumes an argument register, whether or not it is used. Skipping
+        // unused ones would shift every later argument into the wrong register.
+        let inputs = &self.get_func().blocks[0].inputs;
+        let arg_regs = assign_argument_registers(inputs);
 
-        let arg_regs = get_function_argument_registers();
-        let mut allocated_arg_regs = HashSet::new();
-        self.get_func().blocks[0]
-            .inputs
-            .iter()
-            .enumerate()
-            .for_each(|(input_index, input)| {
-                // Every parameter consumes an argument register of its class, whether or not it is
-                // used. Skipping unused ones would shift every later argument into the wrong
-                // register.
-                let arg_reg = *arg_regs
-                    .iter()
-                    .find(|r| r.can_hold_datatype(*input) && !allocated_arg_regs.contains(*r))
-                    .unwrap();
-                allocated_arg_regs.insert(arg_reg);
-
-                let block_input = Value::BlockInput {
-                    block_index: 0,
-                    input_index,
-                    data_type: *input,
-                };
-                // If the argument is unused, it won't have a register allocated to it.
-                if let Some(input_reg) = self.get_allocations().get(&block_input) {
-                    self.move_to_reg(ops, lp, arg_reg.to_const_or_reg(), input_reg);
-                }
-            });
+        inputs.iter().enumerate().for_each(|(input_index, input)| {
+            let block_input = Value::BlockInput {
+                block_index: 0,
+                input_index,
+                data_type: *input,
+            };
+            // If the argument is unused, it won't have a register allocated to it.
+            if let Some(input_reg) = self.get_allocations().get(&block_input) {
+                self.move_to_reg(ops, lp, arg_regs[input_index].to_const_or_reg(), input_reg);
+            }
+        });
     }
 
     fn add_literal(ops: &mut Ops, lp: &mut LiteralPool, literal: Constant) -> dynasmrt::DynamicLabel {

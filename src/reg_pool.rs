@@ -105,7 +105,9 @@ impl RegPool {
         }
     }
 
-    pub fn reserve<T: RegPoolRegister>(&self, reg: Register) -> BorrowedReg<T> {
+    /// Holds a specific register, already chosen by the caller, until the returned guard is
+    /// dropped. The class is implied by `reg`, so unlike [`RegPool::borrow`] this isn't generic.
+    pub fn reserve(&self, reg: Register) -> ReservedReg {
         let mut pool = self.pool.borrow_mut();
 
         if *pool.regs.get(&reg).unwrap_or(&false) {
@@ -117,9 +119,8 @@ impl RegPool {
             pool.regs.insert(reg, true);
         }
 
-        BorrowedReg {
+        ReservedReg {
             reg,
-            pool_reg: T::new(reg.index()),
             pool: self.pool.clone(), // Increment refcount
         }
     }
@@ -151,6 +152,29 @@ impl<T: RegPoolRegister> BorrowedReg<T> {
 }
 
 impl<T: RegPoolRegister> Drop for BorrowedReg<T> {
+    fn drop(&mut self) {
+        let mut pool = self.pool.borrow_mut();
+        pool.regs.insert(self.reg, false);
+    }
+}
+
+/// A register held in the pool until this is dropped.
+pub struct ReservedReg {
+    reg: Register,
+    pool: Rc<RefCell<RegPoolInternal>>,
+}
+
+impl ReservedReg {
+    pub fn r(&self) -> RegisterIndex {
+        self.reg.index()
+    }
+
+    pub fn reg(&self) -> Register {
+        self.reg
+    }
+}
+
+impl Drop for ReservedReg {
     fn drop(&mut self) {
         let mut pool = self.pool.borrow_mut();
         pool.regs.insert(self.reg, false);

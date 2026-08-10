@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
-    abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
+    abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, BorrowedReg, RegPool},
@@ -1680,9 +1680,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
 
         // Move the arguments into place
+        let arg_regs = assign_argument_registers(&args);
         let moves = args
             .into_iter()
-            .zip(get_function_argument_registers().into_iter())
+            .zip(arg_regs.into_iter())
             .collect::<BTreeMap<ConstOrReg, Register>>();
         self.move_regs_multi(ops, lp, moves);
 
@@ -1698,8 +1699,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
 
         if let Some(to) = r_out {
-            debug!("Moving return value from {} to {}", get_return_value_registers()[0], to);
-            self.move_to_reg(ops, lp, get_return_value_registers()[0].to_const_or_reg(), to);
+            let from = *get_return_value_registers()
+                .iter()
+                .find(|r| r.is_simd() == to.is_simd())
+                .unwrap();
+            debug!("Moving return value from {} to {}", from, to);
+            self.move_to_reg(ops, lp, from.to_const_or_reg(), to);
         }
 
         for reg in active_regs.iter() {

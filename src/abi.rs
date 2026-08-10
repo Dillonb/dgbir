@@ -1,3 +1,5 @@
+use crate::compiler::ConstOrReg;
+use crate::ir::DataType;
 use crate::register_allocator::Register;
 
 #[allow(dead_code)]
@@ -196,26 +198,135 @@ pub fn get_scratch_registers() -> Vec<Register> {
     }
 }
 
-pub fn get_function_argument_registers() -> Vec<Register> {
+/// The registers used to pass integer/pointer arguments, in order.
+fn get_gpr_argument_registers() -> Vec<Register> {
     use reg_constants::*;
     #[cfg(target_arch = "aarch64")]
     {
-        vec![X0, X1, X2, X3, X4, X5, X6, X7, V0, V1, V2, V3, V4, V5, V6, V7]
+        vec![X0, X1, X2, X3, X4, X5, X6, X7]
     }
-    // For x64, it matters whether we're on Linux or Windows
     #[cfg(target_arch = "x86_64")]
     {
         #[cfg(target_os = "linux")]
         {
-            vec![
-                RDI, RSI, RDX, RCX, R8, R9, XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7,
-            ]
+            vec![RDI, RSI, RDX, RCX, R8, R9]
         }
         #[cfg(target_os = "windows")]
         {
-            vec![RCX, RDX, R8, R9, XMM0, XMM1, XMM2, XMM3]
+            vec![RCX, RDX, R8, R9]
         }
     }
+}
+
+/// The registers used to pass floating point/vector arguments, in order.
+fn get_simd_argument_registers() -> Vec<Register> {
+    use reg_constants::*;
+    #[cfg(target_arch = "aarch64")]
+    {
+        vec![V0, V1, V2, V3, V4, V5, V6, V7]
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        #[cfg(target_os = "linux")]
+        {
+            vec![XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7]
+        }
+        #[cfg(target_os = "windows")]
+        {
+            vec![XMM0, XMM1, XMM2, XMM3]
+        }
+    }
+}
+
+/// Windows x64 picks an argument's register from its overall position, so the third argument goes
+/// in R8 or XMM2 depending on its type. SYSTEM-V and AAPCS instead count each class separately.
+const fn argument_registers_are_positional() -> bool {
+    cfg!(all(target_arch = "x86_64", target_os = "windows"))
+}
+
+/// Implemented by anything that knows whether it lives in a SIMD register or a general purpose one.
+pub trait IsSimd {
+    fn is_simd(&self) -> bool;
+}
+
+impl IsSimd for DataType {
+    fn is_simd(&self) -> bool {
+        Register::SIMD(0).can_hold_datatype(*self)
+    }
+}
+
+impl IsSimd for ConstOrReg {
+    fn is_simd(&self) -> bool {
+        self.is_same_type_as(&Register::SIMD(0))
+    }
+}
+
+/// Assigns an argument register to each of `args`. Panics on arguments that don't fit, as they'd
+/// have to go on the stack.
+pub fn assign_argument_registers<T: IsSimd>(args: &[T]) -> Vec<Register> {
+    // A positional ABI consumes a slot in both lists per argument, so they advance in lockstep.
+    let positional = argument_registers_are_positional();
+    let mut gprs = get_gpr_argument_registers().into_iter();
+    let mut simds = get_simd_argument_registers().into_iter();
+
+    args.iter()
+        .enumerate()
+        .map(|(arg_index, arg)| {
+            let is_simd = arg.is_simd();
+            let gpr = if is_simd && !positional { None } else { gprs.next() };
+            let simd = if !is_simd && !positional { None } else { simds.next() };
+            if is_simd { simd } else { gpr }.unwrap_or_else(|| {
+                panic!(
+                    "Argument {} does not fit in the {} argument registers, and stack arguments are not \
+                     supported yet",
+                    arg_index,
+                    if is_simd { "SIMD" } else { "GPR" }
+                )
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn mixed_argument_classes_follow_the_calling_convention() {
+    use reg_constants::*;
+    use DataType::{F32, U64};
+
+    let assign = |args: &[DataType]| assign_argument_registers(args);
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(assign(&[U64, U64, U64, U64]), vec![RCX, RDX, R8, R9]);
+            assert_eq!(assign(&[F32, F32, F32, F32]), vec![XMM0, XMM1, XMM2, XMM3]);
+            assert_eq!(assign(&[U64, U64, F32]), vec![RCX, RDX, XMM2]);
+            assert_eq!(assign(&[F32, U64]), vec![XMM0, RDX]);
+            assert_eq!(assign(&[U64, F32, U64, F32]), vec![RCX, XMM1, R8, XMM3]);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(assign(&[U64, U64, U64, U64]), vec![RDI, RSI, RDX, RCX]);
+            assert_eq!(assign(&[F32, F32, F32, F32]), vec![XMM0, XMM1, XMM2, XMM3]);
+            assert_eq!(assign(&[U64, U64, F32]), vec![RDI, RSI, XMM0]);
+            assert_eq!(assign(&[F32, U64]), vec![XMM0, RDI]);
+            assert_eq!(assign(&[U64, F32, U64, F32]), vec![RDI, XMM0, RSI, XMM1]);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        assert_eq!(assign(&[U64, U64, U64, U64]), vec![X0, X1, X2, X3]);
+        assert_eq!(assign(&[F32, F32, F32, F32]), vec![V0, V1, V2, V3]);
+        assert_eq!(assign(&[U64, U64, F32]), vec![X0, X1, V0]);
+        assert_eq!(assign(&[F32, U64]), vec![V0, X0]);
+        assert_eq!(assign(&[U64, F32, U64, F32]), vec![X0, V0, X1, V1]);
+    }
+}
+
+#[test]
+#[should_panic(expected = "stack arguments are not supported yet")]
+fn too_many_arguments_panics() {
+    assign_argument_registers(&[DataType::U64; 32]);
 }
 
 pub fn get_return_value_registers() -> Vec<Register> {

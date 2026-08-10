@@ -1048,6 +1048,82 @@ fn unused_function_arguments_dont_shift_later_ones() {
     assert_eq!(f(111, 222, 7), 8);
 }
 
+/// Entry block arguments must land in the registers the calling convention assigns to their
+/// positions, which for interleaved classes differs between Windows x64 and SYSTEM-V/AAPCS.
+#[test]
+fn function_arguments_mixed_int_and_float() {
+    #[derive(Default)]
+    #[repr(C)]
+    struct MixedArgs {
+        int: u64,
+        first_float: f32,
+        second_float: f32,
+    }
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::F32, DataType::U64, DataType::F32]);
+    let ptr = block.input(0);
+    let first_float = block.input(1);
+    let int = block.input(2);
+    let second_float = block.input(3);
+
+    block.write_ptr(DataType::U64, ptr, offset_of!(MixedArgs, int), int);
+    block.write_ptr(DataType::F32, ptr, offset_of!(MixedArgs, first_float), first_float);
+    block.write_ptr(DataType::F32, ptr, offset_of!(MixedArgs, second_float), second_float);
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, f32, u64, f32) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    let results = MixedArgs::default();
+    f(&results as *const MixedArgs as usize, 1.5, 42, 2.25);
+    assert_eq!(results.int, 42);
+    assert_eq!(results.first_float, 1.5);
+    assert_eq!(results.second_float, 2.25);
+}
+
+/// Outgoing calls follow the same rule: float arguments go in the registers the callee reads them
+/// from, and a float return value comes back in a SIMD register rather than the integer one.
+#[test]
+fn call_external_function_with_float_arguments() {
+    extern "C" fn combine(x: u64, a: f32, b: f32) -> f32 {
+        x as f32 + a * 10.0 + b * 100.0
+    }
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::U64, DataType::F32]);
+    let x = block.input(0);
+    let a = block.input(1);
+    // A constant argument has to be materialized into its argument register.
+    let result =
+        block.call_function(const_ptr(combine as *const () as usize), Some(DataType::F32), vec![x, a, const_f32(0.5)]);
+    block.ret(Some(result.val()));
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(u64, f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+
+    assert_eq!(f(3, 2.0), combine(3, 2.0, 0.5));
+    assert_eq!(f(0, 0.0), combine(0, 0.0, 0.5));
+    assert_eq!(f(7, -1.5), combine(7, -1.5, 0.5));
+}
+
+/// A float argument that is never read still consumes its argument register.
+#[test]
+fn unused_float_arguments_dont_shift_later_ones() {
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::F32, DataType::U64, DataType::F32]);
+    let third = block.input(2);
+    let result = block.add(DataType::F32, third, const_f32(1.0)).val();
+    block.ret(Some(result));
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(f32, u64, f32) -> f32 = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    assert_eq!(f(111.0, 222, 7.0), 8.0);
+}
+
 /// Vector byte shifts by an amount that is only known at runtime, which take a different
 /// code path (pshufb) than the constant amount shifts.
 #[test]
