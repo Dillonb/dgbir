@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
     abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
-    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
+    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, BorrowedReg, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
@@ -213,6 +213,44 @@ fn address_in_gpr<Ops: GenericAssembler<Aarch64Relocation>>(
         ; add X(r_addr.r()), X(r_ptr), X(r_addr.r())
     );
     r_addr
+}
+
+/// Widens an already materialized value into a full 64 bit register, ready to be compared.
+fn extend_as_comparable_gpr<Ops: GenericAssembler<Aarch64Relocation>>(
+    ops: &mut Ops,
+    scratch_regs: &RegPool,
+    r: RegisterIndex,
+    tp: DataType,
+) -> MaterializedGpr {
+    if matches!(tp, DataType::U64 | DataType::S64 | DataType::Ptr) {
+        return MaterializedGpr::AlreadyGPR(r);
+    }
+
+    let out = scratch_regs.borrow::<register_type::GPR>();
+    // Writing to a W register zero extends into the full X register, so the unsigned cases don't
+    // need to name the 64 bit form.
+    match tp {
+        DataType::Bool | DataType::U8 => dynasm!(ops
+            ; uxtb W(out.r()), W(r)
+        ),
+        DataType::S8 => dynasm!(ops
+            ; sxtb X(out.r()), W(r)
+        ),
+        DataType::U16 => dynasm!(ops
+            ; uxth W(out.r()), W(r)
+        ),
+        DataType::S16 => dynasm!(ops
+            ; sxth X(out.r()), W(r)
+        ),
+        DataType::U32 => dynasm!(ops
+            ; mov W(out.r()), W(r)
+        ),
+        DataType::S32 => dynasm!(ops
+            ; sxtw X(out.r()), W(r)
+        ),
+        _ => todo!("Cannot widen data type {} for comparison", tp),
+    }
+    MaterializedGpr::TemporaryGPR(out)
 }
 
 pub struct Aarch64Compiler<'a, Ops> {
@@ -587,83 +625,35 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                         ; cset W(r_out), ge // signed "greater than or equal"
                     )
                 }
-                (false, CompareType::GreaterThan) => todo!("Compare with type GreaterThanUnsigned"),
-                (false, CompareType::LessThanOrEqual) => todo!("Compare with type LessThanOrEqualUnsigned"),
-                (false, CompareType::GreaterThanOrEqual) => todo!("Compare with type GreaterThanOrEqualUnsigned"),
+                (false, CompareType::GreaterThan) => {
+                    dynasm!(ops
+                        ; cset W(r_out), hi // unsigned "higher"
+                    )
+                }
+                (false, CompareType::LessThanOrEqual) => {
+                    dynasm!(ops
+                        ; cset W(r_out), ls // unsigned "lower or same"
+                    )
+                }
+                (false, CompareType::GreaterThanOrEqual) => {
+                    dynasm!(ops
+                        ; cset W(r_out), hs // unsigned "higher or same"
+                    )
+                }
             }
         }
 
         let signed = data_type.is_signed();
 
         if data_type.is_integer() {
-            match (a, b) {
-                (ConstOrReg::GPR(r1), ConstOrReg::GPR(r2)) => {
-                    dynasm!(ops
-                        ; cmp X(r1), X(r2)
-                    );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-                (ConstOrReg::GPR(r), c) if c.is_const() => {
-                    let c = c.to_u64_const().unwrap();
-                    if c < 4096 {
-                        dynasm!(ops
-                            ; cmp XSP(r), c as u32
-                        );
-                    } else {
-                        let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                        load_64_bit_constant(ops, lp, r_temp.r(), c);
-                        dynasm!(ops
-                            ; cmp XSP(r), X(r_temp.r())
-                        );
-                    }
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-                (c, ConstOrReg::GPR(r)) if c.is_const() => {
-                    let c = c.to_u64_const().unwrap();
-                    let r_temp = self.scratch_regs.borrow::<register_type::GPR>();
-                    load_64_bit_constant(ops, lp, r_temp.r(), c);
-                    dynasm!(ops
-                        ; cmp XSP(r_temp.r()), X(r)
-                    );
-                    set_reg_by_flags(ops, signed, cmp_type, r_out);
-                }
-                (c1, c2) if c1.is_const() && c2.is_const() => match (signed, cmp_type) {
-                    (_, CompareType::Equal) => {
-                        dynasm!(ops
-                            ; mov W(r_out), (c1.to_u64_const().unwrap() == c2.to_u64_const().unwrap()) as u32
-                        )
-                    }
-                    (_, CompareType::NotEqual) => {
-                        dynasm!(ops
-                            ; mov W(r_out), (c1.to_u64_const().unwrap() != c2.to_u64_const().unwrap()) as u32
-                        )
-                    }
-                    (true, CompareType::LessThan) => todo!("Compare constants with type LessThanSigned"),
-                    (true, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanSigned"),
-                    (true, CompareType::LessThanOrEqual) => todo!("Compare constants with type LessThanOrEqualSigned"),
-                    (true, CompareType::GreaterThanOrEqual) => {
-                        dynasm!(ops
-                            ; mov W(r_out), (c1.to_s64_const().unwrap() >= c2.to_s64_const().unwrap()) as u32
-                        )
-                    }
-                    (false, CompareType::LessThan) => todo!("Compare constants with type LessThanUnsigned"),
-                    (false, CompareType::GreaterThan) => todo!("Compare constants with type GreaterThanUnsigned"),
-                    (false, CompareType::LessThanOrEqual) => {
-                        todo!("Compare constants with type LessThanOrEqualUnsigned")
-                    }
-                    (false, CompareType::GreaterThanOrEqual) => {
-                        todo!("Compare constants with type GreaterThanOrEqualUnsigned")
-                    }
-                },
-                _ => todo!(
-                    "Unsupported integer Compare operation: {:?} = {:?} {:?} {:?} with data type {:?}",
-                    r_out,
-                    a,
-                    cmp_type,
-                    b,
-                    data_type
-                ),
-            }
+            let a = self.materialize_as_gpr(ops, lp, a);
+            let a = extend_as_comparable_gpr(ops, &self.scratch_regs, a.r(), data_type);
+            let b = self.materialize_as_gpr(ops, lp, b);
+            let b = extend_as_comparable_gpr(ops, &self.scratch_regs, b.r(), data_type);
+            dynasm!(ops
+                ; cmp X(a.r()), X(b.r())
+            );
+            set_reg_by_flags(ops, signed, cmp_type, r_out);
         } else if data_type.is_float() {
             let signed = true; // Floats are always signed
             let a = self.materialize_as_simd(ops, lp, a);

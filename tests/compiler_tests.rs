@@ -5,8 +5,8 @@ use dgbir::{
     compiler::compile,
     disassembler::disassemble_function,
     ir::{
-        const_f32, const_ptr, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle, IRContext,
-        IRFunction, InputSlot,
+        const_f32, const_ptr, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle,
+        IRContext, IRFunction, InputSlot,
     },
     ir_interpreter::interpret_func,
 };
@@ -1094,4 +1094,131 @@ fn simd_u128_variable_shifts() {
         println!("Shift of {} bytes", bytes);
         validate(&results, &split_u128(&expected));
     }
+}
+
+/// A 32 bit add zero extends its result into the host register, so comparing S32 values as 64 bit
+/// quantities turns every negative number into a large positive one. Covers each signed compare
+/// against both a register and a constant.
+#[test]
+fn signed_32bit_compare_with_negative_values() {
+    const CASES: [(i32, i32); 7] = [
+        (-0x98, 0),
+        (0, -0x98),
+        (-1, -2),
+        (-2, -1),
+        (i32::MIN, i32::MAX),
+        (i32::MAX, i32::MIN),
+        (5, 5),
+    ];
+    const CMPS: [(CompareType, fn(i32, i32) -> bool); 6] = [
+        (CompareType::LessThan, |a, b| a < b),
+        (CompareType::LessThanOrEqual, |a, b| a <= b),
+        (CompareType::GreaterThan, |a, b| a > b),
+        (CompareType::GreaterThanOrEqual, |a, b| a >= b),
+        (CompareType::Equal, |a, b| a == b),
+        (CompareType::NotEqual, |a, b| a != b),
+    ];
+
+    // Two values per case: one comparing two registers, one comparing a register to a constant.
+    let results: Vec<u32> = vec![0xFF; CASES.len() * CMPS.len() * 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    let mut index = 0;
+    for (a, b) in CASES.iter() {
+        // Produced by an add so the value goes through the same zero extending path the RSP's
+        // `addi` does, rather than arriving as a constant.
+        let a_reg = block.add(DataType::S32, const_s32(*a), const_s32(0)).val();
+        let b_reg = block.add(DataType::S32, const_s32(*b), const_s32(0)).val();
+        for (cmp, _) in CMPS.iter() {
+            let reg_reg = block.compare(DataType::S32, a_reg, *cmp, b_reg);
+            block.write_ptr(DataType::U32, result_ptr, index * size_of::<u32>(), reg_reg.val());
+            index += 1;
+
+            let reg_const = block.compare(DataType::S32, a_reg, *cmp, const_s32(*b));
+            block.write_ptr(DataType::U32, result_ptr, index * size_of::<u32>(), reg_const.val());
+            index += 1;
+        }
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+    f(results.as_ptr() as usize);
+
+    let mut expected = Vec::new();
+    for (a, b) in CASES.iter() {
+        for (_, apply) in CMPS.iter() {
+            let want = apply(*a, *b) as u32;
+            expected.push(want);
+            expected.push(want);
+        }
+    }
+    validate(&results, &expected);
+}
+
+/// Values narrower than 32 bits can arrive in a register with unrelated bits set above them, so a
+/// comparison has to widen them itself instead of trusting whatever produced them.
+#[test]
+fn narrow_compare_ignores_bits_above_the_type() {
+    // (data type, raw register contents for a and b, expected signed interpretation)
+    let cases: Vec<(DataType, u32, u32, i64, i64)> = vec![
+        // 0x7F is +127 as an S8, but the raw value is negative when read as 32 bits.
+        (DataType::S8, 0xFFFF_FF7F, 0x0000_0000, 127, 0),
+        // 0x80 is -128 as an S8, but the raw value is positive when read as 32 bits.
+        (DataType::S8, 0x0000_0080, 0x0000_0000, -128, 0),
+        (DataType::U8, 0xFFFF_FF01, 0x0000_0002, 1, 2),
+        (DataType::S16, 0xFFFF_7FFF, 0x0000_0000, 32767, 0),
+        (DataType::S16, 0x0000_8000, 0x0000_0000, -32768, 0),
+        (DataType::U16, 0xFFFF_0001, 0x0000_0002, 1, 2),
+        // A 32 bit add zero extends, so a negative S32 has clear bits above it.
+        (DataType::S32, 0xFFFF_FF68, 0x0000_0000, -0x98, 0),
+        (DataType::U32, 0xFFFF_FF68, 0x0000_0000, 0xFFFF_FF68, 0),
+    ];
+    let cmps: Vec<(CompareType, fn(i64, i64) -> bool)> = vec![
+        (CompareType::LessThan, |a, b| a < b),
+        (CompareType::LessThanOrEqual, |a, b| a <= b),
+        (CompareType::GreaterThan, |a, b| a > b),
+        (CompareType::GreaterThanOrEqual, |a, b| a >= b),
+        (CompareType::Equal, |a, b| a == b),
+        (CompareType::NotEqual, |a, b| a != b),
+    ];
+
+    let results: Vec<u32> = vec![0xFF; cases.len() * cmps.len()];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr]);
+    let result_ptr = block.input(0);
+
+    let mut index = 0;
+    for (tp, raw_a, raw_b, _, _) in cases.iter() {
+        // Built with a U32 add so the register really does hold the raw bits, rather than the
+        // compiler being free to materialize an already narrowed constant.
+        let a = block.add(DataType::U32, const_u32(*raw_a), const_u32(0)).val();
+        let b = block.add(DataType::U32, const_u32(*raw_b), const_u32(0)).val();
+        for (cmp, _) in cmps.iter() {
+            let result = block.compare(*tp, a, *cmp, b);
+            block.write_ptr(DataType::U32, result_ptr, index * size_of::<u32>(), result.val());
+            index += 1;
+        }
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+    f(results.as_ptr() as usize);
+
+    let mut expected = Vec::new();
+    for (_, _, _, a, b) in cases.iter() {
+        for (_, apply) in cmps.iter() {
+            expected.push(apply(*a, *b) as u32);
+        }
+    }
+    validate(&results, &expected);
 }
