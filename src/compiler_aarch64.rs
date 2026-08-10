@@ -713,7 +713,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr S(r_out), [X(r_ptr), offset as u32]
                 );
             }
-            (Register::SIMD(r_out), ptr, DataType::U128 | DataType::S128) => {
+            (Register::SIMD(r_out), ptr, tp) if tp.size() == 16 => {
                 let r_ptr = self.materialize_as_gpr(ops, lp, ptr);
                 if q_offset_is_encodable(offset) {
                     dynasm!(ops
@@ -780,7 +780,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str X(value.r()), [X(address.r()), offset as u32]
                 )
             }
-            (ptr, value, DataType::U128 | DataType::S128) => {
+            (ptr, value, tp) if tp.size() == 16 => {
                 let value = self.materialize_as_simd(ops, lp, value);
                 let r_ptr = self.materialize_as_gpr(ops, lp, ptr);
                 if q_offset_is_encodable(offset) {
@@ -829,7 +829,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; str D(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
                 )
             }
-            (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), DataType::U128 | DataType::S128) => {
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(offset), tp) if tp.size() == 16 => {
                 dynasm!(ops
                     ; str Q(*r), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U128)]
                 )
@@ -875,7 +875,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; ldr D(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::F64)]
                 )
             }
-            (Register::SIMD(r_out), ConstOrReg::U64(offset), DataType::U128 | DataType::S128) => {
+            (Register::SIMD(r_out), ConstOrReg::U64(offset), tp) if tp.size() == 16 => {
                 dynasm!(ops
                     ; ldr Q(r_out), [sp, self.func.get_stack_offset_for_location(*offset, DataType::U128)]
                 )
@@ -1261,7 +1261,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; and X(r_out), X(r_temp.r()), X(r_out)
                 );
             }
-            (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+            (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);
                 dynasm!(ops
@@ -1288,7 +1288,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; orr X(r_out), X(a.r()), X(b.r())
                 );
             }
-            (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+            (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
                 let a = self.materialize_as_simd(ops, lp, a);
                 let b = self.materialize_as_simd(ops, lp, b);
                 dynasm!(ops
@@ -1300,7 +1300,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     }
 
     fn not(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg) {
-        if matches!(tp, DataType::U128 | DataType::S128) {
+        if tp.size() == 16 {
             let a = self.materialize_as_simd(ops, lp, a);
             dynasm!(ops
                 ; mvn V(r_out.expect_simd()).B16, V(a.r()).B16

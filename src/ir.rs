@@ -12,6 +12,47 @@ mod ir_display;
 mod ir_emitters;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum LaneClass {
+    Unsigned,
+    Signed,
+    Float,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct VectorType {
+    /// Width of one lane in bits.
+    pub lane_bits: u16,
+    /// Number of lanes. Always at least 2 - use the scalar [`DataType`] variants for one value.
+    pub lanes: u8,
+    pub class: LaneClass,
+}
+
+impl VectorType {
+    pub const fn new(class: LaneClass, lane_bits: u16, lanes: u8) -> Self {
+        assert!(lanes >= 2, "A vector needs at least 2 lanes; use a scalar DataType instead");
+        assert!(lane_bits.is_power_of_two() && lane_bits >= 8, "Lane width must be a power of two of at least 8 bits");
+        Self {
+            lane_bits,
+            lanes,
+            class,
+        }
+    }
+
+    /// Total width of the vector in bytes.
+    pub const fn size(&self) -> usize {
+        (self.lane_bits as usize / 8) * self.lanes as usize
+    }
+
+    pub const fn is_signed(&self) -> bool {
+        matches!(self.class, LaneClass::Signed | LaneClass::Float)
+    }
+
+    pub const fn is_float(&self) -> bool {
+        matches!(self.class, LaneClass::Float)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DataType {
     // None,
     U8,
@@ -28,9 +69,27 @@ pub enum DataType {
     F64,
     Bool,
     Ptr,
+    Vector(VectorType),
 }
 
 impl DataType {
+    /// 128 bit vector of 16 unsigned bytes.
+    pub const VU8: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 8, 16));
+    /// 128 bit vector of 16 signed bytes.
+    pub const VS8: DataType = DataType::Vector(VectorType::new(LaneClass::Signed, 8, 16));
+    /// 128 bit vector of 8 unsigned halfwords.
+    pub const VU16: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 16, 8));
+    /// 128 bit vector of 8 signed halfwords.
+    pub const VS16: DataType = DataType::Vector(VectorType::new(LaneClass::Signed, 16, 8));
+    /// 128 bit vector of 4 unsigned words.
+    pub const VU32: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 32, 4));
+    /// 128 bit vector of 4 signed words.
+    pub const VS32: DataType = DataType::Vector(VectorType::new(LaneClass::Signed, 32, 4));
+
+    pub fn is_vector(&self) -> bool {
+        matches!(self, DataType::Vector(_))
+    }
+
     pub fn size(&self) -> usize {
         match self {
             DataType::U8 => 1,
@@ -48,6 +107,7 @@ impl DataType {
             DataType::Bool => 1,
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             DataType::Ptr => 8,
+            DataType::Vector(v) => v.size(),
         }
     }
 
@@ -63,6 +123,8 @@ impl DataType {
             // ???
             DataType::Bool => false,
             DataType::Ptr => false,
+
+            DataType::Vector(v) => v.is_signed(),
         }
     }
 
@@ -81,12 +143,14 @@ impl DataType {
             DataType::F32 | DataType::F64 => false,
             DataType::Bool => true,
             DataType::Ptr => true,
+            DataType::Vector(v) => !v.is_float(),
         }
     }
 
     pub fn is_float(&self) -> bool {
         match self {
             DataType::F32 | DataType::F64 => true,
+            DataType::Vector(v) => v.is_float(),
             _ => false,
         }
     }
@@ -106,6 +170,7 @@ impl DataType {
             DataType::F64 => DataType::F32,
             DataType::Bool => panic!("Cannot take half type of Bool"),
             DataType::Ptr => panic!("Cannot take half type of Ptr"),
+            DataType::Vector(v) => panic!("Cannot take half type of vector {}", v),
         }
     }
 }

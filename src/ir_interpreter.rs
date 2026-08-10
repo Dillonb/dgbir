@@ -193,6 +193,8 @@ fn evaluate_write_ptr(inputs: &Vec<Constant>) {
             DataType::F64 => *raw_ptr.cast() = value as u64,
 
             DataType::Ptr => *raw_ptr.cast() = value as usize,
+
+            DataType::Vector(_) => unimplemented!("Vectors do not fit in the interpreter's u64 value"),
         }
     }
 }

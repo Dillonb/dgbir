@@ -920,6 +920,7 @@ fn simd_u128_spill() {
     assert!(simd_regs > 0, "Target has no SIMD registers to allocate");
     let count = simd_regs * 3;
 
+
     let values: Vec<u128> = (0..count)
         .map(|i| ((0xF00D_0000 + i as u128) << 64) | (0xBEEF_0000 + i as u128))
         .collect();
@@ -1220,4 +1221,87 @@ fn narrow_compare_ignores_bits_above_the_type() {
         }
     }
     validate(&results, &expected);
+}
+
+/// Vector types are 16 bytes like U128, so they must work everywhere U128 does: as a value in a
+/// SIMD register, through memory, through a stack spill, and through the bitwise and byte shift
+/// operations that do not care about lane structure.
+#[test]
+fn vector_type_roundtrip() {
+    let types = [
+        DataType::VU8,
+        DataType::VS8,
+        DataType::VU16,
+        DataType::VS16,
+        DataType::VU32,
+        DataType::VS32,
+    ];
+    for tp in types {
+        assert_eq!(tp.size(), 16, "{} should be 16 bytes", tp);
+        assert!(tp.is_vector());
+    }
+
+    let src: Vec<u128> = U128_VALUES.to_vec();
+    let dst: Vec<u128> = vec![0; U128_VALUES.len()];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src_ptr = block.input(0);
+    let dst_ptr = block.input(1);
+
+    for (i, tp) in types.iter().cycle().take(U128_VALUES.len()).enumerate() {
+        let offset = i * size_of::<u128>();
+        let value = block.load_ptr(*tp, src_ptr, offset);
+        // Shift out and back so the value travels through the byte shift path as a vector, and
+        // mask with an all ones value so it goes through the bitwise path too.
+        let shifted = block.vector_left_shift_bytes(*tp, value.val(), const_u32(4));
+        let restored = block.vector_right_shift_bytes(*tp, shifted.val(), const_u32(4));
+        let ones = block.not(*tp, const_u64(0));
+        let kept = block.and(*tp, restored.val(), ones.val());
+        let low = block.vector_right_shift_bytes(*tp, value.val(), const_u32(12));
+        let low = block.vector_left_shift_bytes(*tp, low.val(), const_u32(12));
+        let result = block.or(*tp, kept.val(), low.val());
+        block.write_ptr(*tp, dst_ptr, offset, result.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(src.as_ptr() as usize, dst.as_ptr() as usize);
+    validate(&dst, &src);
+}
+
+/// Spilling has to work for vector types too, not just U128.
+#[test]
+fn vector_type_spill() {
+    let simd_regs = get_registers().iter().filter(|r| r.is_simd()).count();
+    let count = simd_regs * 3;
+    let values: Vec<u128> = (0..count)
+        .map(|i| ((0xDEC0_0000u128 + i as u128) << 64) | (0x1234_0000 + i as u128))
+        .collect();
+    let results: Vec<u128> = vec![0; count];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src_ptr = block.input(0);
+    let dst_ptr = block.input(1);
+
+    let live = (0..count)
+        .map(|i| block.load_ptr(DataType::VS16, src_ptr, i * size_of::<u128>()).val())
+        .collect::<Vec<_>>();
+    for (i, value) in live.iter().enumerate() {
+        block.write_ptr(DataType::VS16, dst_ptr, i * size_of::<u128>(), *value);
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(values.as_ptr() as usize, results.as_ptr() as usize);
+    validate(&results, &values);
 }

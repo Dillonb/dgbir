@@ -517,6 +517,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; comisd Rx(a.r()), Rx(b.r())
                 );
             }
+            DataType::Vector(v) => todo!("Compare with vector type {} - vector compares are per-lane, perhaps we need a different instruction for clarity?", v),
         }
 
         match (signed, cmp_type) {
@@ -608,7 +609,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movq Rx(r_out), QWORD [Rq(ptr.r()) + offset as i32]
                 );
             }
-            (Register::SIMD(r_out), ptr, DataType::U128 | DataType::S128) => {
+            (Register::SIMD(r_out), ptr, tp) if tp.size() == 16 => {
                 let ptr = self.materialize_as_gpr(ops, lp, ptr);
                 dynasm!(ops
                     ; movdqu Rx(r_out), OWORD [Rq(ptr.r()) + offset as i32]
@@ -651,7 +652,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; mov QWORD [Rq(ptr.r()) + offset as i32], Rq(value.r())
                 );
             }
-            (ptr, value, DataType::U128 | DataType::S128) => {
+            (ptr, value, tp) if tp.size() == 16 => {
                 let ptr = self.materialize_as_gpr(ops, lp, ptr);
                 let value = self.materialize_as_simd(ops, lp, value);
                 dynasm!(ops
@@ -706,7 +707,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movq QWORD [rsp + offset], Rx(*r)
                 )
             }
-            (ConstOrReg::SIMD(r), ConstOrReg::U64(location), DataType::U128 | DataType::S128) => {
+            (ConstOrReg::SIMD(r), ConstOrReg::U64(location), tp) if tp.size() == 16 => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; movdqu OWORD [rsp + offset], Rx(*r)
@@ -772,7 +773,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; movq Rx(r_out), QWORD [rsp + offset]
                 )
             }
-            (Register::SIMD(r_out), ConstOrReg::U64(location), DataType::U128 | DataType::S128) => {
+            (Register::SIMD(r_out), ConstOrReg::U64(location), tp) if tp.size() == 16 => {
                 let offset = self.func.get_stack_offset_for_location(*location, tp) as i32;
                 dynasm!(ops
                     ; movdqu Rx(r_out), OWORD [rsp + offset]
@@ -1110,7 +1111,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; and Rq(r_out), Rq(b.r())
                     );
                 }
-                (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+                (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
                     self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
                     let b = self.materialize_as_simd(ops, lp, b);
                     dynasm!(ops
@@ -1140,7 +1141,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; or Rq(r_out), Rq(b.r())
                 );
             }
-            (DataType::U128 | DataType::S128, Register::SIMD(r_out)) => {
+            (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
                 self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
                 let b = self.materialize_as_simd(ops, lp, b);
                 dynasm!(ops
@@ -1173,7 +1174,7 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; not Rq(r_out.expect_gpr())
                 );
             }
-            DataType::U128 | DataType::S128 => {
+            tp if tp.size() == 16 => {
                 self.move_to_reg(ops, lp, a, r_out);
                 let r_out = r_out.expect_simd();
                 let r_ones = self.scratch_regs.borrow::<register_type::SIMD>();

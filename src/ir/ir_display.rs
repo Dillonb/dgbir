@@ -4,7 +4,21 @@ use super::*;
 
 impl Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            DataType::Vector(v) => write!(f, "{}", v),
+            _ => write!(f, "{:?}", self),
+        }
+    }
+}
+
+impl Display for VectorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let class = match self.class {
+            LaneClass::Unsigned => 'u',
+            LaneClass::Signed => 's',
+            LaneClass::Float => 'f',
+        };
+        write!(f, "v{}{}x{}", class, self.lane_bits, self.lanes)
     }
 }
 
