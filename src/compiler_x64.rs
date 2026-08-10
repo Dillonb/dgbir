@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use crate::{
     abi::{get_function_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
-    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool},
+    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
@@ -102,6 +102,44 @@ fn variable_byte_shift_128<Ops: GenericAssembler<X64Relocation>>(
         ; movdqu Rx(r_index.r()), OWORD [Rq(r_table.r()) + Rq(r_window)]
         ; pshufb Rx(r_out), Rx(r_index.r())
     );
+}
+
+/// Widens an already materialized value into a full 64 bit register, ready to be compared.
+fn extend_as_comparable_gpr<Ops: GenericAssembler<X64Relocation>>(
+    ops: &mut Ops,
+    scratch_regs: &RegPool,
+    r: RegisterIndex,
+    tp: DataType,
+) -> MaterializedGpr {
+    if matches!(tp, DataType::U64 | DataType::S64 | DataType::Ptr) {
+        return MaterializedGpr::AlreadyGPR(r);
+    }
+
+    let out = scratch_regs.borrow::<register_type::GPR>();
+    // Writing to a 32 bit register zero extends into the full 64 bit register, so the unsigned
+    // cases don't need to name the 64 bit form.
+    match tp {
+        DataType::Bool | DataType::U8 => dynasm!(ops
+            ; movzx Rd(out.r()), Rb(r)
+        ),
+        DataType::S8 => dynasm!(ops
+            ; movsx Rq(out.r()), Rb(r)
+        ),
+        DataType::U16 => dynasm!(ops
+            ; movzx Rd(out.r()), Rw(r)
+        ),
+        DataType::S16 => dynasm!(ops
+            ; movsx Rq(out.r()), Rw(r)
+        ),
+        DataType::U32 => dynasm!(ops
+            ; mov Rd(out.r()), Rd(r)
+        ),
+        DataType::S32 => dynasm!(ops
+            ; movsx Rq(out.r()), Rd(r)
+        ),
+        _ => todo!("Cannot widen data type {} for comparison", tp),
+    }
+    MaterializedGpr::TemporaryGPR(out)
 }
 
 impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> for X64Compiler<'a, Ops> {
@@ -446,15 +484,8 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         let signed = tp.is_signed() && !is_float;
 
         match tp {
-            DataType::Bool => {
-                assert!(matches!(cmp_type, CompareType::Equal | CompareType::NotEqual));
-                let a = self.materialize_as_gpr(ops, lp, a);
-                let b = self.materialize_as_gpr(ops, lp, b);
-                dynasm!(ops
-                    ; cmp Rq(a.r()), Rq(b.r())
-                );
-            }
-            DataType::U8
+            DataType::Bool
+            | DataType::U8
             | DataType::S8
             | DataType::U16
             | DataType::S16
@@ -463,8 +494,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
             | DataType::U64
             | DataType::S64
             | DataType::Ptr => {
+                if matches!(tp, DataType::Bool) {
+                    assert!(matches!(cmp_type, CompareType::Equal | CompareType::NotEqual));
+                }
                 let a = self.materialize_as_gpr(ops, lp, a);
+                let a = extend_as_comparable_gpr(ops, &self.scratch_regs, a.r(), tp);
                 let b = self.materialize_as_gpr(ops, lp, b);
+                let b = extend_as_comparable_gpr(ops, &self.scratch_regs, b.r(), tp);
                 dynasm!(ops
                     ; cmp Rq(a.r()), Rq(b.r())
                 );
