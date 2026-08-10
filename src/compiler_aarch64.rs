@@ -114,7 +114,7 @@ fn variable_byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
     lp: &mut LiteralPool,
     scratch_regs: &RegPool,
     r_out: RegisterIndex,
-    r_amount: RegisterIndex,
+    r_bytes: RegisterIndex,
     left: bool,
 ) {
     let r_shift = scratch_regs.borrow::<register_type::GPR>();
@@ -123,7 +123,7 @@ fn variable_byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
     let r_index = scratch_regs.borrow::<register_type::SIMD>();
 
     dynasm!(ops
-        ; lsr W(r_shift.r()), W(r_amount), 3
+        ; mov W(r_shift.r()), W(r_bytes)
         // Clamp to 16, which already shifts everything out, and keeps the window in the table.
         ; movz W(r_window.r()), 16
         ; cmp W(r_shift.r()), W(r_window.r())
@@ -154,12 +154,11 @@ fn byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
     lp: &mut LiteralPool,
     scratch_regs: &RegPool,
     r_out: RegisterIndex,
-    amount: ConstOrReg,
+    bytes: ConstOrReg,
     left: bool,
 ) {
-    if let Some(amount) = amount.to_u64_const() {
-        assert!(amount % 8 == 0, "128 bit shift by non-byte-aligned amount ({}) not yet supported", amount);
-        let bytes = (amount / 8) as u32;
+    if let Some(bytes) = bytes.to_u64_const() {
+        let bytes = bytes as u32;
         if bytes == 0 {
             return;
         }
@@ -185,10 +184,10 @@ fn byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
                 ; ext V(r_out).B16, V(r_out).B16, V(r_zero.r()).B16, bytes
             );
         }
-    } else if let Some(Register::GPR(r_amount)) = amount.to_reg() {
-        variable_byte_shift_128(ops, lp, scratch_regs, r_out, r_amount, left);
+    } else if let Some(Register::GPR(r_bytes)) = bytes.to_reg() {
+        variable_byte_shift_128(ops, lp, scratch_regs, r_out, r_bytes, left);
     } else {
-        panic!("128 bit shift amount must be a constant or a GPR, got: {:?}", amount);
+        panic!("128 bit shift amount must be a constant or a GPR, got: {:?}", bytes);
     }
 }
 
@@ -899,11 +898,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         amount: ConstOrReg,
         tp: DataType,
     ) -> () {
-        if matches!(tp, DataType::U128 | DataType::S128) {
-            self.move_to_reg(ops, lp, n, r_out);
-            byte_shift_128(ops, lp, &self.scratch_regs, r_out.expect_simd(), amount, true);
-            return;
-        }
         let r_out = r_out.expect_gpr();
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
@@ -997,11 +991,6 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         amount: ConstOrReg,
         tp: DataType,
     ) {
-        if matches!(tp, DataType::U128 | DataType::S128) {
-            self.move_to_reg(ops, lp, n, r_out);
-            byte_shift_128(ops, lp, &self.scratch_regs, r_out.expect_simd(), amount, false);
-            return;
-        }
         let r_out = r_out.expect_gpr();
         if let Some(amount) = amount.to_u64_const() {
             let amount = amount as u32;
@@ -1105,6 +1094,32 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         } else {
             panic!("RightShift amount must be a constant or a GPR, got: {:?}", amount);
         }
+    }
+
+    fn vector_left_shift_bytes(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        n: ConstOrReg,
+        bytes: ConstOrReg,
+        _tp: DataType,
+    ) {
+        self.move_to_reg(ops, lp, n, r_out);
+        byte_shift_128(ops, lp, &self.scratch_regs, r_out.expect_simd(), bytes, true);
+    }
+
+    fn vector_right_shift_bytes(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        n: ConstOrReg,
+        bytes: ConstOrReg,
+        _tp: DataType,
+    ) {
+        self.move_to_reg(ops, lp, n, r_out);
+        byte_shift_128(ops, lp, &self.scratch_regs, r_out.expect_simd(), bytes, false);
     }
 
     fn convert(

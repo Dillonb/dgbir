@@ -244,6 +244,8 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::LoadFromStack => todo!("LoadFromStack in IR interpreter"),
         InstructionType::LeftShift => todo!(),
         InstructionType::RightShift => todo!(),
+        InstructionType::VectorLeftShiftBytes => todo!(),
+        InstructionType::VectorRightShiftBytes => todo!(),
         InstructionType::Convert => todo!(),
         InstructionType::And => todo!(),
         InstructionType::Or => todo!(),

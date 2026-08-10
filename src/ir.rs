@@ -185,6 +185,10 @@ pub enum InstructionType {
     Add,
     LeftShift,
     RightShift,
+    /// Shifts a whole vector left by a number of bytes, independent of its lane structure.
+    VectorLeftShiftBytes,
+    /// Shifts a whole vector right by a number of bytes, independent of its lane structure.
+    VectorRightShiftBytes,
     Compare,
     LoadPtr,
     WritePtr,

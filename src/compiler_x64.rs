@@ -58,18 +58,15 @@ static BYTE_SHIFT_SHUFFLES: [u8; 48] = [
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
 ];
 
-/// Shifts the 128 bit value in `r_out` by a byte granular amount only known at runtime.
+/// Shifts the 128 bit value in `r_out` by a byte amount only known at runtime.
 ///
 /// The 16 byte window of [`BYTE_SHIFT_SHUFFLES`] at `16 - d` is the shuffle mask for a left shift
 /// of `d` bytes, and the window at `16 + d` is the mask for a right shift of `d` bytes.
-///
-/// `r_amount` is in bits to match the constant amount path; sub-byte amounts are not supported
-/// for 128 bit shifts.
 fn variable_byte_shift_128<Ops: GenericAssembler<X64Relocation>>(
     ops: &mut Ops,
     scratch_regs: &RegPool,
     r_out: RegisterIndex,
-    r_amount: RegisterIndex,
+    r_bytes: RegisterIndex,
     left: bool,
 ) {
     let r_shift = scratch_regs.borrow::<register_type::GPR>();
@@ -78,8 +75,7 @@ fn variable_byte_shift_128<Ops: GenericAssembler<X64Relocation>>(
     let r_index = scratch_regs.borrow::<register_type::SIMD>();
 
     dynasm!(ops
-        ; mov Rd(r_shift.r()), Rd(r_amount)
-        ; shr Rd(r_shift.r()), 3
+        ; mov Rd(r_shift.r()), Rd(r_bytes)
         // Clamp to 16, which already shifts everything out, and keeps the window in the table.
         ; mov Rd(r_window.r()), 16
         ; cmp Rd(r_shift.r()), 16
@@ -830,18 +826,6 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; shl Rq(r_out), amount as i8 & 0b111111
                     );
                 }
-                DataType::U128 | DataType::S128 => {
-                    assert!(
-                        amount % 8 == 0,
-                        "U128 LeftShift by non-byte-aligned amount ({}) not yet supported",
-                        amount
-                    );
-                    let r_out = r_out.expect_simd();
-                    let bytes = (amount / 8) as i8;
-                    dynasm!(ops
-                        ; pslldq Rx(r_out), bytes
-                    );
-                }
                 _ => todo!("Unsupported LeftShift operation with type {}", tp),
             }
         } else if let Some(r_amount) = amount.to_reg() {
@@ -859,9 +843,6 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     dynasm!(ops
                         ; shlx Rq(r_out), Rq(r_out), Rq(amount.r())
                     );
-                }
-                DataType::U128 | DataType::S128 => {
-                    variable_byte_shift_128(ops, &self.scratch_regs, r_out.expect_simd(), amount.r(), true);
                 }
                 _ => todo!("LeftShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
             }
@@ -933,18 +914,6 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; sar Rq(r_out), amount as i8 & 0b111111
                     );
                 }
-                DataType::U128 | DataType::S128 => {
-                    assert!(
-                        amount % 8 == 0,
-                        "U128 RightShift by non-byte-aligned amount ({}) not yet supported",
-                        amount
-                    );
-                    let r_out = r_out.expect_simd();
-                    let bytes = (amount / 8) as i8;
-                    dynasm!(ops
-                        ; psrldq Rx(r_out), bytes
-                    );
-                }
                 _ => todo!("Unsupported RightShift operation: {:?} >> {:?} with type {}", n, amount, tp),
             }
         } else if let Some(r_amount) = amount.to_reg() {
@@ -963,11 +932,54 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                         ; shrx Rq(r_out), Rq(r_out), Rq(amount.r())
                     );
                 }
-                DataType::U128 | DataType::S128 => {
-                    variable_byte_shift_128(ops, &self.scratch_regs, r_out.expect_simd(), amount.r(), false);
-                }
                 _ => todo!("RightShift with register amount: {} {:?} >> {:?}", tp, n, r_amount),
             }
+        }
+    }
+
+    fn vector_left_shift_bytes(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        n: ConstOrReg,
+        bytes: ConstOrReg,
+        tp: DataType,
+    ) {
+        self.move_to_reg(ops, lp, n, r_out);
+        let r_out = r_out.expect_simd();
+        if let Some(bytes) = bytes.to_u64_const() {
+            dynasm!(ops
+                ; pslldq Rx(r_out), bytes.min(16) as i8
+            );
+        } else if bytes.to_reg().is_some() {
+            let bytes = self.materialize_as_gpr(ops, lp, bytes);
+            variable_byte_shift_128(ops, &self.scratch_regs, r_out, bytes.r(), true);
+        } else {
+            todo!("VectorLeftShiftBytes by {:?} with type {}", bytes, tp);
+        }
+    }
+
+    fn vector_right_shift_bytes(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        n: ConstOrReg,
+        bytes: ConstOrReg,
+        tp: DataType,
+    ) {
+        self.move_to_reg(ops, lp, n, r_out);
+        let r_out = r_out.expect_simd();
+        if let Some(bytes) = bytes.to_u64_const() {
+            dynasm!(ops
+                ; psrldq Rx(r_out), bytes.min(16) as i8
+            );
+        } else if bytes.to_reg().is_some() {
+            let bytes = self.materialize_as_gpr(ops, lp, bytes);
+            variable_byte_shift_128(ops, &self.scratch_regs, r_out, bytes.r(), false);
+        } else {
+            todo!("VectorRightShiftBytes by {:?} with type {}", bytes, tp);
         }
     }
 

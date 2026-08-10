@@ -25,6 +25,28 @@ impl IRBlockHandle {
         self.append(InstructionType::RightShift, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }
 
+    /// Shifts the whole vector left by `bytes`, ignoring its lane structure. Shifting by the width
+    /// of the vector or more gives zero.
+    pub fn vector_left_shift_bytes(
+        &mut self,
+        result_tp: DataType,
+        arg1: InputSlot,
+        bytes: InputSlot,
+    ) -> InstructionOutput {
+        self.append(InstructionType::VectorLeftShiftBytes, vec![arg1, bytes], vec![OutputSlot { tp: result_tp }])
+    }
+
+    /// Shifts the whole vector right by `bytes`, ignoring its lane structure. Shifting by the width
+    /// of the vector or more gives zero.
+    pub fn vector_right_shift_bytes(
+        &mut self,
+        result_tp: DataType,
+        arg1: InputSlot,
+        bytes: InputSlot,
+    ) -> InstructionOutput {
+        self.append(InstructionType::VectorRightShiftBytes, vec![arg1, bytes], vec![OutputSlot { tp: result_tp }])
+    }
+
     pub fn write_ptr(&mut self, tp: DataType, ptr: InputSlot, offset: usize, value: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::WritePtr,

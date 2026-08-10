@@ -690,13 +690,13 @@ const U128_VALUES: [u128; 6] = [
 
 /// There is no 128 bit constant yet, so build one from two 64 bit halves.
 fn u128_const(block: &mut IRBlockHandle, value: u128) -> InputSlot {
-    let high = block.left_shift(DataType::U128, const_u64((value >> 64) as u64), const_u32(64));
+    let high = block.vector_left_shift_bytes(DataType::U128, const_u64((value >> 64) as u64), const_u32(8));
     block.or(DataType::U128, high.val(), const_u64(value as u64)).val()
 }
 
 /// WritePtr has no 128 bit form yet, so store the halves into two consecutive u64 slots.
 fn write_u128(block: &mut IRBlockHandle, result_ptr: InputSlot, index: usize, value: InputSlot) {
-    let high = block.right_shift(DataType::U128, value, const_u32(64));
+    let high = block.vector_right_shift_bytes(DataType::U128, value, const_u32(8));
     block.write_ptr(DataType::U64, result_ptr, index * size_of::<u64>(), value);
     block.write_ptr(DataType::U64, result_ptr, (index + 1) * size_of::<u64>(), high.val());
 }
@@ -827,12 +827,11 @@ fn simd_u128_mask_merge() {
     let result_ptr = block.input(0);
 
     for e in 0..16u32 {
-        let shift = e * 8;
-        let mask = block.left_shift(DataType::U128, const_u64(u64::MAX), const_u32(shift));
+        let mask = block.vector_left_shift_bytes(DataType::U128, const_u64(u64::MAX), const_u32(e));
         let inv_mask = block.not(DataType::U128, mask.val());
         let r = u128_const(&mut block, reg);
         let masked = block.and(DataType::U128, r, inv_mask.val());
-        let placed = block.left_shift(DataType::U128, const_u64(loaded as u64), const_u32(shift));
+        let placed = block.vector_left_shift_bytes(DataType::U128, const_u64(loaded as u64), const_u32(e));
         let merged = block.or(DataType::U128, masked.val(), placed.val());
         write_u128(&mut block, result_ptr, e as usize * 2, merged.val());
     }
@@ -1048,7 +1047,7 @@ fn unused_function_arguments_dont_shift_later_ones() {
     assert_eq!(f(111, 222, 7), 8);
 }
 
-/// 128 bit shifts by an amount that is only known at runtime, which take a different
+/// Vector byte shifts by an amount that is only known at runtime, which take a different
 /// code path (pshufb) than the constant amount shifts.
 #[test]
 fn simd_u128_variable_shifts() {
@@ -1058,16 +1057,16 @@ fn simd_u128_variable_shifts() {
     let func = IRFunction::new(context);
     let mut block = func.new_block(vec![DataType::Ptr, DataType::U32]);
     let result_ptr = block.input(0);
-    let amount = block.input(1);
+    let bytes = block.input(1);
 
     let mut index = 0;
     for value in U128_VALUES.iter() {
         // Deliberately reused for both shifts, so a shift that clobbers its input is caught.
         let v = u128_const(&mut block, *value);
-        let left = block.left_shift(DataType::U128, v, amount);
+        let left = block.vector_left_shift_bytes(DataType::U128, v, bytes);
         write_u128(&mut block, result_ptr, index, left.val());
         index += 2;
-        let right = block.right_shift(DataType::U128, v, amount);
+        let right = block.vector_right_shift_bytes(DataType::U128, v, bytes);
         write_u128(&mut block, result_ptr, index, right.val());
         index += 2;
     }
@@ -1079,7 +1078,7 @@ fn simd_u128_variable_shifts() {
 
     // 16 and 17 bytes shift everything out, and must not wrap back around to a small shift.
     for bytes in 0..=17u32 {
-        f(results.as_ptr() as usize, bytes * 8);
+        f(results.as_ptr() as usize, bytes);
 
         let expected = U128_VALUES
             .iter()

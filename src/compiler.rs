@@ -266,6 +266,26 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                         compiler.right_shift(ops, lp, *r_out, n, amount, tp);
                     });
                 }
+                InstructionType::VectorLeftShiftBytes => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let n = compiler.to_imm_or_reg(&inputs[0]);
+                    let bytes = compiler.to_imm_or_reg(&inputs[1]);
+                    let tp = outputs[0].tp;
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.vector_left_shift_bytes(ops, lp, *r_out, n, bytes, tp);
+                    });
+                }
+                InstructionType::VectorRightShiftBytes => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let n = compiler.to_imm_or_reg(&inputs[0]);
+                    let bytes = compiler.to_imm_or_reg(&inputs[1]);
+                    let tp = outputs[0].tp;
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.vector_right_shift_bytes(ops, lp, *r_out, n, bytes, tp);
+                    });
+                }
                 InstructionType::Convert => {
                     assert_eq!(outputs.len(), 1);
                     assert_eq!(inputs.len() > 0, true); // need at least one input
@@ -769,6 +789,26 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         r_out: Register,
         n: ConstOrReg,
         amount: ConstOrReg,
+        tp: DataType,
+    );
+    /// Compile an IR vector left shift bytes instruction
+    fn vector_left_shift_bytes(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        n: ConstOrReg,
+        bytes: ConstOrReg,
+        tp: DataType,
+    );
+    /// Compile an IR vector right shift bytes instruction
+    fn vector_right_shift_bytes(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        n: ConstOrReg,
+        bytes: ConstOrReg,
         tp: DataType,
     );
     /// Compile an IR convert instruction
