@@ -46,8 +46,7 @@ fn trim_xmm_to_32_bits<Ops: GenericAssembler<X64Relocation>>(
     )
 }
 
-/// Shuffle indices for [`variable_byte_shift_128`]. `pshufb` zeroes any lane whose index byte has
-/// bit 7 set, so the 0x80 padding either side of 0x00..0x0F supplies the zero fill.
+/// `pshufb` zeroes any lane whose index has bit 7 set, so the 0x80 padding gives the zero fill.
 #[rustfmt::skip]
 static BYTE_SHIFT_SHUFFLES: [u8; 48] = [
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
@@ -58,10 +57,8 @@ static BYTE_SHIFT_SHUFFLES: [u8; 48] = [
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
 ];
 
-/// Shifts the 128 bit value in `r_out` by a byte amount only known at runtime.
-///
-/// The 16 byte window of [`BYTE_SHIFT_SHUFFLES`] at `16 - d` is the shuffle mask for a left shift
-/// of `d` bytes, and the window at `16 + d` is the mask for a right shift of `d` bytes.
+/// The [`BYTE_SHIFT_SHUFFLES`] window at `16 - d` shifts left by `d` bytes, the one at `16 + d`
+/// shifts right by `d`.
 fn variable_byte_shift_128<Ops: GenericAssembler<X64Relocation>>(
     ops: &mut Ops,
     scratch_regs: &RegPool,

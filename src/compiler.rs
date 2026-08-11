@@ -452,10 +452,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
     }
 }
 
-/// Expands a lane swizzle pattern into a byte index mask for `pshufb` / `tbl`.
-///
-/// Nibble `i` of `pattern` names the source lane for output lane `i`. Both instructions index
-/// bytes, so each lane becomes `lane_bits / 8` consecutive byte indices.
+/// Expands a lane pattern into the byte index mask that `pshufb` / `tbl` take.
 pub fn lane_swizzle_byte_mask(pattern: u64, v: VectorType) -> u128 {
     let lane_bytes = (v.lane_bits / 8) as usize;
     let mut mask: u128 = 0;

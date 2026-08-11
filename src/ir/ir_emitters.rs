@@ -27,8 +27,7 @@ impl IRBlockHandle {
         self.append(InstructionType::RightShift, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
     }
 
-    /// Shifts the whole vector left by `bytes`, ignoring its lane structure. Shifting by the width
-    /// of the vector or more gives zero.
+    /// Ignores lane structure. Shifting by the vector width or more gives zero.
     pub fn vector_left_shift_bytes(
         &mut self,
         result_tp: DataType,
@@ -38,8 +37,7 @@ impl IRBlockHandle {
         self.append(InstructionType::VectorLeftShiftBytes, vec![arg1, bytes], vec![OutputSlot { tp: result_tp }])
     }
 
-    /// Shifts the whole vector right by `bytes`, ignoring its lane structure. Shifting by the width
-    /// of the vector or more gives zero.
+    /// Ignores lane structure. Shifting by the vector width or more gives zero.
     pub fn vector_right_shift_bytes(
         &mut self,
         result_tp: DataType,
@@ -49,8 +47,7 @@ impl IRBlockHandle {
         self.append(InstructionType::VectorRightShiftBytes, vec![arg1, bytes], vec![OutputSlot { tp: result_tp }])
     }
 
-    /// Rearranges the lanes of `value`. Nibble `i` of `pattern` is the index of the source lane
-    /// that ends up in lane `i` of the result, counting from the low end of the vector.
+    /// Nibble `i` of `pattern` is the source lane for lane `i`, counting from the low end.
     pub fn vector_swizzle(&mut self, result_tp: DataType, value: InputSlot, pattern: u64) -> InstructionOutput {
         self.append(
             InstructionType::VectorSwizzle,

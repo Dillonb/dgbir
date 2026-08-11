@@ -664,7 +664,7 @@ fn call_external_function() {
     let mut block = func.new_block(vec![DataType::U32]);
 
     let input = block.input(0);
-    let add_ten_fn = external_fn!(add_ten as *const () as usize, &[DataType::U32], Some(DataType::U32));
+    let add_ten_fn = external_fn!(add_ten(_));
     let call_result = block.call_function(add_ten_fn, vec![input]);
     block.ret(Some(call_result.val()));
 
@@ -994,7 +994,7 @@ fn volatile_reg_live_across_call_in_later_block() {
     let b_f = block.input(2);
     let called = block
         .call_function(
-            external_fn!(clobber as *const () as usize, &[DataType::U64], Some(DataType::U64)),
+            external_fn!(clobber(_)),
             vec![b_acc],
         )
         .val();
@@ -1104,7 +1104,7 @@ fn call_external_function_with_float_arguments() {
     // A constant argument has to be materialized into its argument register.
     let result =
         block.call_function(
-            external_fn!(combine as *const () as usize, &[DataType::U64, DataType::F32, DataType::F32], Some(DataType::F32)),
+            external_fn!(combine(_, _, _)),
             vec![x, a, const_f32(0.5)],
         );
     block.ret(Some(result.val()));

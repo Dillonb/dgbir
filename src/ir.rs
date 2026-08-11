@@ -20,16 +20,14 @@ pub enum LaneClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct VectorType {
-    /// Width of one lane in bits.
     pub lane_bits: u16,
-    /// Number of lanes. Always at least 2 - use the scalar [`DataType`] variants for one value.
     pub lanes: u8,
     pub class: LaneClass,
 }
 
 impl VectorType {
     pub const fn new(class: LaneClass, lane_bits: u16, lanes: u8) -> Self {
-        assert!(lanes >= 2, "A vector needs at least 2 lanes; use a scalar DataType instead");
+        assert!(lanes >= 2, "A vector needs at least 2 lanes. Use a scalar DataType instead");
         assert!(lane_bits.is_power_of_two() && lane_bits >= 8, "Lane width must be a power of two of at least 8 bits");
         Self {
             lane_bits,
@@ -38,7 +36,7 @@ impl VectorType {
         }
     }
 
-    /// Total width of the vector in bytes.
+    /// In bytes.
     pub const fn size(&self) -> usize {
         (self.lane_bits as usize / 8) * self.lanes as usize
     }
@@ -73,17 +71,11 @@ pub enum DataType {
 }
 
 impl DataType {
-    /// 128 bit vector of 16 unsigned bytes.
     pub const VU8: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 8, 16));
-    /// 128 bit vector of 16 signed bytes.
     pub const VS8: DataType = DataType::Vector(VectorType::new(LaneClass::Signed, 8, 16));
-    /// 128 bit vector of 8 unsigned halfwords.
     pub const VU16: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 16, 8));
-    /// 128 bit vector of 8 signed halfwords.
     pub const VS16: DataType = DataType::Vector(VectorType::new(LaneClass::Signed, 16, 8));
-    /// 128 bit vector of 4 unsigned words.
     pub const VU32: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 32, 4));
-    /// 128 bit vector of 4 signed words.
     pub const VS32: DataType = DataType::Vector(VectorType::new(LaneClass::Signed, 32, 4));
 
     pub fn is_vector(&self) -> bool {
@@ -252,11 +244,10 @@ pub enum InstructionType {
     Add,
     LeftShift,
     RightShift,
-    /// Shifts a whole vector left by a number of bytes, independent of its lane structure.
+    /// Ignores lane structure.
     VectorLeftShiftBytes,
-    /// Shifts a whole vector right by a number of bytes, independent of its lane structure.
+    /// Ignores lane structure.
     VectorRightShiftBytes,
-    /// Rearranges whole lanes of a vector according to a constant pattern.
     VectorSwizzle,
     Compare,
     LoadPtr,
@@ -295,7 +286,104 @@ pub enum InputSlot {
     Constant(Constant),
 }
 
-/// A function outside the compiled code, along with its signature so calls can be type checked.
+pub trait IrType {
+    const DATA_TYPE: DataType;
+}
+
+macro_rules! impl_ir_type {
+    ($($rust:ty => $dt:expr,)*) => {
+        $(
+            impl IrType for $rust {
+                const DATA_TYPE: DataType = $dt;
+            }
+            impl IrReturnType for $rust {
+                const RETURNS: Option<DataType> = Some($dt);
+            }
+        )*
+    };
+}
+
+/// Separate from [`IrType`] so `()` can mean no return value.
+pub trait IrReturnType {
+    const RETURNS: Option<DataType>;
+}
+
+impl IrReturnType for () {
+    const RETURNS: Option<DataType> = None;
+}
+
+impl_ir_type! {
+    u8 => DataType::U8,
+    i8 => DataType::S8,
+    u16 => DataType::U16,
+    i16 => DataType::S16,
+    u32 => DataType::U32,
+    i32 => DataType::S32,
+    u64 => DataType::U64,
+    i64 => DataType::S64,
+    f32 => DataType::F32,
+    f64 => DataType::F64,
+    bool => DataType::Bool,
+}
+
+impl<T> IrType for *const T {
+    const DATA_TYPE: DataType = DataType::Ptr;
+}
+
+impl<T> IrType for *mut T {
+    const DATA_TYPE: DataType = DataType::Ptr;
+}
+
+pub trait FnSignature {
+    const PARAMS: &'static [DataType];
+    const RETURNS: Option<DataType>;
+    fn address(self) -> usize;
+}
+
+macro_rules! impl_fn_signature {
+    ($($arg:ident),*) => {
+        impl<Ret: IrReturnType $(, $arg: IrType)*> FnSignature for extern "C" fn($($arg),*) -> Ret {
+            const PARAMS: &'static [DataType] = &[$($arg::DATA_TYPE),*];
+            const RETURNS: Option<DataType> = Ret::RETURNS;
+            fn address(self) -> usize {
+                self as *const () as usize
+            }
+        }
+
+        impl<Ret: IrReturnType $(, $arg: IrType)*> FnSignature for unsafe extern "C" fn($($arg),*) -> Ret {
+            const PARAMS: &'static [DataType] = &[$($arg::DATA_TYPE),*];
+            const RETURNS: Option<DataType> = Ret::RETURNS;
+            fn address(self) -> usize {
+                self as *const () as usize
+            }
+        }
+    };
+}
+
+impl_fn_signature!();
+impl_fn_signature!(A);
+impl_fn_signature!(A, B);
+impl_fn_signature!(A, B, C);
+impl_fn_signature!(A, B, C, D);
+impl_fn_signature!(A, B, C, D, E);
+impl_fn_signature!(A, B, C, D, E, F);
+
+impl ExternalFunction {
+    pub fn derived<F: FnSignature>(f: F) -> Self {
+        Self {
+            address: f.address(),
+            params: F::PARAMS,
+            returns: F::RETURNS,
+        }
+    }
+
+    /// The same function at a different address, for addresses only known at runtime.
+    pub fn at(self, address: usize) -> Self {
+        Self { address, ..self }
+    }
+}
+
+/// A function outside the compiled code.
 #[derive(Debug, Clone, Copy)]
 pub struct ExternalFunction {
     pub address: usize,
@@ -303,15 +391,19 @@ pub struct ExternalFunction {
     pub returns: Option<DataType>,
 }
 
-/// Builds an [`ExternalFunction`] from a statically known address, or defines an accessor that
-/// builds one from a `usize` field holding an address supplied at runtime.
+/// Derive an ExternalFunction type from a real function. Parameters should be replaced with `_`
+/// when calling the macro.
+///
+/// ```ignore
+/// external_fn!(some_fn(_, _))
+/// external_fn!(address, &[DataType::U32], None) // no fn item to derive from
+/// ```
 #[macro_export]
 macro_rules! external_fn {
-    (fn $name:ident, $params:expr, $returns:expr) => {
-        fn $name(&self) -> $crate::ir::ExternalFunction {
-            $crate::external_fn!(self.$name, $params, $returns)
-        }
-    };
+    ($f:ident ( $($hole:tt),* )) => {{
+        let f: unsafe extern "C" fn($($hole),*) -> _ = $f;
+        $crate::ir::ExternalFunction::derived(f)
+    }};
     ($address:expr, $params:expr, $returns:expr) => {
         $crate::ir::ExternalFunction {
             address: $address,

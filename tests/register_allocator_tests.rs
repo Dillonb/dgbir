@@ -200,7 +200,7 @@ impl Spec {
         }
         let call_result = entry
             .call_function(
-                external_fn!(mix64 as *const () as usize, &[DataType::U64], Some(DataType::U64)),
+                external_fn!(mix64(_)),
                 vec![vals[self.call_arg]],
             )
             .val();
@@ -331,7 +331,7 @@ fn check_mixed_case(trips: u64, width: usize, x: u64, f0: f32) {
         // acc_f is live across this call, so it must be preserved.
         let acc_i = entry
             .call_function(
-                external_fn!(mix64 as *const () as usize, &[DataType::U64], Some(DataType::U64)),
+                external_fn!(mix64(_)),
                 vec![acc_i],
             )
             .val();
