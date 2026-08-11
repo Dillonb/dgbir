@@ -1122,7 +1122,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         let r_mask = self.scratch_regs.borrow::<register_type::SIMD>();
         dynasm!(ops
             ; ldr Q(r_mask.r()), =>literal
-            ; tbl V(r_out.expect_simd()).B16, [V(src.r()).B16], V(r_mask.r()).B16
+            ; tbl V(r_out.expect_simd()).B16, {V(src.r()).B16 * 1}, V(r_mask.r()).B16
         );
     }
 
