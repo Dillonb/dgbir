@@ -201,7 +201,7 @@ impl Spec {
         let call_result = entry
             .call_function(
                 external_fn!(mix64(_)),
-                vec![vals[self.call_arg]],
+                &[vals[self.call_arg]],
             )
             .val();
         vals.push(call_result);
@@ -332,7 +332,7 @@ fn check_mixed_case(trips: u64, width: usize, x: u64, f0: f32) {
         let acc_i = entry
             .call_function(
                 external_fn!(mix64(_)),
-                vec![acc_i],
+                &[acc_i],
             )
             .val();
 

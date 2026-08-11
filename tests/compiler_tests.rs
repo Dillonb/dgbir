@@ -665,7 +665,7 @@ fn call_external_function() {
 
     let input = block.input(0);
     let add_ten_fn = external_fn!(add_ten(_));
-    let call_result = block.call_function(add_ten_fn, vec![input]);
+    let call_result = block.call_function(add_ten_fn, &[input]);
     block.ret(Some(call_result.val()));
 
     println!("{}", func);
@@ -995,7 +995,7 @@ fn volatile_reg_live_across_call_in_later_block() {
     let called = block
         .call_function(
             external_fn!(clobber(_)),
-            vec![b_acc],
+            &[b_acc],
         )
         .val();
     // b_f is live across the call above and dies right here.
@@ -1105,7 +1105,7 @@ fn call_external_function_with_float_arguments() {
     let result =
         block.call_function(
             external_fn!(combine(_, _, _)),
-            vec![x, a, const_f32(0.5)],
+            &[x, a, const_f32(0.5)],
         );
     block.ret(Some(result.val()));
 

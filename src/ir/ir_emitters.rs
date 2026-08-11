@@ -190,12 +190,12 @@ impl IRBlockHandle {
         self.append(InstructionType::Negate, vec![value], vec![OutputSlot { tp: result_tp }])
     }
 
-    pub fn call_function(&mut self, func: ExternalFunction, args: Vec<InputSlot>) -> InstructionOutput {
-        check_call_signature(&func, &args);
+    pub fn call_function(&mut self, func: ExternalFunction, args: &[InputSlot]) -> InstructionOutput {
+        check_call_signature(&func, args);
         self.append(
             InstructionType::CallFunction,
             std::iter::once(InputSlot::Constant(Constant::Ptr(func.address)))
-                .chain(args)
+                .chain(args.iter().copied())
                 .collect(),
             func.returns.map(|tp| OutputSlot { tp }).into_iter().collect(),
         )
