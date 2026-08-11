@@ -185,6 +185,7 @@ pub enum Constant {
     S32(i32),
     U64(u64),
     S64(i64),
+    U128(u128),
     F32(OrderedFloat<f32>),
     F64(OrderedFloat<f64>),
     Ptr(usize),
@@ -205,6 +206,7 @@ impl Constant {
             Constant::S32(_) => DataType::S32,
             Constant::U64(_) => DataType::U64,
             Constant::S64(_) => DataType::S64,
+            Constant::U128(_) => DataType::U128,
             Constant::F32(_) => DataType::F32,
             Constant::F64(_) => DataType::F64,
             Constant::Ptr(_) => DataType::Ptr,
@@ -254,6 +256,8 @@ pub enum InstructionType {
     VectorLeftShiftBytes,
     /// Shifts a whole vector right by a number of bytes, independent of its lane structure.
     VectorRightShiftBytes,
+    /// Rearranges whole lanes of a vector according to a constant pattern.
+    VectorSwizzle,
     Compare,
     LoadPtr,
     WritePtr,

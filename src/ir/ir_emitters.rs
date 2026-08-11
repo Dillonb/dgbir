@@ -47,6 +47,16 @@ impl IRBlockHandle {
         self.append(InstructionType::VectorRightShiftBytes, vec![arg1, bytes], vec![OutputSlot { tp: result_tp }])
     }
 
+    /// Rearranges the lanes of `value`. Nibble `i` of `pattern` is the index of the source lane
+    /// that ends up in lane `i` of the result, counting from the low end of the vector.
+    pub fn vector_swizzle(&mut self, result_tp: DataType, value: InputSlot, pattern: u64) -> InstructionOutput {
+        self.append(
+            InstructionType::VectorSwizzle,
+            vec![value, InputSlot::Constant(Constant::U64(pattern))],
+            vec![OutputSlot { tp: result_tp }],
+        )
+    }
+
     pub fn write_ptr(&mut self, tp: DataType, ptr: InputSlot, offset: usize, value: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::WritePtr,

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
-    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
+    compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
@@ -316,6 +316,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     dynasm!(ops
                         ; =>label
                         ; .u64 c
+                    );
+                }
+                Constant::U128(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .u64 c as u64
+                        ; .u64 (c >> 64) as u64
                     );
                 }
                 Constant::F32(c) => {
@@ -938,6 +945,28 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
+    fn vector_swizzle(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        value: ConstOrReg,
+        pattern: u64,
+        tp: DataType,
+    ) {
+        let v = match tp {
+            DataType::Vector(v) => v,
+            _ => todo!("VectorSwizzle on non-vector type {}", tp),
+        };
+        self.move_to_reg(ops, lp, value, r_out);
+        let mask = Self::add_literal(ops, lp, Constant::U128(lane_swizzle_byte_mask(pattern, v)));
+        let r_mask = self.scratch_regs.borrow::<register_type::SIMD>();
+        dynasm!(ops
+            ; movdqu Rx(r_mask.r()), OWORD [=>mask]
+            ; pshufb Rx(r_out.expect_simd()), Rx(r_mask.r())
+        );
+    }
+
     fn vector_left_shift_bytes(
         &self,
         ops: &mut Ops,
@@ -1005,6 +1034,10 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     // Mov r32 -> r32 zero-extends
                     ; mov Rd(r_out), Rd(r_in)
                 );
+            }
+            // Narrowing a 128 bit value to a scalar keeps its low 8 bytes.
+            (Register::GPR(r_out), DataType::U64 | DataType::S64, input, from) if from.size() == 16 => {
+                self.move_to_reg(ops, lp, input, Register::GPR(r_out));
             }
             (Register::GPR(r_out), DataType::S64, input, DataType::S8) => {
                 let input = self.materialize_as_gpr(ops, lp, input);

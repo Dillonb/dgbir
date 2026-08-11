@@ -1381,3 +1381,111 @@ fn vector_type_spill() {
     f(values.as_ptr() as usize, results.as_ptr() as usize);
     validate(&results, &values);
 }
+
+fn swizzle_pattern(lanes: &[u8]) -> u64 {
+    lanes.iter().enumerate().fold(0u64, |acc, (i, l)| acc | ((*l as u64) << (4 * i)))
+}
+
+/// Lane swizzles, including every pattern the RSP's `get_vte` needs. Element order there is
+/// reversed relative to register lane order, so the patterns below are the C ones mirrored.
+#[test]
+fn vector_swizzle_lanes() {
+    // vte element selection for e = 0..15, in architectural element order.
+    let vte_elements: [[u8; 8]; 16] = [
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        [0, 0, 2, 2, 4, 4, 6, 6],
+        [1, 1, 3, 3, 5, 5, 7, 7],
+        [0, 0, 0, 0, 4, 4, 4, 4],
+        [1, 1, 1, 1, 5, 5, 5, 5],
+        [2, 2, 2, 2, 6, 6, 6, 6],
+        [3, 3, 3, 3, 7, 7, 7, 7],
+        [0; 8],
+        [1; 8],
+        [2; 8],
+        [3; 8],
+        [4; 8],
+        [5; 8],
+        [6; 8],
+        [7; 8],
+    ];
+
+    // Architectural element i lives in register lane 7 - i.
+    let patterns: Vec<u64> = vte_elements
+        .iter()
+        .map(|els| {
+            let lanes: Vec<u8> = (0..8).map(|lane| 7 - els[7 - lane]).collect();
+            swizzle_pattern(&lanes)
+        })
+        .collect();
+
+    // Architectural element i lives in register lane 7 - i, so this holds element i == i.
+    let input: u128 = 0x0000_0001_0002_0003_0004_0005_0006_0007;
+    let results: Vec<u128> = vec![0; patterns.len()];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src_ptr = block.input(0);
+    let dst_ptr = block.input(1);
+
+    let value = block.load_ptr(DataType::VU16, src_ptr, 0).val();
+    for (i, pattern) in patterns.iter().enumerate() {
+        let swizzled = block.vector_swizzle(DataType::VU16, value, *pattern);
+        block.write_ptr(DataType::VU16, dst_ptr, i * size_of::<u128>(), swizzled.val());
+    }
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(&input as *const u128 as usize, results.as_ptr() as usize);
+
+    // Element i of the input holds the value i, so the expected element values are the
+    // selection table itself.
+    let expected: Vec<u128> = vte_elements
+        .iter()
+        .map(|els| (0..8).fold(0u128, |acc, i| acc | ((els[i] as u128) << (16 * (7 - i)))))
+        .collect();
+    for (i, (got, want)) in results.iter().zip(expected.iter()).enumerate() {
+        assert_eq!(got, want, "e = {}: got {:#034x}, want {:#034x}", i, got, want);
+    }
+}
+
+/// Swizzles at other lane widths, and patterns that are not just broadcasts.
+#[test]
+fn vector_swizzle_lane_widths() {
+    let input: u128 = 0x0F0E0D0C_0B0A0908_07060504_03020100;
+    let results: Vec<u128> = vec![0; 3];
+
+    let reverse8 = swizzle_pattern(&[15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+    let reverse32 = swizzle_pattern(&[3, 2, 1, 0]);
+    let broadcast32 = swizzle_pattern(&[2, 2, 2, 2]);
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src_ptr = block.input(0);
+    let dst_ptr = block.input(1);
+
+    let v8 = block.load_ptr(DataType::VU8, src_ptr, 0).val();
+    let r = block.vector_swizzle(DataType::VU8, v8, reverse8);
+    block.write_ptr(DataType::VU8, dst_ptr, 0, r.val());
+    let v32 = block.load_ptr(DataType::VU32, src_ptr, 0).val();
+    let r = block.vector_swizzle(DataType::VU32, v32, reverse32);
+    block.write_ptr(DataType::VU32, dst_ptr, size_of::<u128>(), r.val());
+    let r = block.vector_swizzle(DataType::VU32, v32, broadcast32);
+    block.write_ptr(DataType::VU32, dst_ptr, 2 * size_of::<u128>(), r.val());
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(&input as *const u128 as usize, results.as_ptr() as usize);
+
+    assert_eq!(results[0], 0x00010203_04050607_08090A0B_0C0D0E0F, "reverse bytes");
+    assert_eq!(results[1], 0x03020100_07060504_0B0A0908_0F0E0D0C, "reverse words");
+    assert_eq!(results[2], 0x0B0A0908_0B0A0908_0B0A0908_0B0A0908, "broadcast word 2");
+}

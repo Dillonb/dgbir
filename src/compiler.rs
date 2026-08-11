@@ -23,6 +23,7 @@ use crate::register_allocator::RegisterIndex;
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
+        VectorType,
     },
     register_allocator::{Register, RegisterAllocations, Value},
 };
@@ -286,6 +287,19 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                         compiler.vector_right_shift_bytes(ops, lp, *r_out, n, bytes, tp);
                     });
                 }
+                InstructionType::VectorSwizzle => {
+                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(outputs.len(), 1);
+                    let value = compiler.to_imm_or_reg(&inputs[0]);
+                    let pattern = match inputs[1] {
+                        InputSlot::Constant(Constant::U64(p)) => p,
+                        _ => panic!("VectorSwizzle pattern must be a U64 constant"),
+                    };
+                    let tp = outputs[0].tp;
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.vector_swizzle(ops, lp, *r_out, value, pattern, tp);
+                    });
+                }
                 InstructionType::Convert => {
                     assert_eq!(outputs.len(), 1);
                     assert_eq!(inputs.len() > 0, true); // need at least one input
@@ -438,6 +452,25 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
     }
 }
 
+/// Expands a lane swizzle pattern into a byte index mask for `pshufb` / `tbl`.
+///
+/// Nibble `i` of `pattern` names the source lane for output lane `i`. Both instructions index
+/// bytes, so each lane becomes `lane_bits / 8` consecutive byte indices.
+pub fn lane_swizzle_byte_mask(pattern: u64, v: VectorType) -> u128 {
+    let lane_bytes = (v.lane_bits / 8) as usize;
+    let mut mask: u128 = 0;
+    for out_lane in 0..v.lanes as usize {
+        let src_lane = ((pattern >> (4 * out_lane)) & 0xF) as usize;
+        assert!(src_lane < v.lanes as usize, "Swizzle source lane {} is out of range for {}", src_lane, v);
+        for byte in 0..lane_bytes {
+            let out_byte = out_lane * lane_bytes + byte;
+            let src_byte = src_lane * lane_bytes + byte;
+            mask |= (src_byte as u128) << (8 * out_byte);
+        }
+    }
+    mask
+}
+
 pub struct LiteralPool {
     pub literals: BTreeMap<Constant, dynasmrt::DynamicLabel>,
 }
@@ -476,6 +509,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::S32(c) => ConstOrReg::S32(c),
                 Constant::U64(c) => ConstOrReg::U64(c),
                 Constant::S64(c) => ConstOrReg::S64(c),
+                Constant::U128(_) => todo!("128 bit constants are only used for backend literals"),
                 Constant::F32(c) => ConstOrReg::F32(c),
                 Constant::F64(_) => todo!(),
                 Constant::Ptr(c) => ConstOrReg::U64(c as u64),
@@ -797,6 +831,16 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         r_out: Register,
         n: ConstOrReg,
         bytes: ConstOrReg,
+        tp: DataType,
+    );
+    /// Compile an IR vector swizzle instruction
+    fn vector_swizzle(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        value: ConstOrReg,
+        pattern: u64,
         tp: DataType,
     );
     /// Compile an IR convert instruction

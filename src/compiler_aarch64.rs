@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
-    compiler::{Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
+    compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
     reg_pool::{register_type, BorrowedReg, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
@@ -425,6 +425,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     dynasm!(ops
                         ; =>label
                         ; .u64 c
+                    );
+                }
+                Constant::U128(c) => {
+                    dynasm!(ops
+                        ; =>label
+                        ; .u64 c as u64
+                        ; .u64 (c >> 64) as u64
                     );
                 }
                 Constant::F32(c) => {
@@ -1095,6 +1102,28 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         } else {
             panic!("RightShift amount must be a constant or a GPR, got: {:?}", amount);
         }
+    }
+
+    fn vector_swizzle(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        value: ConstOrReg,
+        pattern: u64,
+        tp: DataType,
+    ) {
+        let v = match tp {
+            DataType::Vector(v) => v,
+            _ => todo!("VectorSwizzle on non-vector type {}", tp),
+        };
+        let src = self.materialize_as_simd(ops, lp, value);
+        let literal = Self::add_literal(ops, lp, Constant::U128(lane_swizzle_byte_mask(pattern, v)));
+        let r_mask = self.scratch_regs.borrow::<register_type::SIMD>();
+        dynasm!(ops
+            ; ldr Q(r_mask.r()), =>literal
+            ; tbl V(r_out.expect_simd()).B16, [V(src.r()).B16], V(r_mask.r()).B16
+        );
     }
 
     fn vector_left_shift_bytes(
