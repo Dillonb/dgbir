@@ -1,11 +1,12 @@
 use std::mem::{self, offset_of};
 
+use dgbir::external_fn;
 use dgbir::{
     abi::get_registers,
     compiler::compile,
     disassembler::disassemble_function,
     ir::{
-        const_f32, const_ptr, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle,
+        const_f32, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle,
         IRContext, IRFunction, InputSlot,
     },
     ir_interpreter::interpret_func,
@@ -663,7 +664,8 @@ fn call_external_function() {
     let mut block = func.new_block(vec![DataType::U32]);
 
     let input = block.input(0);
-    let call_result = block.call_function(const_ptr(add_ten as usize), Some(DataType::U32), vec![input]);
+    let add_ten_fn = external_fn!(add_ten as *const () as usize, &[DataType::U32], Some(DataType::U32));
+    let call_result = block.call_function(add_ten_fn, vec![input]);
     block.ret(Some(call_result.val()));
 
     println!("{}", func);
@@ -991,7 +993,10 @@ fn volatile_reg_live_across_call_in_later_block() {
     let b_acc = block.input(1);
     let b_f = block.input(2);
     let called = block
-        .call_function(const_ptr(clobber as *const () as usize), Some(DataType::U64), vec![b_acc])
+        .call_function(
+            external_fn!(clobber as *const () as usize, &[DataType::U64], Some(DataType::U64)),
+            vec![b_acc],
+        )
         .val();
     // b_f is live across the call above and dies right here.
     let f_sum = block.add(DataType::F32, b_f, const_f32(2.0)).val();
@@ -1098,7 +1103,10 @@ fn call_external_function_with_float_arguments() {
     let a = block.input(1);
     // A constant argument has to be materialized into its argument register.
     let result =
-        block.call_function(const_ptr(combine as *const () as usize), Some(DataType::F32), vec![x, a, const_f32(0.5)]);
+        block.call_function(
+            external_fn!(combine as *const () as usize, &[DataType::U64, DataType::F32, DataType::F32], Some(DataType::F32)),
+            vec![x, a, const_f32(0.5)],
+        );
     block.ret(Some(result.val()));
 
     let compiled = compile(&func);

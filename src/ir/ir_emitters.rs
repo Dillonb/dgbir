@@ -1,4 +1,6 @@
 use super::*;
+use crate::abi::IsSimd;
+use log::warn;
 
 impl IRBlockHandle {
     fn append(&self, tp: InstructionType, inputs: Vec<InputSlot>, outputs: Vec<OutputSlot>) -> InstructionOutput {
@@ -191,16 +193,31 @@ impl IRBlockHandle {
         self.append(InstructionType::Negate, vec![value], vec![OutputSlot { tp: result_tp }])
     }
 
-    pub fn call_function(
-        &mut self,
-        address: InputSlot,
-        return_tp: Option<DataType>,
-        args: Vec<InputSlot>,
-    ) -> InstructionOutput {
+    pub fn call_function(&mut self, func: ExternalFunction, args: Vec<InputSlot>) -> InstructionOutput {
+        check_call_signature(&func, &args);
         self.append(
             InstructionType::CallFunction,
-            std::iter::once(address).chain(args).collect(),
-            return_tp.map(|tp| OutputSlot { tp }).into_iter().collect(),
+            std::iter::once(InputSlot::Constant(Constant::Ptr(func.address)))
+                .chain(args)
+                .collect(),
+            func.returns.map(|tp| OutputSlot { tp }).into_iter().collect(),
         )
+    }
+}
+
+fn check_call_signature(func: &ExternalFunction, args: &[InputSlot]) {
+    let address = func.address;
+    let (expected, got) = (func.params.len(), args.len());
+    assert!(expected == got, "Function at {address:#x} takes {expected} arguments, called with {got}");
+
+    for (i, (param, arg)) in func.params.iter().zip(args).enumerate() {
+        let arg = arg.tp();
+        assert!(
+            param.is_simd() == arg.is_simd(),
+            "Argument {i} of the function at {address:#x} is {param}, but a {arg} was passed"
+        );
+        if param.size() != arg.size() {
+            warn!("Argument {i} of the function at {address:#x} is {param}, but a {arg} was passed");
+        }
     }
 }

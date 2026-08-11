@@ -295,6 +295,32 @@ pub enum InputSlot {
     Constant(Constant),
 }
 
+/// A function outside the compiled code, along with its signature so calls can be type checked.
+#[derive(Debug, Clone, Copy)]
+pub struct ExternalFunction {
+    pub address: usize,
+    pub params: &'static [DataType],
+    pub returns: Option<DataType>,
+}
+
+/// Builds an [`ExternalFunction`] from a statically known address, or defines an accessor that
+/// builds one from a `usize` field holding an address supplied at runtime.
+#[macro_export]
+macro_rules! external_fn {
+    (fn $name:ident, $params:expr, $returns:expr) => {
+        fn $name(&self) -> $crate::ir::ExternalFunction {
+            $crate::external_fn!(self.$name, $params, $returns)
+        }
+    };
+    ($address:expr, $params:expr, $returns:expr) => {
+        $crate::ir::ExternalFunction {
+            address: $address,
+            params: $params,
+            returns: $returns,
+        }
+    };
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct OutputSlot {
     pub tp: DataType,

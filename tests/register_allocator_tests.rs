@@ -13,6 +13,7 @@
 
 use std::mem;
 
+use dgbir::external_fn;
 use dgbir::{
     compiler::compile,
     ir::{const_u32, const_u64, CompareType, DataType, IRBlockHandle, IRContext, IRFunction, InputSlot},
@@ -198,7 +199,10 @@ impl Spec {
             vals.push(v);
         }
         let call_result = entry
-            .call_function(dgbir::ir::const_ptr(mix64 as usize), Some(DataType::U64), vec![vals[self.call_arg]])
+            .call_function(
+                external_fn!(mix64 as *const () as usize, &[DataType::U64], Some(DataType::U64)),
+                vec![vals[self.call_arg]],
+            )
             .val();
         vals.push(call_result);
 
@@ -326,7 +330,10 @@ fn check_mixed_case(trips: u64, width: usize, x: u64, f0: f32) {
 
         // acc_f is live across this call, so it must be preserved.
         let acc_i = entry
-            .call_function(dgbir::ir::const_ptr(mix64 as usize), Some(DataType::U64), vec![acc_i])
+            .call_function(
+                external_fn!(mix64 as *const () as usize, &[DataType::U64], Some(DataType::U64)),
+                vec![acc_i],
+            )
             .val();
 
         let mut lp = func.new_block(vec![DataType::U64, DataType::U64, DataType::F32]);
