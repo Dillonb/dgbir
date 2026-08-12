@@ -22,6 +22,8 @@ jobs:
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-nextest
         run: cargo-binstall cargo-nextest --secure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
         run: cargo build --verbose
       - name: Test
