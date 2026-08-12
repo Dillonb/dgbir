@@ -2,4 +2,3 @@
 .direnv
 .gdb_history
 vendor
-Cargo.lock
