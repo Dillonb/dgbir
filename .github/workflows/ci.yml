@@ -33,3 +33,24 @@ jobs:
         run: cargo build --verbose
       - name: Test
         run: cargo nextest run --profile ci
+
+  nix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Build package
+        run: nix build -L
+      - name: Flake check
+        run: nix flake check -L
+      - name: Build in dev shell
+        run: nix develop --command cargo build --verbose
+      - name: Test in dev shell
+        run: nix develop --command cargo test
+      - name: Run cargo-tests app
+        run: nix run .#cargo-tests -- --profile ci

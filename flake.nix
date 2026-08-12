@@ -19,6 +19,7 @@
 
       imports = [
         ./nix/cargo-tests.nix
+        ./nix/package.nix
         ./nix/windows-tests.nix
       ];
 
