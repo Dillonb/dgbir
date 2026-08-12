@@ -36,6 +36,9 @@ jobs:
 
   nix:
     runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
       - name: Build package
         run: nix build -L
       - name: Flake check
