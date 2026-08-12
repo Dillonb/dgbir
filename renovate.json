@@ -3,6 +3,7 @@
   "extends": ["config:recommended"],
   "timezone": "America/Los_Angeles",
   "minimumReleaseAge": "3 days",
+  "prHourlyLimit": 0,
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 9am on monday"]
