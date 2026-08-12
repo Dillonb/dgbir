@@ -10,7 +10,7 @@ ir_comments = []
 
 [dependencies]
 capstone = "0.13.0"
-dynasmrt = "4.0.1"
+dynasmrt = "5.0.0"
 env_logger = "0.11.8"
 itertools = "0.14.0"
 log = "0.4.28"
