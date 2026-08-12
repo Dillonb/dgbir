@@ -26,7 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-nextest
-        run: cargo-binstall cargo-nextest --secure
+        run: cargo-binstall cargo-nextest --locked
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
