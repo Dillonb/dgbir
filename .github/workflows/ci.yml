@@ -57,4 +57,4 @@ jobs:
       - name: Test in dev shell
         run: nix develop --command cargo test
       - name: Run cargo-tests app
-        run: nix run .#cargo-tests -- --profile ci
+        run: nix develop --command nix run .#cargo-tests -- --profile ci
