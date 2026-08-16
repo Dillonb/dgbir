@@ -199,8 +199,9 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let b = compiler.to_imm_or_reg(&inputs[1]);
                     let add_type = inputs[2].expect_constant_add_type();
                     let tp = outputs[0].tp;
-                    output_regs[0].iter().for_each(|r_out| {
-                        compiler.add(ops, lp, tp, *r_out, a, b, add_type);
+                    output_regs[0].iter().for_each(|r_out| match tp {
+                        DataType::Vector(v) => compiler.vector_add(ops, lp, v, r_out.expect_simd(), a, b, add_type),
+                        _ => compiler.add(ops, lp, tp, *r_out, a, b),
                     });
                 }
                 InstructionType::Compare => {
@@ -210,8 +211,9 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let a = compiler.to_imm_or_reg(&inputs[1]);
                     let cmp_type = inputs[2].expect_constant_cmp_type();
                     let b = compiler.to_imm_or_reg(&inputs[3]);
-                    output_regs[0].iter().for_each(|r_out| {
-                        compiler.compare(ops, lp, *r_out, data_type, a, cmp_type, b);
+                    output_regs[0].iter().for_each(|r_out| match data_type {
+                        DataType::Vector(v) => compiler.vector_compare(ops, lp, v, r_out.expect_simd(), a, cmp_type, b),
+                        _ => compiler.compare(ops, lp, r_out.expect_gpr(), data_type, a, cmp_type, b),
                     });
                 }
                 InstructionType::LoadPtr => {
@@ -297,32 +299,32 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                         InputSlot::Constant(Constant::U64(p)) => p,
                         _ => panic!("VectorSwizzle pattern must be a U64 constant"),
                     };
-                    let tp = outputs[0].tp;
+                    let tp = outputs[0].tp.expect_vector();
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.vector_swizzle(ops, lp, *r_out, value, pattern, tp);
+                        compiler.vector_swizzle(ops, lp, r_out.expect_simd(), value, pattern, tp);
                     });
                 }
                 InstructionType::VectorInterleave => {
                     assert_eq!(inputs.len(), 3);
                     assert_eq!(outputs.len(), 1);
-                    let arg_tp = inputs[0].tp();
+                    let arg_tp = inputs[0].tp().expect_vector();
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
                     let half = inputs[2].expect_constant_vector_half();
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.vector_interleave(ops, lp, *r_out, a, b, arg_tp, half);
+                        compiler.vector_interleave(ops, lp, r_out.expect_simd(), a, b, arg_tp, half);
                     });
                 }
                 InstructionType::VectorPack => {
                     assert_eq!(inputs.len(), 3);
                     assert_eq!(outputs.len(), 1);
-                    let arg_tp = inputs[0].tp();
+                    let arg_tp = inputs[0].tp().expect_vector();
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
                     let pack_type = inputs[2].expect_constant_pack_type();
-                    let result_tp = outputs[0].tp;
+                    let result_tp = outputs[0].tp.expect_vector();
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.vector_pack(ops, lp, *r_out, a, b, arg_tp, result_tp, pack_type);
+                        compiler.vector_pack(ops, lp, r_out.expect_simd(), a, b, arg_tp, result_tp, pack_type);
                     });
                 }
                 InstructionType::Convert => {
@@ -391,8 +393,11 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let minuend = compiler.to_imm_or_reg(&inputs[0]);
                     let subtrahend = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
-                    output_regs[0].iter().for_each(|r_out| {
-                        compiler.subtract(ops, lp, tp, *r_out, minuend, subtrahend);
+                    output_regs[0].iter().for_each(|r_out| match tp {
+                        DataType::Vector(v) => {
+                            compiler.vector_subtract(ops, lp, v, r_out.expect_simd(), minuend, subtrahend)
+                        }
+                        _ => compiler.subtract(ops, lp, tp, *r_out, minuend, subtrahend),
                     });
                 }
                 InstructionType::Multiply => {
@@ -403,7 +408,14 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let arg_tp = inputs[2].expect_constant_data_type();
                     let mult_type = inputs[3].expect_constant_multiply_type();
                     let result_tp = outputs[0].tp;
-                    compiler.multiply(ops, lp, result_tp, arg_tp, mult_type, output_regs, a, b);
+                    match arg_tp {
+                        DataType::Vector(v) => {
+                            assert_eq!(outputs.len(), 1, "Packed lane multiplies have a single output");
+                            let r_out = output_regs[0].unwrap().expect_simd();
+                            compiler.vector_multiply(ops, lp, v, mult_type, r_out, a, b);
+                        }
+                        _ => compiler.multiply(ops, lp, result_tp, arg_tp, output_regs, a, b),
+                    }
                 }
                 InstructionType::Divide => {
                     assert_eq!(inputs.len(), 2);
@@ -783,13 +795,15 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     /// Emit a return with an optional value
     fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>);
 
-    /// Compile an IR add instruction
-    fn add(
+    /// Compile an IR scalar add instruction
+    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
+    /// Compile an IR vector add instruction
+    fn vector_add(
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        tp: DataType,
-        r_out: Register,
+        tp: VectorType,
+        r_out: RegisterIndex,
         a: ConstOrReg,
         b: ConstOrReg,
         add_type: AddType,
@@ -799,8 +813,20 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: Register,
+        r_out: RegisterIndex,
         data_type: DataType,
+        a: ConstOrReg,
+        cmp_type: CompareType,
+        b: ConstOrReg,
+    );
+    /// Compile an IR compare instruction on a vector type.
+    /// Produces a per lane mask in a SIMD register.
+    fn vector_compare(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
         a: ConstOrReg,
         cmp_type: CompareType,
         b: ConstOrReg,
@@ -874,20 +900,20 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: Register,
+        r_out: RegisterIndex,
         value: ConstOrReg,
         pattern: u64,
-        tp: DataType,
+        tp: VectorType,
     );
     /// Compile an IR vector interleave instruction
     fn vector_interleave(
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: Register,
+        r_out: RegisterIndex,
         a: ConstOrReg,
         b: ConstOrReg,
-        arg_tp: DataType,
+        arg_tp: VectorType,
         half: VectorHalf,
     );
     /// Compile an IR vector pack instruction
@@ -895,11 +921,11 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: Register,
+        r_out: RegisterIndex,
         a: ConstOrReg,
         b: ConstOrReg,
-        arg_tp: DataType,
-        result_tp: DataType,
+        arg_tp: VectorType,
+        result_tp: VectorType,
         pack_type: PackType,
     );
     /// Compile an IR convert instruction
@@ -930,6 +956,16 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         minuend: ConstOrReg,
         subtrahend: ConstOrReg,
     );
+    /// Compile an IR subtract instruction on a vector type
+    fn vector_subtract(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        minuend: ConstOrReg,
+        subtrahend: ConstOrReg,
+    );
     /// Compile an IR multiply instruction
     fn multiply(
         &self,
@@ -937,8 +973,18 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         lp: &mut LiteralPool,
         result_tp: DataType,
         arg_tp: DataType,
-        mult_type: MultiplyType,
         output_regs: Vec<Option<Register>>,
+        a: ConstOrReg,
+        b: ConstOrReg,
+    );
+    /// Compile an IR multiply instruction on a vector type
+    fn vector_multiply(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        mult_type: MultiplyType,
+        r_out: RegisterIndex,
         a: ConstOrReg,
         b: ConstOrReg,
     );

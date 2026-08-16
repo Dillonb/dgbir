@@ -103,6 +103,13 @@ impl DataType {
         }
     }
 
+    pub fn expect_vector(&self) -> VectorType {
+        match self {
+            DataType::Vector(v) => *v,
+            _ => panic!("Expected a vector type, found {}", self),
+        }
+    }
+
     pub fn is_signed(&self) -> bool {
         match self {
             // Integers
