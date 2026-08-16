@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, iter, marker::PhantomData};
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal, MultiplyType, PackType, VectorHalf},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType, PackType, VectorHalf},
     reg_pool::{register_type, BorrowedReg, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
@@ -1106,29 +1106,87 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
     fn vector_interleave(
         &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _r_out: Register,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
         a: ConstOrReg,
         b: ConstOrReg,
         arg_tp: DataType,
         half: VectorHalf,
     ) {
-        todo!("VectorInterleave on aarch64: {:?}, {:?} type {} half {:?}", a, b, arg_tp, half);
+        let a = self.materialize_as_simd(ops, lp, a);
+        let b = self.materialize_as_simd(ops, lp, b);
+        let r_out = r_out.expect_simd();
+        let lane_bits = match arg_tp {
+            DataType::Vector(v) => v.lane_bits,
+            _ => todo!("VectorInterleave with type {}", arg_tp),
+        };
+        match (lane_bits, half) {
+            (8, VectorHalf::Low) => dynasm!(ops ; zip1 V(r_out).B16, V(a.r()).B16, V(b.r()).B16),
+            (8, VectorHalf::High) => dynasm!(ops ; zip2 V(r_out).B16, V(a.r()).B16, V(b.r()).B16),
+            (16, VectorHalf::Low) => dynasm!(ops ; zip1 V(r_out).H8, V(a.r()).H8, V(b.r()).H8),
+            (16, VectorHalf::High) => dynasm!(ops ; zip2 V(r_out).H8, V(a.r()).H8, V(b.r()).H8),
+            (32, VectorHalf::Low) => dynasm!(ops ; zip1 V(r_out).S4, V(a.r()).S4, V(b.r()).S4),
+            (32, VectorHalf::High) => dynasm!(ops ; zip2 V(r_out).S4, V(a.r()).S4, V(b.r()).S4),
+            (64, VectorHalf::Low) => dynasm!(ops ; zip1 V(r_out).D2, V(a.r()).D2, V(b.r()).D2),
+            (64, VectorHalf::High) => dynasm!(ops ; zip2 V(r_out).D2, V(a.r()).D2, V(b.r()).D2),
+            _ => todo!("VectorInterleave with type {}", arg_tp),
+        }
     }
 
     fn vector_pack(
         &self,
-        _ops: &mut Ops,
-        _lp: &mut LiteralPool,
-        _r_out: Register,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
         a: ConstOrReg,
         b: ConstOrReg,
         arg_tp: DataType,
         result_tp: DataType,
         pack_type: PackType,
     ) {
-        todo!("VectorPack on aarch64: {:?}, {:?} {} -> {} {:?}", a, b, arg_tp, result_tp, pack_type);
+        let a = self.materialize_as_simd(ops, lp, a);
+        let b = self.materialize_as_simd(ops, lp, b);
+        let r_out = r_out.expect_simd();
+        let lane_bits = match arg_tp {
+            DataType::Vector(v) => v.lane_bits,
+            _ => todo!("VectorPack from type {}", arg_tp),
+        };
+        let class = match result_tp {
+            DataType::Vector(v) => v.class,
+            _ => todo!("VectorPack to type {}", result_tp),
+        };
+
+        // The narrowing instruction zeroes the top half of its destination, which would destroy b
+        // before the second one reads it.
+        let scratch = self.scratch_regs.borrow::<register_type::SIMD>();
+        let dst = if r_out == b.r() { scratch.r() } else { r_out };
+
+        match (pack_type, lane_bits, class) {
+            (PackType::Saturating, 16, LaneClass::Signed) => dynasm!(ops
+                ; sqxtn V(dst).B8, V(a.r()).H8
+                ; sqxtn2 V(dst).B16, V(b.r()).H8
+            ),
+            (PackType::Saturating, 16, LaneClass::Unsigned) => dynasm!(ops
+                ; sqxtun V(dst).B8, V(a.r()).H8
+                ; sqxtun2 V(dst).B16, V(b.r()).H8
+            ),
+            (PackType::Saturating, 32, LaneClass::Signed) => dynasm!(ops
+                ; sqxtn V(dst).H4, V(a.r()).S4
+                ; sqxtn2 V(dst).H8, V(b.r()).S4
+            ),
+            (PackType::Saturating, 32, LaneClass::Unsigned) => dynasm!(ops
+                ; sqxtun V(dst).H4, V(a.r()).S4
+                ; sqxtun2 V(dst).H8, V(b.r()).S4
+            ),
+            _ => todo!("VectorPack {:?} {} -> {}", pack_type, arg_tp, result_tp),
+        }
+
+        if dst != r_out {
+            dynasm!(ops
+                ; mov V(r_out).B16, V(dst).B16
+            );
+        }
     }
 
     fn vector_swizzle(
@@ -1487,11 +1545,43 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         lp: &mut LiteralPool,
         result_tp: DataType,
         arg_tp: DataType,
-        _mult_type: MultiplyType,
+        mult_type: MultiplyType,
         output_regs: Vec<Option<Register>>,
         a: ConstOrReg,
         b: ConstOrReg,
     ) {
+        // Packed lane multiplies. NEON has no 16x16 high multiply, so the high half is built from
+        // widening multiplies of each half and then discarding the low halves of the products.
+        if let DataType::Vector(v) = arg_tp {
+            let r_out = output_regs[0].unwrap().expect_simd();
+            let a = self.materialize_as_simd(ops, lp, a);
+            let b = self.materialize_as_simd(ops, lp, b);
+            match (v.lane_bits, mult_type, v.class) {
+                (16, MultiplyType::Combined, _) => dynasm!(ops
+                    ; mul V(r_out).H8, V(a.r()).H8, V(b.r()).H8
+                ),
+                (16, MultiplyType::High, class @ (LaneClass::Signed | LaneClass::Unsigned)) => {
+                    let lo = self.scratch_regs.borrow::<register_type::SIMD>();
+                    let hi = self.scratch_regs.borrow::<register_type::SIMD>();
+                    match class {
+                        LaneClass::Signed => dynasm!(ops
+                            ; smull V(lo.r()).S4, V(a.r()).H4, V(b.r()).H4
+                            ; smull2 V(hi.r()).S4, V(a.r()).H8, V(b.r()).H8
+                        ),
+                        _ => dynasm!(ops
+                            ; umull V(lo.r()).S4, V(a.r()).H4, V(b.r()).H4
+                            ; umull2 V(hi.r()).S4, V(a.r()).H8, V(b.r()).H8
+                        ),
+                    }
+                    // The odd numbered halfwords of a 32 bit product are its high half.
+                    dynasm!(ops
+                        ; uzp2 V(r_out).H8, V(lo.r()).H8, V(hi.r()).H8
+                    );
+                }
+                _ => todo!("Multiply {:?} with type {}", mult_type, arg_tp),
+            }
+            return;
+        }
         match (result_tp, arg_tp, output_regs.len()) {
             (DataType::U32, DataType::U32, 2) => {
                 let a = self.materialize_as_gpr(ops, lp, a);

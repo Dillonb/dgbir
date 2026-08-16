@@ -7,7 +7,7 @@ use dgbir::{
     disassembler::disassemble_function,
     ir::{
         const_f32, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle,
-        IRContext, IRFunction, InputSlot, MultiplyType, PackType, VectorHalf,
+        IRContext, IRFunction, InputSlot, LaneClass, MultiplyType, PackType, VectorHalf, VectorType,
     },
     ir_interpreter::interpret_func,
 };
@@ -1543,6 +1543,80 @@ fn vector_multiply_lanes() {
             expect(&|x, y| x.wrapping_mul(y)),
             expect(&|x, y| (((x as i16 as i32) * (y as i16 as i32)) >> 16) as u16),
             expect(&|x, y| (((x as u32) * (y as u32)) >> 16) as u16),
+        ],
+    );
+}
+
+/// The interleave lane widths and the narrower pack that the multiplies don't reach.
+#[test]
+fn vector_interleave_lane_widths() {
+    const VU64: DataType = DataType::Vector(VectorType::new(LaneClass::Unsigned, 64, 2));
+    let a: u128 = 0x0F0E0D0C_0B0A0908_07060504_03020100;
+    let b: u128 = 0x1F1E1D1C_1B1A1918_17161514_13121110;
+
+    let words: [i16; 8] = [0, 1, -1, 127, -128, 200, -200, 32767];
+    let w = (0..8).fold(0u128, |acc, i| acc | ((words[i] as u16 as u128) << (16 * i)));
+
+    let results: Vec<u128> = vec![0; 6];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src = block.input(0);
+    let dst = block.input(1);
+
+    let v8a = block.load_ptr(DataType::VU8, src, 0).val();
+    let v8b = block.load_ptr(DataType::VU8, src, size_of::<u128>()).val();
+    for (i, half) in [VectorHalf::Low, VectorHalf::High].iter().enumerate() {
+        let r = block.vector_interleave(DataType::VU8, *half, v8a, v8b);
+        block.write_ptr(DataType::VU8, dst, i * size_of::<u128>(), r.val());
+    }
+
+    let v32a = block.load_ptr(DataType::VU32, src, 0).val();
+    let v32b = block.load_ptr(DataType::VU32, src, size_of::<u128>()).val();
+    let r = block.vector_interleave(DataType::VU32, VectorHalf::Low, v32a, v32b);
+    block.write_ptr(DataType::VU32, dst, 2 * size_of::<u128>(), r.val());
+
+    let v64a = block.load_ptr(VU64, src, 0).val();
+    let v64b = block.load_ptr(VU64, src, size_of::<u128>()).val();
+    let r = block.vector_interleave(VU64, VectorHalf::Low, v64a, v64b);
+    block.write_ptr(VU64, dst, 3 * size_of::<u128>(), r.val());
+
+    let v16 = block.load_ptr(DataType::VS16, src, 2 * size_of::<u128>()).val();
+    let s = block.vector_pack(DataType::VS8, PackType::Saturating, v16, v16);
+    block.write_ptr(DataType::VS8, dst, 4 * size_of::<u128>(), s.val());
+    let u = block.vector_pack(DataType::VU8, PackType::Saturating, v16, v16);
+    block.write_ptr(DataType::VU8, dst, 5 * size_of::<u128>(), u.val());
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    let src_buf = [a, b, w];
+    f(src_buf.as_ptr() as usize, results.as_ptr() as usize);
+
+    let lane = |v: u128, bits: u32, i: u32| (v >> (bits * i)) & ((1u128 << bits) - 1);
+    let build = |bits: u32, f: &dyn Fn(u32) -> u128| (0..(128 / bits)).fold(0u128, |acc, i| acc | (f(i) << (bits * i)));
+    // Each half reads only half of each input, so lane i of the result alternates a and b.
+    let interleave = |bits: u32, high: bool| {
+        let base = if high { (128 / bits) / 2 } else { 0 };
+        build(bits, &|i| {
+            let src = if i % 2 == 0 { a } else { b };
+            lane(src, bits, base + i / 2)
+        })
+    };
+    let packed = |f: &dyn Fn(i16) -> u8| build(8, &|i| f(words[(i % 8) as usize]) as u128);
+
+    validate(
+        &results,
+        &[
+            interleave(8, false),
+            interleave(8, true),
+            interleave(32, false),
+            interleave(64, false),
+            packed(&|v| v.clamp(-128, 127) as i8 as u8),
+            packed(&|v| v.clamp(0, 255) as u8),
         ],
     );
 }
