@@ -7,7 +7,7 @@ use dgbir::{
     disassembler::disassemble_function,
     ir::{
         const_f32, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle,
-        IRContext, IRFunction, InputSlot,
+        IRContext, IRFunction, InputSlot, MultiplyType, PackType, VectorHalf,
     },
     ir_interpreter::interpret_func,
 };
@@ -1133,7 +1133,7 @@ fn unused_float_arguments_dont_shift_later_ones() {
 }
 
 /// Vector byte shifts by an amount that is only known at runtime, which take a different
-/// code path (pshufb) than the constant amount shifts.
+/// code path than the constant amount shifts.
 #[test]
 fn simd_u128_variable_shifts() {
     let results: Vec<u64> = vec![0; U128_VALUES.len() * 4];
@@ -1497,3 +1497,96 @@ fn vector_swizzle_lane_widths() {
     assert_eq!(results[1], 0x03020100_07060504_0B0A0908_0F0E0D0C, "reverse words");
     assert_eq!(results[2], 0x0B0A0908_0B0A0908_0B0A0908_0B0A0908, "broadcast word 2");
 }
+
+/// Packed 16 bit lane multiplies. `Combined` keeps the low half of each product, `High` the
+/// upper half, with the lane class deciding whether the high half is signed or unsigned.
+#[test]
+fn vector_multiply_lanes() {
+    let lanes: [u16; 8] = [0x0000, 0x0001, 0x7FFF, 0x8000, 0xFFFF, 0x1234, 0x00FF, 0xABCD];
+    let b_lanes: [u16; 8] = [0x0003, 0xFFFF, 0x0002, 0x8000, 0xFFFF, 0x1000, 0x0100, 0x0007];
+
+    let pack = |v: &[u16; 8]| v.iter().enumerate().fold(0u128, |acc, (i, l)| acc | ((*l as u128) << (16 * i)));
+    let a = pack(&lanes);
+    let b = pack(&b_lanes);
+    let results: Vec<u128> = vec![0; 3];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src = block.input(0);
+    let dst = block.input(1);
+
+    let va = block.load_ptr(DataType::VS16, src, 0).val();
+    let vb = block.load_ptr(DataType::VS16, src, size_of::<u128>()).val();
+
+    let lo = block.multiply(DataType::VS16, DataType::VS16, MultiplyType::Combined, va, vb);
+    block.write_ptr(DataType::VS16, dst, 0, lo.val());
+    let hi_s = block.multiply(DataType::VS16, DataType::VS16, MultiplyType::High, va, vb);
+    block.write_ptr(DataType::VS16, dst, size_of::<u128>(), hi_s.val());
+    let hi_u = block.multiply(DataType::VU16, DataType::VU16, MultiplyType::High, va, vb);
+    block.write_ptr(DataType::VU16, dst, 2 * size_of::<u128>(), hi_u.val());
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    let src_buf = [a, b];
+    f(src_buf.as_ptr() as usize, results.as_ptr() as usize);
+
+    let expect = |g: &dyn Fn(u16, u16) -> u16| {
+        (0..8).fold(0u128, |acc, i| acc | ((g(lanes[i], b_lanes[i]) as u128) << (16 * i)))
+    };
+    validate(
+        &results,
+        &[
+            expect(&|x, y| x.wrapping_mul(y)),
+            expect(&|x, y| (((x as i16 as i32) * (y as i16 as i32)) >> 16) as u16),
+            expect(&|x, y| (((x as u32) * (y as u32)) >> 16) as u16),
+        ],
+    );
+}
+
+/// Interleaves 16 bit halves back into 32 bit values and saturates them to 16 bits.
+#[test]
+fn vector_interleave_and_pack() {
+    let values: [i32; 8] = [0, 1, -1, 32767, -32768, 40000, -40000, 0x7FFFFFFF];
+    let pack = |g: &dyn Fn(i32) -> u16| {
+        (0..8).fold(0u128, |acc, i| acc | ((g(values[i]) as u128) << (16 * i)))
+    };
+    let low = pack(&|v| v as u16);
+    let high = pack(&|v| (v >> 16) as u16);
+    let results: Vec<u128> = vec![0; 2];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src = block.input(0);
+    let dst = block.input(1);
+
+    let vh = block.load_ptr(DataType::VS16, src, 0).val();
+    let vl = block.load_ptr(DataType::VS16, src, size_of::<u128>()).val();
+    let lo32 = block.vector_interleave(DataType::VS32, VectorHalf::Low, vl, vh).val();
+    let hi32 = block.vector_interleave(DataType::VS32, VectorHalf::High, vl, vh).val();
+    let s = block.vector_pack(DataType::VS16, PackType::Saturating, lo32, hi32);
+    block.write_ptr(DataType::VS16, dst, 0, s.val());
+    let u = block.vector_pack(DataType::VU16, PackType::Saturating, lo32, hi32);
+    block.write_ptr(DataType::VU16, dst, size_of::<u128>(), u.val());
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    let src_buf = [high, low];
+    f(src_buf.as_ptr() as usize, results.as_ptr() as usize);
+
+    validate(
+        &results,
+        &[
+            pack(&|v| v.clamp(-32768, 32767) as u16),
+            pack(&|v| v.clamp(0, 65535) as u16),
+        ],
+    );
+}
+

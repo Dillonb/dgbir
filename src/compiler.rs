@@ -23,7 +23,7 @@ use crate::register_allocator::RegisterIndex;
 use crate::{
     ir::{
         BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
-        VectorType,
+        MultiplyType, PackType, VectorHalf, VectorType,
     },
     register_allocator::{Register, RegisterAllocations, Value},
 };
@@ -300,6 +300,29 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                         compiler.vector_swizzle(ops, lp, *r_out, value, pattern, tp);
                     });
                 }
+                InstructionType::VectorInterleave => {
+                    assert_eq!(inputs.len(), 3);
+                    assert_eq!(outputs.len(), 1);
+                    let arg_tp = inputs[0].tp();
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let half = inputs[2].expect_constant_vector_half();
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.vector_interleave(ops, lp, *r_out, a, b, arg_tp, half);
+                    });
+                }
+                InstructionType::VectorPack => {
+                    assert_eq!(inputs.len(), 3);
+                    assert_eq!(outputs.len(), 1);
+                    let arg_tp = inputs[0].tp();
+                    let a = compiler.to_imm_or_reg(&inputs[0]);
+                    let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let pack_type = inputs[2].expect_constant_pack_type();
+                    let result_tp = outputs[0].tp;
+                    output_regs[0].iter().for_each(|r_out| {
+                        compiler.vector_pack(ops, lp, *r_out, a, b, arg_tp, result_tp, pack_type);
+                    });
+                }
                 InstructionType::Convert => {
                     assert_eq!(outputs.len(), 1);
                     assert_eq!(inputs.len() > 0, true); // need at least one input
@@ -371,13 +394,14 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     });
                 }
                 InstructionType::Multiply => {
-                    assert_eq!(inputs.len(), 3);
+                    assert_eq!(inputs.len(), 4);
                     assert_eq!(outputs.len() == 1 || outputs.len() == 2, true);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
                     let arg_tp = inputs[2].expect_constant_data_type();
+                    let mult_type = inputs[3].expect_constant_multiply_type();
                     let result_tp = outputs[0].tp;
-                    compiler.multiply(ops, lp, result_tp, arg_tp, output_regs, a, b);
+                    compiler.multiply(ops, lp, result_tp, arg_tp, mult_type, output_regs, a, b);
                 }
                 InstructionType::Divide => {
                     assert_eq!(inputs.len(), 2);
@@ -514,6 +538,9 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::DataType(_) => todo!(),
                 Constant::CompareType(_) => todo!(),
                 Constant::RoundingMode(_) => todo!(),
+                Constant::MultiplyType(_) => todo!(),
+                Constant::VectorHalf(_) => todo!(),
+                Constant::PackType(_) => todo!(),
             },
             // _ => todo!("Unsupported input slot type: {:?}", s),
         }
@@ -840,6 +867,29 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         pattern: u64,
         tp: DataType,
     );
+    /// Compile an IR vector interleave instruction
+    fn vector_interleave(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        arg_tp: DataType,
+        half: VectorHalf,
+    );
+    /// Compile an IR vector pack instruction
+    fn vector_pack(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        arg_tp: DataType,
+        result_tp: DataType,
+        pack_type: PackType,
+    );
     /// Compile an IR convert instruction
     fn convert(
         &self,
@@ -875,6 +925,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         lp: &mut LiteralPool,
         result_tp: DataType,
         arg_tp: DataType,
+        mult_type: MultiplyType,
         output_regs: Vec<Option<Register>>,
         a: ConstOrReg,
         b: ConstOrReg,

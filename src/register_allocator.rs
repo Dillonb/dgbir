@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt::Display};
 use crate::{
     abi::is_register_volatile,
     compiler::ConstOrReg,
-    ir::{CompareType, Constant, DataType, IRFunctionInternal, InputSlot, RoundingMode},
+    ir::{CompareType, Constant, DataType, IRFunctionInternal, InputSlot, MultiplyType, PackType, RoundingMode, VectorHalf},
 };
 
 mod linear_scan;
@@ -286,6 +286,33 @@ impl InputSlot {
             InputSlot::InstructionOutput { tp, .. } => *tp,
             InputSlot::BlockInput { tp, .. } => *tp,
             InputSlot::Constant(c) => c.get_type(),
+        }
+    }
+
+    pub fn expect_constant_vector_half(&self) -> VectorHalf {
+        match self {
+            InputSlot::Constant(Constant::VectorHalf(h)) => *h,
+            _ => {
+                panic!("Expected a VectorHalf constant, found {:?}", self);
+            }
+        }
+    }
+
+    pub fn expect_constant_pack_type(&self) -> PackType {
+        match self {
+            InputSlot::Constant(Constant::PackType(p)) => *p,
+            _ => {
+                panic!("Expected a PackType constant, found {:?}", self);
+            }
+        }
+    }
+
+    pub fn expect_constant_multiply_type(&self) -> MultiplyType {
+        match self {
+            InputSlot::Constant(Constant::MultiplyType(mt)) => *mt,
+            _ => {
+                panic!("Expected a MultiplyType constant, found {:?}", self);
+            }
         }
     }
 

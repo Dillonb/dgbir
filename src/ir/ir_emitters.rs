@@ -56,6 +56,38 @@ impl IRBlockHandle {
         )
     }
 
+    /// Interleaves the lanes in one half of `a` and `b`, taking lane width from `a`. Reads only
+    /// half of each input, so both halves are needed to cover all the lanes.
+    pub fn vector_interleave(
+        &mut self,
+        result_tp: DataType,
+        half: VectorHalf,
+        a: InputSlot,
+        b: InputSlot,
+    ) -> InstructionOutput {
+        self.append(
+            InstructionType::VectorInterleave,
+            vec![a, b, Constant::VectorHalf(half).into_inputslot()],
+            vec![OutputSlot { tp: result_tp }],
+        )
+    }
+
+    /// Narrows `a` and `b` into one vector of half width lanes. `a` supplies the low lanes of the
+    /// result.
+    pub fn vector_pack(
+        &mut self,
+        result_tp: DataType,
+        pack_type: PackType,
+        a: InputSlot,
+        b: InputSlot,
+    ) -> InstructionOutput {
+        self.append(
+            InstructionType::VectorPack,
+            vec![a, b, Constant::PackType(pack_type).into_inputslot()],
+            vec![OutputSlot { tp: result_tp }],
+        )
+    }
+
     pub fn write_ptr(&mut self, tp: DataType, ptr: InputSlot, offset: usize, value: InputSlot) -> InstructionOutput {
         self.append(
             InstructionType::WritePtr,
@@ -160,13 +192,22 @@ impl IRBlockHandle {
             MultiplyType::Split => OutputSlot {
                 tp: result_tp.half_type(),
             },
-            MultiplyType::Combined => OutputSlot { tp: result_tp },
+            MultiplyType::Combined | MultiplyType::High => OutputSlot { tp: result_tp },
         };
         let outputs = match mult_type {
             MultiplyType::Split => vec![slot, slot],
-            MultiplyType::Combined => vec![slot],
+            MultiplyType::Combined | MultiplyType::High => vec![slot],
         };
-        self.append(InstructionType::Multiply, vec![arg1, arg2, Constant::DataType(arg_type).into_inputslot()], outputs)
+        self.append(
+            InstructionType::Multiply,
+            vec![
+                arg1,
+                arg2,
+                Constant::DataType(arg_type).into_inputslot(),
+                Constant::MultiplyType(mult_type).into_inputslot(),
+            ],
+            outputs,
+        )
     }
 
     /// Divides two values and returns the quotient and remainder.

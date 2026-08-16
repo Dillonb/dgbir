@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, iter, marker::PhantomData};
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal, MultiplyType, PackType, VectorHalf},
     reg_pool::{register_type, BorrowedReg, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
@@ -1104,6 +1104,33 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
+    fn vector_interleave(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        arg_tp: DataType,
+        half: VectorHalf,
+    ) {
+        todo!("VectorInterleave on aarch64: {:?}, {:?} type {} half {:?}", a, b, arg_tp, half);
+    }
+
+    fn vector_pack(
+        &self,
+        _ops: &mut Ops,
+        _lp: &mut LiteralPool,
+        _r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        arg_tp: DataType,
+        result_tp: DataType,
+        pack_type: PackType,
+    ) {
+        todo!("VectorPack on aarch64: {:?}, {:?} {} -> {} {:?}", a, b, arg_tp, result_tp, pack_type);
+    }
+
     fn vector_swizzle(
         &self,
         ops: &mut Ops,
@@ -1460,6 +1487,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         lp: &mut LiteralPool,
         result_tp: DataType,
         arg_tp: DataType,
+        _mult_type: MultiplyType,
         output_regs: Vec<Option<Register>>,
         a: ConstOrReg,
         b: ConstOrReg,

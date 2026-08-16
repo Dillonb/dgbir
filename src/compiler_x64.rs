@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, marker::PhantomData};
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal},
+    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType, PackType, VectorHalf},
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
@@ -942,6 +942,67 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
+    fn vector_interleave(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        arg_tp: DataType,
+        half: VectorHalf,
+    ) {
+        self.move_to_reg(ops, lp, a, r_out);
+        let b = self.materialize_as_simd(ops, lp, b);
+        let r_out = r_out.expect_simd();
+        let lane_bits = match arg_tp {
+            DataType::Vector(v) => v.lane_bits,
+            _ => todo!("VectorInterleave with type {}", arg_tp),
+        };
+        match (lane_bits, half) {
+            (8, VectorHalf::Low) => dynasm!(ops ; punpcklbw Rx(r_out), Rx(b.r())),
+            (8, VectorHalf::High) => dynasm!(ops ; punpckhbw Rx(r_out), Rx(b.r())),
+            (16, VectorHalf::Low) => dynasm!(ops ; punpcklwd Rx(r_out), Rx(b.r())),
+            (16, VectorHalf::High) => dynasm!(ops ; punpckhwd Rx(r_out), Rx(b.r())),
+            (32, VectorHalf::Low) => dynasm!(ops ; punpckldq Rx(r_out), Rx(b.r())),
+            (32, VectorHalf::High) => dynasm!(ops ; punpckhdq Rx(r_out), Rx(b.r())),
+            (64, VectorHalf::Low) => dynasm!(ops ; punpcklqdq Rx(r_out), Rx(b.r())),
+            (64, VectorHalf::High) => dynasm!(ops ; punpckhqdq Rx(r_out), Rx(b.r())),
+            _ => todo!("VectorInterleave with type {}", arg_tp),
+        }
+    }
+
+    fn vector_pack(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        arg_tp: DataType,
+        result_tp: DataType,
+        pack_type: PackType,
+    ) {
+        self.move_to_reg(ops, lp, a, r_out);
+        let b = self.materialize_as_simd(ops, lp, b);
+        let r_out = r_out.expect_simd();
+        let lane_bits = match arg_tp {
+            DataType::Vector(v) => v.lane_bits,
+            _ => todo!("VectorPack from type {}", arg_tp),
+        };
+        let class = match result_tp {
+            DataType::Vector(v) => v.class,
+            _ => todo!("VectorPack to type {}", result_tp),
+        };
+        match (pack_type, lane_bits, class) {
+            (PackType::Saturating, 16, LaneClass::Signed) => dynasm!(ops ; packsswb Rx(r_out), Rx(b.r())),
+            (PackType::Saturating, 16, LaneClass::Unsigned) => dynasm!(ops ; packuswb Rx(r_out), Rx(b.r())),
+            (PackType::Saturating, 32, LaneClass::Signed) => dynasm!(ops ; packssdw Rx(r_out), Rx(b.r())),
+            (PackType::Saturating, 32, LaneClass::Unsigned) => dynasm!(ops ; packusdw Rx(r_out), Rx(b.r())),
+            _ => todo!("VectorPack {:?} {} -> {}", pack_type, arg_tp, result_tp),
+        }
+    }
+
     fn vector_swizzle(
         &self,
         ops: &mut Ops,
@@ -1290,10 +1351,30 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         lp: &mut LiteralPool,
         result_tp: DataType,
         arg_tp: DataType,
+        mult_type: MultiplyType,
         output_regs: Vec<Option<Register>>,
         a: ConstOrReg,
         b: ConstOrReg,
     ) {
+        // Packed lane multiplies, where the low and high halves are separate instructions.
+        if let DataType::Vector(v) = arg_tp {
+            let r_out = output_regs[0].unwrap().expect_simd();
+            self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+            let b = self.materialize_as_simd(ops, lp, b);
+            match (v.lane_bits, mult_type, v.class) {
+                (16, MultiplyType::Combined, _) => dynasm!(ops
+                    ; pmullw Rx(r_out), Rx(b.r())
+                ),
+                (16, MultiplyType::High, LaneClass::Signed) => dynasm!(ops
+                    ; pmulhw Rx(r_out), Rx(b.r())
+                ),
+                (16, MultiplyType::High, LaneClass::Unsigned) => dynasm!(ops
+                    ; pmulhuw Rx(r_out), Rx(b.r())
+                ),
+                _ => todo!("Multiply {:?} with type {}", mult_type, arg_tp),
+            }
+            return;
+        }
         match (result_tp, arg_tp, output_regs.len()) {
             (DataType::U32, DataType::U32, 2) => {
                 let edx = self.scratch_regs.reserve(reg_constants::RDX);

@@ -185,6 +185,9 @@ pub enum Constant {
     DataType(DataType),
     CompareType(CompareType),
     RoundingMode(RoundingMode),
+    MultiplyType(MultiplyType),
+    VectorHalf(VectorHalf),
+    PackType(PackType),
 }
 
 impl Constant {
@@ -216,9 +219,28 @@ impl Constant {
     }
 }
 
+/// Which half of each source vector [`InstructionType::VectorInterleave`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum VectorHalf {
+    Low,
+    High,
+}
+
+/// How [`InstructionType::VectorPack`] handles values outside the result lane's range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PackType {
+    /// Clamp to the result lane's minimum or maximum.
+    Saturating,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MultiplyType {
+    /// Return upper and lower bits in separate values
     Split,
+    /// Return one value with the result
     Combined,
+    /// Return only the upper bits
+    High,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -249,6 +271,10 @@ pub enum InstructionType {
     /// Ignores lane structure.
     VectorRightShiftBytes,
     VectorSwizzle,
+    /// Interleaves the lanes in one half of two vectors.
+    VectorInterleave,
+    /// Narrows two vectors to half width lanes.
+    VectorPack,
     Compare,
     LoadPtr,
     WritePtr,

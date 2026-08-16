@@ -72,6 +72,9 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::DataType(_) => unimplemented!("DataType is not supported"),
         Constant::CompareType(_) => unimplemented!("CompareType is not supported"),
         Constant::RoundingMode(_) => unimplemented!("RoundingMode is not supported"),
+        Constant::MultiplyType(_) => unimplemented!("MultiplyType is not supported"),
+        Constant::VectorHalf(_) => unimplemented!("VectorHalf is not supported"),
+        Constant::PackType(_) => unimplemented!("PackType is not supported"),
     }
 }
 
@@ -250,6 +253,8 @@ fn evaluate_instr(tp: &InstructionType, inputs: &Vec<Constant>, outputs: &Vec<Ou
         InstructionType::VectorLeftShiftBytes => todo!(),
         InstructionType::VectorRightShiftBytes => todo!(),
         InstructionType::VectorSwizzle => todo!(),
+        InstructionType::VectorInterleave => todo!(),
+        InstructionType::VectorPack => todo!(),
         InstructionType::Convert => todo!(),
         InstructionType::And => todo!(),
         InstructionType::Or => todo!(),
