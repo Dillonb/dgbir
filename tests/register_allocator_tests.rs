@@ -199,10 +199,7 @@ impl Spec {
             vals.push(v);
         }
         let call_result = entry
-            .call_function(
-                external_fn!(mix64(_)),
-                &[vals[self.call_arg]],
-            )
+            .call_function(external_fn!(mix64(_)), &[vals[self.call_arg]])
             .val();
         vals.push(call_result);
 
@@ -329,12 +326,7 @@ fn check_mixed_case(trips: u64, width: usize, x: u64, f0: f32) {
         }
 
         // acc_f is live across this call, so it must be preserved.
-        let acc_i = entry
-            .call_function(
-                external_fn!(mix64(_)),
-                &[acc_i],
-            )
-            .val();
+        let acc_i = entry.call_function(external_fn!(mix64(_)), &[acc_i]).val();
 
         let mut lp = func.new_block(vec![DataType::U64, DataType::U64, DataType::F32]);
         let mut exit = func.new_block(vec![DataType::U64, DataType::F32]);

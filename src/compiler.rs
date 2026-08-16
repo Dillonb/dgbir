@@ -22,8 +22,8 @@ use crate::reg_pool::{register_type, BorrowedReg, RegPool};
 use crate::register_allocator::RegisterIndex;
 use crate::{
     ir::{
-        BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction, InstructionType,
-        MultiplyType, PackType, VectorHalf, VectorType,
+        AddType, BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction,
+        InstructionType, MultiplyType, PackType, VectorHalf, VectorType,
     },
     register_allocator::{Register, RegisterAllocations, Value},
 };
@@ -194,11 +194,13 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
 
             match tp {
                 InstructionType::Add => {
+                    assert_eq!(inputs.len(), 3);
                     let a = compiler.to_imm_or_reg(&inputs[0]);
                     let b = compiler.to_imm_or_reg(&inputs[1]);
+                    let add_type = inputs[2].expect_constant_add_type();
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.add(ops, lp, tp, *r_out, a, b);
+                        compiler.add(ops, lp, tp, *r_out, a, b, add_type);
                     });
                 }
                 InstructionType::Compare => {
@@ -209,7 +211,7 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let cmp_type = inputs[2].expect_constant_cmp_type();
                     let b = compiler.to_imm_or_reg(&inputs[3]);
                     output_regs[0].iter().for_each(|r_out| {
-                        compiler.compare(ops, lp, r_out.expect_gpr(), data_type, a, cmp_type, b);
+                        compiler.compare(ops, lp, *r_out, data_type, a, cmp_type, b);
                     });
                 }
                 InstructionType::LoadPtr => {
@@ -541,6 +543,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::MultiplyType(_) => todo!(),
                 Constant::VectorHalf(_) => todo!(),
                 Constant::PackType(_) => todo!(),
+                Constant::AddType(_) => todo!(),
             },
             // _ => todo!("Unsupported input slot type: {:?}", s),
         }
@@ -781,13 +784,22 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
     fn ret(&self, ops: &mut Ops, lp: &mut LiteralPool, value: &Option<ConstOrReg>);
 
     /// Compile an IR add instruction
-    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg);
+    fn add(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        add_type: AddType,
+    );
     /// Compile an IR compare instruction
     fn compare(
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         data_type: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,

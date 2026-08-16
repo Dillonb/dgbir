@@ -6,8 +6,8 @@ use dgbir::{
     compiler::compile,
     disassembler::disassemble_function,
     ir::{
-        const_f32, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle,
-        IRContext, IRFunction, InputSlot, LaneClass, MultiplyType, PackType, VectorHalf, VectorType,
+        const_f32, const_s32, const_u32, const_u64, CompareType, Constant, DataType, IRBlockHandle, IRContext,
+        IRFunction, InputSlot, LaneClass, MultiplyType, PackType, VectorHalf, VectorType,
     },
     ir_interpreter::interpret_func,
 };
@@ -40,7 +40,7 @@ fn unclosed_block() {
 
 #[test]
 #[should_panic(
-    expected = "Instruction 'v3 : U32 = Add(v2, U32(1))' references a value from block b1 which may not be initialized."
+    expected = "Instruction 'v3 : U32 = Add(v2, U32(1), AddType(Wrapping))' references a value from block b1 which may not be initialized."
 )]
 fn use_value_from_non_dominator_block() {
     let context = IRContext::new();
@@ -922,7 +922,6 @@ fn simd_u128_spill() {
     assert!(simd_regs > 0, "Target has no SIMD registers to allocate");
     let count = simd_regs * 3;
 
-
     let values: Vec<u128> = (0..count)
         .map(|i| ((0xF00D_0000 + i as u128) << 64) | (0xBEEF_0000 + i as u128))
         .collect();
@@ -992,12 +991,7 @@ fn volatile_reg_live_across_call_in_later_block() {
     let b_ptr = block.input(0);
     let b_acc = block.input(1);
     let b_f = block.input(2);
-    let called = block
-        .call_function(
-            external_fn!(clobber(_)),
-            &[b_acc],
-        )
-        .val();
+    let called = block.call_function(external_fn!(clobber(_)), &[b_acc]).val();
     // b_f is live across the call above and dies right here.
     let f_sum = block.add(DataType::F32, b_f, const_f32(2.0)).val();
     let mut pad = called;
@@ -1102,11 +1096,7 @@ fn call_external_function_with_float_arguments() {
     let x = block.input(0);
     let a = block.input(1);
     // A constant argument has to be materialized into its argument register.
-    let result =
-        block.call_function(
-            external_fn!(combine(_, _, _)),
-            &[x, a, const_f32(0.5)],
-        );
+    let result = block.call_function(external_fn!(combine(_, _, _)), &[x, a, const_f32(0.5)]);
     block.ret(Some(result.val()));
 
     let compiled = compile(&func);
@@ -1213,8 +1203,8 @@ fn signed_32bit_compare_with_negative_values() {
 
     let mut index = 0;
     for (a, b) in CASES.iter() {
-        // Produced by an add so the value goes through the same zero extending path the RSP's
-        // `addi` does, rather than arriving as a constant.
+        // Produced by an add so the value goes through the same zero extending path a computed
+        // value does, rather than arriving as a constant.
         let a_reg = block.add(DataType::S32, const_s32(*a), const_s32(0)).val();
         let b_reg = block.add(DataType::S32, const_s32(*b), const_s32(0)).val();
         for (cmp, _) in CMPS.iter() {
@@ -1391,15 +1381,17 @@ fn vector_type_spill() {
 }
 
 fn swizzle_pattern(lanes: &[u8]) -> u64 {
-    lanes.iter().enumerate().fold(0u64, |acc, (i, l)| acc | ((*l as u64) << (4 * i)))
+    lanes
+        .iter()
+        .enumerate()
+        .fold(0u64, |acc, (i, l)| acc | ((*l as u64) << (4 * i)))
 }
 
-/// Lane swizzles, including every pattern the RSP's `get_vte` needs. Element order there is
-/// reversed relative to register lane order, so the patterns below are the C ones mirrored.
+/// Lane swizzles across a range of broadcast and pairwise patterns.
 #[test]
 fn vector_swizzle_lanes() {
-    // vte element selection for e = 0..15, in architectural element order.
-    let vte_elements: [[u8; 8]; 16] = [
+    // Written highest lane first, which is the reverse of the pattern nibble order.
+    let selections: [[u8; 8]; 16] = [
         [0, 1, 2, 3, 4, 5, 6, 7],
         [0, 1, 2, 3, 4, 5, 6, 7],
         [0, 0, 2, 2, 4, 4, 6, 6],
@@ -1418,8 +1410,7 @@ fn vector_swizzle_lanes() {
         [7; 8],
     ];
 
-    // Architectural element i lives in register lane 7 - i.
-    let patterns: Vec<u64> = vte_elements
+    let patterns: Vec<u64> = selections
         .iter()
         .map(|els| {
             let lanes: Vec<u8> = (0..8).map(|lane| 7 - els[7 - lane]).collect();
@@ -1427,7 +1418,7 @@ fn vector_swizzle_lanes() {
         })
         .collect();
 
-    // Architectural element i lives in register lane 7 - i, so this holds element i == i.
+    // Mirrored to match, so lane 7 - i holds i.
     let input: u128 = 0x0000_0001_0002_0003_0004_0005_0006_0007;
     let results: Vec<u128> = vec![0; patterns.len()];
 
@@ -1450,14 +1441,13 @@ fn vector_swizzle_lanes() {
 
     f(&input as *const u128 as usize, results.as_ptr() as usize);
 
-    // Element i of the input holds the value i, so the expected element values are the
-    // selection table itself.
-    let expected: Vec<u128> = vte_elements
+    // Each slot holds its own index, so the expected output is the selection table itself.
+    let expected: Vec<u128> = selections
         .iter()
         .map(|els| (0..8).fold(0u128, |acc, i| acc | ((els[i] as u128) << (16 * (7 - i)))))
         .collect();
     for (i, (got, want)) in results.iter().zip(expected.iter()).enumerate() {
-        assert_eq!(got, want, "e = {}: got {:#034x}, want {:#034x}", i, got, want);
+        assert_eq!(got, want, "pattern {}: got {:#034x}, want {:#034x}", i, got, want);
     }
 }
 
@@ -1498,6 +1488,72 @@ fn vector_swizzle_lane_widths() {
     assert_eq!(results[2], 0x0B0A0908_0B0A0908_0B0A0908_0B0A0908, "broadcast word 2");
 }
 
+/// Packed lane add, saturating add, subtract, and the equality masks. Together these detect a
+/// carry out of each lane, which is how a wider add is built from narrow ones.
+#[test]
+fn vector_lane_arithmetic() {
+    let a_lanes: [u16; 8] = [0x0000, 0x0001, 0x7FFF, 0x8000, 0xFFFF, 0x1234, 0xFFFE, 0xABCD];
+    let b_lanes: [u16; 8] = [0x0000, 0xFFFF, 0x0001, 0x8000, 0x0001, 0x1000, 0x0003, 0x0007];
+
+    let pack = |v: &[u16; 8]| {
+        v.iter()
+            .enumerate()
+            .fold(0u128, |acc, (i, l)| acc | ((*l as u128) << (16 * i)))
+    };
+    let a = pack(&a_lanes);
+    let b = pack(&b_lanes);
+    let results: Vec<u128> = vec![0; 6];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src = block.input(0);
+    let dst = block.input(1);
+
+    let va = block.load_ptr(DataType::VU16, src, 0).val();
+    let vb = block.load_ptr(DataType::VU16, src, size_of::<u128>()).val();
+
+    let sum = block.add(DataType::VU16, va, vb);
+    block.write_ptr(DataType::VU16, dst, 0, sum.val());
+    let usat = block.saturating_add(DataType::VU16, va, vb);
+    block.write_ptr(DataType::VU16, dst, size_of::<u128>(), usat.val());
+    let ssat = block.saturating_add(DataType::VS16, va, vb);
+    block.write_ptr(DataType::VS16, dst, 2 * size_of::<u128>(), ssat.val());
+    let diff = block.subtract(DataType::VU16, va, vb);
+    block.write_ptr(DataType::VU16, dst, 3 * size_of::<u128>(), diff.val());
+
+    // Unsigned saturation only kicks in when the wrapping sum carried out, so these two masks
+    // are the carry detector.
+    let eq = block.compare(DataType::VU16, sum.val(), CompareType::Equal, usat.val());
+    block.write_ptr(DataType::VU16, dst, 4 * size_of::<u128>(), eq.val());
+    let ne = block.compare(DataType::VU16, sum.val(), CompareType::NotEqual, usat.val());
+    block.write_ptr(DataType::VU16, dst, 5 * size_of::<u128>(), ne.val());
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    let src_buf = [a, b];
+    f(src_buf.as_ptr() as usize, results.as_ptr() as usize);
+
+    let expect = |g: &dyn Fn(u16, u16) -> u16| {
+        (0..8).fold(0u128, |acc, i| acc | ((g(a_lanes[i], b_lanes[i]) as u128) << (16 * i)))
+    };
+    let carried = |x: u16, y: u16| (x as u32) + (y as u32) > 0xFFFF;
+    validate(
+        &results,
+        &[
+            expect(&|x, y| x.wrapping_add(y)),
+            expect(&|x, y| x.saturating_add(y)),
+            expect(&|x, y| (x as i16).saturating_add(y as i16) as u16),
+            expect(&|x, y| x.wrapping_sub(y)),
+            expect(&|x, y| if carried(x, y) { 0 } else { 0xFFFF }),
+            expect(&|x, y| if carried(x, y) { 0xFFFF } else { 0 }),
+        ],
+    );
+}
+
 /// Packed 16 bit lane multiplies. `Combined` keeps the low half of each product, `High` the
 /// upper half, with the lane class deciding whether the high half is signed or unsigned.
 #[test]
@@ -1505,7 +1561,11 @@ fn vector_multiply_lanes() {
     let lanes: [u16; 8] = [0x0000, 0x0001, 0x7FFF, 0x8000, 0xFFFF, 0x1234, 0x00FF, 0xABCD];
     let b_lanes: [u16; 8] = [0x0003, 0xFFFF, 0x0002, 0x8000, 0xFFFF, 0x1000, 0x0100, 0x0007];
 
-    let pack = |v: &[u16; 8]| v.iter().enumerate().fold(0u128, |acc, (i, l)| acc | ((*l as u128) << (16 * i)));
+    let pack = |v: &[u16; 8]| {
+        v.iter()
+            .enumerate()
+            .fold(0u128, |acc, (i, l)| acc | ((*l as u128) << (16 * i)))
+    };
     let a = pack(&lanes);
     let b = pack(&b_lanes);
     let results: Vec<u128> = vec![0; 3];
@@ -1625,9 +1685,7 @@ fn vector_interleave_lane_widths() {
 #[test]
 fn vector_interleave_and_pack() {
     let values: [i32; 8] = [0, 1, -1, 32767, -32768, 40000, -40000, 0x7FFFFFFF];
-    let pack = |g: &dyn Fn(i32) -> u16| {
-        (0..8).fold(0u128, |acc, i| acc | ((g(values[i]) as u128) << (16 * i)))
-    };
+    let pack = |g: &dyn Fn(i32) -> u16| (0..8).fold(0u128, |acc, i| acc | ((g(values[i]) as u128) << (16 * i)));
     let low = pack(&|v| v as u16);
     let high = pack(&|v| (v >> 16) as u16);
     let results: Vec<u128> = vec![0; 2];
@@ -1663,4 +1721,3 @@ fn vector_interleave_and_pack() {
         ],
     );
 }
-

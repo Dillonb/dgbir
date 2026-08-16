@@ -16,7 +16,30 @@ impl IRBlockHandle {
     }
 
     pub fn add(&self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::Add, vec![arg1, arg2], vec![OutputSlot { tp: result_tp }])
+        self.add_with_type(result_tp, AddType::Wrapping, arg1, arg2)
+    }
+
+    pub fn saturating_add(&self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
+        assert!(
+            matches!(result_tp, DataType::Vector(_)),
+            "TODO: Saturating add is only supported on vector types, got {}",
+            result_tp
+        );
+        self.add_with_type(result_tp, AddType::Saturating, arg1, arg2)
+    }
+
+    fn add_with_type(
+        &self,
+        result_tp: DataType,
+        add_type: AddType,
+        arg1: InputSlot,
+        arg2: InputSlot,
+    ) -> InstructionOutput {
+        self.append(
+            InstructionType::Add,
+            vec![arg1, arg2, Constant::AddType(add_type).into_inputslot()],
+            vec![OutputSlot { tp: result_tp }],
+        )
     }
 
     pub fn left_shift(&mut self, result_tp: DataType, arg1: InputSlot, arg2: InputSlot) -> InstructionOutput {
@@ -110,7 +133,12 @@ impl IRBlockHandle {
         )
     }
 
+    /// On vector types the result is a per-lane mask, all ones = true in that lane, all zeroes = false in that lane
     pub fn compare(&mut self, dtp: DataType, x: InputSlot, ctp: CompareType, y: InputSlot) -> InstructionOutput {
+        let result_tp = match dtp {
+            DataType::Vector(_) => dtp,
+            _ => DataType::Bool,
+        };
         self.append(
             InstructionType::Compare,
             vec![
@@ -119,7 +147,7 @@ impl IRBlockHandle {
                 InputSlot::Constant(Constant::CompareType(ctp)),
                 y,
             ],
-            vec![OutputSlot { tp: DataType::Bool }],
+            vec![OutputSlot { tp: result_tp }],
         )
     }
 

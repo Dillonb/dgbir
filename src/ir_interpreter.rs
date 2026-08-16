@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use ordered_float::OrderedFloat;
 
 use crate::ir::{
-    BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction, InstructionType, OutputSlot,
+    AddType, BlockReference, CompareType, Constant, DataType, IRFunction, InputSlot, Instruction, InstructionType,
+    OutputSlot,
 };
 
 /// Used to simplify code around integer math when width is not as important.
@@ -75,6 +76,7 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::MultiplyType(_) => unimplemented!("MultiplyType is not supported"),
         Constant::VectorHalf(_) => unimplemented!("VectorHalf is not supported"),
         Constant::PackType(_) => unimplemented!("PackType is not supported"),
+        Constant::AddType(_) => unimplemented!("AddType is not supported"),
     }
 }
 
@@ -121,8 +123,15 @@ fn jump_to(
 }
 
 fn evaluate_add(inputs: &Vec<Constant>, outputs: &Vec<OutputSlot>) -> Constant {
+    if inputs
+        .iter()
+        .any(|val| matches!(val, Constant::AddType(AddType::Saturating)))
+    {
+        todo!("Saturating add in IR interpreter");
+    }
     let result = inputs
         .into_iter()
+        .filter(|val| !matches!(val, Constant::AddType(_)))
         .map(|val| constant_to_mini_constant(&val))
         .reduce(|acc, val| match (acc, val) {
             // Pure integer addition

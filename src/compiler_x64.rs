@@ -3,7 +3,10 @@ use std::{collections::BTreeMap, marker::PhantomData};
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType, PackType, VectorHalf},
+    ir::{
+        AddType, BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType,
+        PackType, VectorHalf,
+    },
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
@@ -421,8 +424,40 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         );
     }
 
-    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+    fn add(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        add_type: AddType,
+    ) {
         match (tp, r_out) {
+            (DataType::Vector(v), Register::SIMD(r_out)) => {
+                self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                let b = self.materialize_as_simd(ops, lp, b);
+                match (add_type, v.lane_bits, v.class) {
+                    (AddType::Wrapping, 8, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; paddb Rx(r_out), Rx(b.r()))
+                    }
+                    (AddType::Wrapping, 16, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; paddw Rx(r_out), Rx(b.r()))
+                    }
+                    (AddType::Wrapping, 32, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; paddd Rx(r_out), Rx(b.r()))
+                    }
+                    (AddType::Wrapping, 64, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; paddq Rx(r_out), Rx(b.r()))
+                    }
+                    (AddType::Saturating, 8, LaneClass::Signed) => dynasm!(ops ; paddsb Rx(r_out), Rx(b.r())),
+                    (AddType::Saturating, 8, LaneClass::Unsigned) => dynasm!(ops ; paddusb Rx(r_out), Rx(b.r())),
+                    (AddType::Saturating, 16, LaneClass::Signed) => dynasm!(ops ; paddsw Rx(r_out), Rx(b.r())),
+                    (AddType::Saturating, 16, LaneClass::Unsigned) => dynasm!(ops ; paddusw Rx(r_out), Rx(b.r())),
+                    _ => todo!("Unsupported Add operation: {:?} with type {}", add_type, tp),
+                }
+            }
             (DataType::U16 | DataType::S16, Register::GPR(r_out)) => {
                 self.move_to_reg(ops, lp, a, Register::GPR(r_out));
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -467,114 +502,144 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         tp: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
         b: ConstOrReg,
     ) {
-        // First, zero the output register
-        dynasm!(ops
-            ; xor Rd(r_out), Rd(r_out)
-        );
-
-        // Consider floats to be unsigned for the purposes of comparison here
-        // comiss doesn't set the flags needed by the signed setCC instructions
-        let is_float = tp.is_float();
-        let signed = tp.is_signed() && !is_float;
-
         match tp {
-            DataType::Bool
-            | DataType::U8
-            | DataType::S8
-            | DataType::U16
-            | DataType::S16
-            | DataType::U32
-            | DataType::S32
-            | DataType::U64
-            | DataType::S64
-            | DataType::Ptr => {
-                if matches!(tp, DataType::Bool) {
-                    assert!(matches!(cmp_type, CompareType::Equal | CompareType::NotEqual));
+            // Lane compares produce a mask rather than a boolean, so they share nothing with the
+            // flags and setcc sequence the scalar types use.
+            DataType::Vector(v) => {
+                let r_out = r_out.expect_simd();
+                self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                let b = self.materialize_as_simd(ops, lp, b);
+                match (v.lane_bits, v.class) {
+                    (8, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; pcmpeqb Rx(r_out), Rx(b.r())),
+                    (16, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; pcmpeqw Rx(r_out), Rx(b.r())),
+                    (32, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; pcmpeqd Rx(r_out), Rx(b.r())),
+                    (64, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; pcmpeqq Rx(r_out), Rx(b.r())),
+                    _ => todo!("Unsupported Compare operation with type {}", tp),
                 }
-                let a = self.materialize_as_gpr(ops, lp, a);
-                let a = extend_as_comparable_gpr(ops, &self.scratch_regs, a.r(), tp);
-                let b = self.materialize_as_gpr(ops, lp, b);
-                let b = extend_as_comparable_gpr(ops, &self.scratch_regs, b.r(), tp);
-                dynasm!(ops
-                    ; cmp Rq(a.r()), Rq(b.r())
-                );
+                match cmp_type {
+                    CompareType::Equal => {}
+                    CompareType::NotEqual => {
+                        let r_ones = self.scratch_regs.borrow::<register_type::SIMD>();
+                        dynasm!(ops
+                            ; pcmpeqd Rx(r_ones.r()), Rx(r_ones.r())
+                            ; pxor Rx(r_out), Rx(r_ones.r())
+                        );
+                    }
+                    _ => todo!("Unsupported Compare operation: {:?} with type {}", cmp_type, tp),
+                }
             }
-            DataType::U128 => todo!("Compare with 128-bit integer type"),
-            DataType::S128 => todo!("Compare with 128-bit signed integer type"),
-            DataType::F32 => {
-                let a = self.materialize_as_simd(ops, lp, a);
-                let b = self.materialize_as_simd(ops, lp, b);
+            _ => {
+                let r_out = r_out.expect_gpr();
+                // First, zero the output register
                 dynasm!(ops
-                    ; comiss Rx(a.r()), Rx(b.r())
+                    ; xor Rd(r_out), Rd(r_out)
                 );
-            }
-            DataType::F64 => {
-                let a = self.materialize_as_simd(ops, lp, a);
-                let b = self.materialize_as_simd(ops, lp, b);
-                dynasm!(ops
-                    ; comisd Rx(a.r()), Rx(b.r())
-                );
-            }
-            DataType::Vector(v) => todo!("Compare with vector type {} - vector compares are per-lane, perhaps we need a different instruction for clarity?", v),
-        }
 
-        match (signed, cmp_type) {
-            (false, CompareType::LessThan) => {
-                dynasm!(ops
-                    ; setb Rb(r_out)
-                );
-            }
-            (_, CompareType::Equal) => {
-                dynasm!(ops
-                    ; sete Rb(r_out)
-                );
-            }
-            (_, CompareType::NotEqual) => {
-                dynasm!(ops
-                    ; setne Rb(r_out)
-                );
-            }
-            (true, CompareType::LessThan) => {
-                dynasm!(ops
-                    ; setl Rb(r_out)
-                )
-            }
-            (true, CompareType::GreaterThan) => {
-                dynasm!(ops
-                    ; setg Rb(r_out)
-                );
-            }
-            (true, CompareType::LessThanOrEqual) => {
-                dynasm!(ops
-                    ; setle Rb(r_out)
-                );
-            }
-            (true, CompareType::GreaterThanOrEqual) => {
-                dynasm!(ops
-                    ; setge Rb(r_out)
-                );
-            }
+                // Consider floats to be unsigned for the purposes of comparison here
+                // comiss doesn't set the flags needed by the signed setCC instructions
+                let is_float = tp.is_float();
+                let signed = tp.is_signed() && !is_float;
 
-            (false, CompareType::GreaterThan) => {
-                dynasm!(ops
-                    ; seta Rb(r_out)
-                );
-            }
-            (false, CompareType::LessThanOrEqual) => {
-                dynasm!(ops
-                    ; setbe Rb(r_out)
-                );
-            }
-            (false, CompareType::GreaterThanOrEqual) => {
-                dynasm!(ops
-                    ; setae Rb(r_out)
-                );
+                match tp {
+                    DataType::Bool
+                    | DataType::U8
+                    | DataType::S8
+                    | DataType::U16
+                    | DataType::S16
+                    | DataType::U32
+                    | DataType::S32
+                    | DataType::U64
+                    | DataType::S64
+                    | DataType::Ptr => {
+                        if matches!(tp, DataType::Bool) {
+                            assert!(matches!(cmp_type, CompareType::Equal | CompareType::NotEqual));
+                        }
+                        let a = self.materialize_as_gpr(ops, lp, a);
+                        let a = extend_as_comparable_gpr(ops, &self.scratch_regs, a.r(), tp);
+                        let b = self.materialize_as_gpr(ops, lp, b);
+                        let b = extend_as_comparable_gpr(ops, &self.scratch_regs, b.r(), tp);
+                        dynasm!(ops
+                            ; cmp Rq(a.r()), Rq(b.r())
+                        );
+                    }
+                    DataType::U128 => todo!("Compare with 128-bit integer type"),
+                    DataType::S128 => todo!("Compare with 128-bit signed integer type"),
+                    DataType::F32 => {
+                        let a = self.materialize_as_simd(ops, lp, a);
+                        let b = self.materialize_as_simd(ops, lp, b);
+                        dynasm!(ops
+                            ; comiss Rx(a.r()), Rx(b.r())
+                        );
+                    }
+                    DataType::F64 => {
+                        let a = self.materialize_as_simd(ops, lp, a);
+                        let b = self.materialize_as_simd(ops, lp, b);
+                        dynasm!(ops
+                            ; comisd Rx(a.r()), Rx(b.r())
+                        );
+                    }
+                    DataType::Vector(v) => unreachable!("Vector compare handled by the outer match: {}", v),
+                }
+
+                match (signed, cmp_type) {
+                    (false, CompareType::LessThan) => {
+                        dynasm!(ops
+                            ; setb Rb(r_out)
+                        );
+                    }
+                    (_, CompareType::Equal) => {
+                        dynasm!(ops
+                            ; sete Rb(r_out)
+                        );
+                    }
+                    (_, CompareType::NotEqual) => {
+                        dynasm!(ops
+                            ; setne Rb(r_out)
+                        );
+                    }
+                    (true, CompareType::LessThan) => {
+                        dynasm!(ops
+                            ; setl Rb(r_out)
+                        )
+                    }
+                    (true, CompareType::GreaterThan) => {
+                        dynasm!(ops
+                            ; setg Rb(r_out)
+                        );
+                    }
+                    (true, CompareType::LessThanOrEqual) => {
+                        dynasm!(ops
+                            ; setle Rb(r_out)
+                        );
+                    }
+                    (true, CompareType::GreaterThanOrEqual) => {
+                        dynasm!(ops
+                            ; setge Rb(r_out)
+                        );
+                    }
+
+                    (false, CompareType::GreaterThan) => {
+                        dynasm!(ops
+                            ; seta Rb(r_out)
+                        );
+                    }
+                    (false, CompareType::LessThanOrEqual) => {
+                        dynasm!(ops
+                            ; setbe Rb(r_out)
+                        );
+                    }
+                    (false, CompareType::GreaterThanOrEqual) => {
+                        dynasm!(ops
+                            ; setae Rb(r_out)
+                        );
+                    }
+                }
             }
         }
     }
@@ -1308,6 +1373,25 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         subtrahend: ConstOrReg,
     ) {
         match (tp, r_out) {
+            (DataType::Vector(v), Register::SIMD(r_out)) => {
+                self.move_to_reg(ops, lp, minuend, Register::SIMD(r_out));
+                let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
+                match (v.lane_bits, v.class) {
+                    (8, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; psubb Rx(r_out), Rx(subtrahend.r()))
+                    }
+                    (16, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; psubw Rx(r_out), Rx(subtrahend.r()))
+                    }
+                    (32, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; psubd Rx(r_out), Rx(subtrahend.r()))
+                    }
+                    (64, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; psubq Rx(r_out), Rx(subtrahend.r()))
+                    }
+                    _ => todo!("Unsupported Subtract operation with type {}", tp),
+                }
+            }
             (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
                 let minuend = self.materialize_as_gpr(ops, lp, minuend);
                 let subtrahend = self.materialize_as_gpr(ops, lp, subtrahend);
@@ -1356,26 +1440,25 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         a: ConstOrReg,
         b: ConstOrReg,
     ) {
-        // Packed lane multiplies, where the low and high halves are separate instructions.
-        if let DataType::Vector(v) = arg_tp {
-            let r_out = output_regs[0].unwrap().expect_simd();
-            self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
-            let b = self.materialize_as_simd(ops, lp, b);
-            match (v.lane_bits, mult_type, v.class) {
-                (16, MultiplyType::Combined, _) => dynasm!(ops
-                    ; pmullw Rx(r_out), Rx(b.r())
-                ),
-                (16, MultiplyType::High, LaneClass::Signed) => dynasm!(ops
-                    ; pmulhw Rx(r_out), Rx(b.r())
-                ),
-                (16, MultiplyType::High, LaneClass::Unsigned) => dynasm!(ops
-                    ; pmulhuw Rx(r_out), Rx(b.r())
-                ),
-                _ => todo!("Multiply {:?} with type {}", mult_type, arg_tp),
-            }
-            return;
-        }
         match (result_tp, arg_tp, output_regs.len()) {
+            // Packed lane multiplies, where the low and high halves are separate instructions.
+            (_, DataType::Vector(v), _) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                let b = self.materialize_as_simd(ops, lp, b);
+                match (v.lane_bits, mult_type, v.class) {
+                    (16, MultiplyType::Combined, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops
+                        ; pmullw Rx(r_out), Rx(b.r())
+                    ),
+                    (16, MultiplyType::High, LaneClass::Signed) => dynasm!(ops
+                        ; pmulhw Rx(r_out), Rx(b.r())
+                    ),
+                    (16, MultiplyType::High, LaneClass::Unsigned) => dynasm!(ops
+                        ; pmulhuw Rx(r_out), Rx(b.r())
+                    ),
+                    _ => todo!("Unsupported Multiply operation: {:?} with type {}", mult_type, arg_tp),
+                }
+            }
             (DataType::U32, DataType::U32, 2) => {
                 let edx = self.scratch_regs.reserve(reg_constants::RDX);
                 let eax = self.scratch_regs.reserve(reg_constants::RAX);
@@ -1696,7 +1779,10 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
 
         // TODO: rework this so that the output of this is used as the input to `move_regs_multi`
         // so I don't have to mark this as unused with the underscore.
-        let _reservations = moves.values().map(|r| self.scratch_regs.reserve(*r)).collect::<Vec<_>>();
+        let _reservations = moves
+            .values()
+            .map(|r| self.scratch_regs.reserve(*r))
+            .collect::<Vec<_>>();
 
         self.move_regs_multi(ops, lp, moves);
 

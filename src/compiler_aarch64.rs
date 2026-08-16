@@ -3,7 +3,10 @@ use std::{collections::BTreeMap, iter, marker::PhantomData};
 use crate::{
     abi::{assign_argument_registers, get_return_value_registers, get_scratch_registers, reg_constants},
     compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
-    ir::{BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType, PackType, VectorHalf},
+    ir::{
+        AddType, BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType,
+        PackType, VectorHalf,
+    },
     reg_pool::{register_type, BorrowedReg, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
 };
@@ -159,30 +162,29 @@ fn byte_shift_128<Ops: GenericAssembler<Aarch64Relocation>>(
 ) {
     if let Some(bytes) = bytes.to_u64_const() {
         let bytes = bytes as u32;
-        if bytes == 0 {
-            return;
-        }
-        if bytes >= 16 {
-            dynasm!(ops
+        match bytes {
+            0 => {}
+            16.. => dynasm!(ops
                 ; eor V(r_out).B16, V(r_out).B16, V(r_out).B16
-            );
-            return;
-        }
-        let r_zero = scratch_regs.borrow::<register_type::SIMD>();
-        dynasm!(ops
-            ; eor V(r_zero.r()).B16, V(r_zero.r()).B16, V(r_zero.r()).B16
-        );
-        if left {
-            // ext takes a 16 byte window of r_zero:r_out starting at 16 - bytes, which is the value
-            // with `bytes` zero bytes shifted into the bottom.
-            let index = 16 - bytes;
-            dynasm!(ops
-                ; ext V(r_out).B16, V(r_zero.r()).B16, V(r_out).B16, index
-            );
-        } else {
-            dynasm!(ops
-                ; ext V(r_out).B16, V(r_out).B16, V(r_zero.r()).B16, bytes
-            );
+            ),
+            _ => {
+                let r_zero = scratch_regs.borrow::<register_type::SIMD>();
+                dynasm!(ops
+                    ; eor V(r_zero.r()).B16, V(r_zero.r()).B16, V(r_zero.r()).B16
+                );
+                if left {
+                    // ext takes a 16 byte window of r_zero:r_out starting at 16 - bytes, which is
+                    // the value with `bytes` zero bytes shifted into the bottom.
+                    let index = 16 - bytes;
+                    dynasm!(ops
+                        ; ext V(r_out).B16, V(r_zero.r()).B16, V(r_out).B16, index
+                    );
+                } else {
+                    dynasm!(ops
+                        ; ext V(r_out).B16, V(r_out).B16, V(r_zero.r()).B16, bytes
+                    );
+                }
+            }
         }
     } else if let Some(Register::GPR(r_bytes)) = bytes.to_reg() {
         variable_byte_shift_128(ops, lp, scratch_regs, r_out, r_bytes, left);
@@ -536,8 +538,48 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         );
     }
 
-    fn add(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg, b: ConstOrReg) {
+    fn add(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: DataType,
+        r_out: Register,
+        a: ConstOrReg,
+        b: ConstOrReg,
+        add_type: AddType,
+    ) {
         match (tp, r_out) {
+            (DataType::Vector(v), Register::SIMD(r_out)) => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                match (add_type, v.lane_bits, v.class) {
+                    (AddType::Wrapping, 8, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; add V(r_out).B16, V(a.r()).B16, V(b.r()).B16)
+                    }
+                    (AddType::Wrapping, 16, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; add V(r_out).H8, V(a.r()).H8, V(b.r()).H8)
+                    }
+                    (AddType::Wrapping, 32, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; add V(r_out).S4, V(a.r()).S4, V(b.r()).S4)
+                    }
+                    (AddType::Wrapping, 64, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; add V(r_out).D2, V(a.r()).D2, V(b.r()).D2)
+                    }
+                    (AddType::Saturating, 8, LaneClass::Signed) => {
+                        dynasm!(ops ; sqadd V(r_out).B16, V(a.r()).B16, V(b.r()).B16)
+                    }
+                    (AddType::Saturating, 8, LaneClass::Unsigned) => {
+                        dynasm!(ops ; uqadd V(r_out).B16, V(a.r()).B16, V(b.r()).B16)
+                    }
+                    (AddType::Saturating, 16, LaneClass::Signed) => {
+                        dynasm!(ops ; sqadd V(r_out).H8, V(a.r()).H8, V(b.r()).H8)
+                    }
+                    (AddType::Saturating, 16, LaneClass::Unsigned) => {
+                        dynasm!(ops ; uqadd V(r_out).H8, V(a.r()).H8, V(b.r()).H8)
+                    }
+                    _ => todo!("Unsupported Add operation: {:?} with type {}", add_type, tp),
+                }
+            }
             (DataType::U16 | DataType::S16, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
@@ -581,7 +623,7 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         &self,
         ops: &mut Ops,
         lp: &mut LiteralPool,
-        r_out: RegisterIndex,
+        r_out: Register,
         data_type: DataType,
         a: ConstOrReg,
         cmp_type: CompareType,
@@ -651,35 +693,56 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
 
         let signed = data_type.is_signed();
 
-        if data_type.is_integer() {
-            let a = self.materialize_as_gpr(ops, lp, a);
-            let a = extend_as_comparable_gpr(ops, &self.scratch_regs, a.r(), data_type);
-            let b = self.materialize_as_gpr(ops, lp, b);
-            let b = extend_as_comparable_gpr(ops, &self.scratch_regs, b.r(), data_type);
-            dynasm!(ops
-                ; cmp X(a.r()), X(b.r())
-            );
-            set_reg_by_flags(ops, signed, cmp_type, r_out);
-        } else if data_type.is_float() {
-            let signed = true; // Floats are always signed
-            let a = self.materialize_as_simd(ops, lp, a);
-            let b = self.materialize_as_simd(ops, lp, b);
-            match data_type {
-                DataType::F32 => {
-                    dynasm!(ops
-                        ; fcmp S(a.r()), S(b.r())
-                    );
+        match data_type {
+            // Vector types report as integers, so this arm has to come before the guard below.
+            DataType::Vector(v) => {
+                let r_out = r_out.expect_simd();
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                match (v.lane_bits, v.class) {
+                    (8, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; cmeq V(r_out).B16, V(a.r()).B16, V(b.r()).B16)
+                    }
+                    (16, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; cmeq V(r_out).H8, V(a.r()).H8, V(b.r()).H8)
+                    }
+                    (32, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; cmeq V(r_out).S4, V(a.r()).S4, V(b.r()).S4)
+                    }
+                    (64, LaneClass::Signed | LaneClass::Unsigned) => {
+                        dynasm!(ops ; cmeq V(r_out).D2, V(a.r()).D2, V(b.r()).D2)
+                    }
+                    _ => todo!("Unsupported Compare operation with data type {}", data_type),
                 }
-                DataType::F64 => {
-                    dynasm!(ops
-                        ; fcmp D(a.r()), D(b.r())
-                    );
+                match cmp_type {
+                    CompareType::Equal => {}
+                    CompareType::NotEqual => dynasm!(ops ; mvn V(r_out).B16, V(r_out).B16),
+                    _ => todo!("Unsupported Compare operation: {:?} with data type {}", cmp_type, data_type),
                 }
-                _ => todo!("Unsupported float Compare operation with data type {:?}", data_type),
             }
-            set_reg_by_flags(ops, signed, cmp_type, r_out);
-        } else {
-            todo!("Unsupported Compare operation with data type: {:?}", data_type);
+            tp if tp.is_integer() => {
+                let r_out = r_out.expect_gpr();
+                let a = self.materialize_as_gpr(ops, lp, a);
+                let a = extend_as_comparable_gpr(ops, &self.scratch_regs, a.r(), data_type);
+                let b = self.materialize_as_gpr(ops, lp, b);
+                let b = extend_as_comparable_gpr(ops, &self.scratch_regs, b.r(), data_type);
+                dynasm!(ops
+                    ; cmp X(a.r()), X(b.r())
+                );
+                set_reg_by_flags(ops, signed, cmp_type, r_out);
+            }
+            DataType::F32 | DataType::F64 => {
+                let r_out = r_out.expect_gpr();
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                match data_type {
+                    DataType::F32 => dynasm!(ops ; fcmp S(a.r()), S(b.r())),
+                    _ => dynasm!(ops ; fcmp D(a.r()), D(b.r())),
+                }
+                // Floats are always signed
+                set_reg_by_flags(ops, true, cmp_type, r_out);
+            }
+            _ => todo!("Unsupported Compare operation with data type: {:?}", data_type),
         }
     }
 
@@ -1415,35 +1478,33 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
     }
 
     fn not(&self, ops: &mut Ops, lp: &mut LiteralPool, tp: DataType, r_out: Register, a: ConstOrReg) {
-        if tp.size() == 16 {
-            let a = self.materialize_as_simd(ops, lp, a);
-            dynasm!(ops
-                ; mvn V(r_out.expect_simd()).B16, V(a.r()).B16
-            );
-            return;
-        }
-        let r_out = r_out.expect_gpr();
-        match tp {
-            DataType::U32 => {
+        match (tp, r_out) {
+            (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                dynasm!(ops
+                    ; mvn V(r_out).B16, V(a.r()).B16
+                );
+            }
+            (DataType::U32, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
                     ; mvn W(r_out), W(a.r())
                 );
             }
-            DataType::U64 => {
+            (DataType::U64, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
                     ; mvn X(r_out), X(a.r())
                 );
             }
-            DataType::Bool => {
+            (DataType::Bool, Register::GPR(r_out)) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 dynasm!(ops
                     ; cmp XSP(a.r()), 0
                     ; cset X(r_out), eq
                 )
             }
-            _ => todo!("Unsupported (non-const) NOT operation: GPR({}) : {} = !{:?}", r_out, tp, a),
+            _ => todo!("Unsupported (non-const) NOT operation: {:?} : {} = !{:?}", r_out, tp, a),
         }
     }
 
@@ -1503,9 +1564,27 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     subtrahend
                 ),
             }
-            return;
         } else {
             match (tp, r_out) {
+                (DataType::Vector(v), Register::SIMD(r_out)) => {
+                    let minuend = self.materialize_as_simd(ops, lp, minuend);
+                    let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
+                    match (v.lane_bits, v.class) {
+                        (8, LaneClass::Signed | LaneClass::Unsigned) => {
+                            dynasm!(ops ; sub V(r_out).B16, V(minuend.r()).B16, V(subtrahend.r()).B16)
+                        }
+                        (16, LaneClass::Signed | LaneClass::Unsigned) => {
+                            dynasm!(ops ; sub V(r_out).H8, V(minuend.r()).H8, V(subtrahend.r()).H8)
+                        }
+                        (32, LaneClass::Signed | LaneClass::Unsigned) => {
+                            dynasm!(ops ; sub V(r_out).S4, V(minuend.r()).S4, V(subtrahend.r()).S4)
+                        }
+                        (64, LaneClass::Signed | LaneClass::Unsigned) => {
+                            dynasm!(ops ; sub V(r_out).D2, V(minuend.r()).D2, V(subtrahend.r()).D2)
+                        }
+                        _ => todo!("Unsupported Sub operation with type {}", tp),
+                    }
+                }
                 (DataType::U32 | DataType::S32, Register::GPR(r_out)) => {
                     let minuend = self.materialize_as_gpr(ops, lp, minuend);
                     let subtrahend = self.materialize_as_gpr(ops, lp, subtrahend);
@@ -1550,39 +1629,38 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         a: ConstOrReg,
         b: ConstOrReg,
     ) {
-        // Packed lane multiplies. NEON has no 16x16 high multiply, so the high half is built from
-        // widening multiplies of each half and then discarding the low halves of the products.
-        if let DataType::Vector(v) = arg_tp {
-            let r_out = output_regs[0].unwrap().expect_simd();
-            let a = self.materialize_as_simd(ops, lp, a);
-            let b = self.materialize_as_simd(ops, lp, b);
-            match (v.lane_bits, mult_type, v.class) {
-                (16, MultiplyType::Combined, _) => dynasm!(ops
-                    ; mul V(r_out).H8, V(a.r()).H8, V(b.r()).H8
-                ),
-                (16, MultiplyType::High, class @ (LaneClass::Signed | LaneClass::Unsigned)) => {
-                    let lo = self.scratch_regs.borrow::<register_type::SIMD>();
-                    let hi = self.scratch_regs.borrow::<register_type::SIMD>();
-                    match class {
-                        LaneClass::Signed => dynasm!(ops
-                            ; smull V(lo.r()).S4, V(a.r()).H4, V(b.r()).H4
-                            ; smull2 V(hi.r()).S4, V(a.r()).H8, V(b.r()).H8
-                        ),
-                        _ => dynasm!(ops
-                            ; umull V(lo.r()).S4, V(a.r()).H4, V(b.r()).H4
-                            ; umull2 V(hi.r()).S4, V(a.r()).H8, V(b.r()).H8
-                        ),
-                    }
-                    // The odd numbered halfwords of a 32 bit product are its high half.
-                    dynasm!(ops
-                        ; uzp2 V(r_out).H8, V(lo.r()).H8, V(hi.r()).H8
-                    );
-                }
-                _ => todo!("Multiply {:?} with type {}", mult_type, arg_tp),
-            }
-            return;
-        }
         match (result_tp, arg_tp, output_regs.len()) {
+            // Packed lane multiplies. NEON has no 16x16 high multiply, so the high half is built
+            // from widening multiplies of each half and then discarding the low halves.
+            (_, DataType::Vector(v), _) => {
+                let r_out = output_regs[0].unwrap().expect_simd();
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                match (v.lane_bits, mult_type, v.class) {
+                    (16, MultiplyType::Combined, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops
+                        ; mul V(r_out).H8, V(a.r()).H8, V(b.r()).H8
+                    ),
+                    (16, MultiplyType::High, class @ (LaneClass::Signed | LaneClass::Unsigned)) => {
+                        let lo = self.scratch_regs.borrow::<register_type::SIMD>();
+                        let hi = self.scratch_regs.borrow::<register_type::SIMD>();
+                        match class {
+                            LaneClass::Signed => dynasm!(ops
+                                ; smull V(lo.r()).S4, V(a.r()).H4, V(b.r()).H4
+                                ; smull2 V(hi.r()).S4, V(a.r()).H8, V(b.r()).H8
+                            ),
+                            _ => dynasm!(ops
+                                ; umull V(lo.r()).S4, V(a.r()).H4, V(b.r()).H4
+                                ; umull2 V(hi.r()).S4, V(a.r()).H8, V(b.r()).H8
+                            ),
+                        }
+                        // The odd numbered halfwords of a 32 bit product are its high half.
+                        dynasm!(ops
+                            ; uzp2 V(r_out).H8, V(lo.r()).H8, V(hi.r()).H8
+                        );
+                    }
+                    _ => todo!("Unsupported Multiply operation: {:?} with type {}", mult_type, arg_tp),
+                }
+            }
             (DataType::U32, DataType::U32, 2) => {
                 let a = self.materialize_as_gpr(ops, lp, a);
                 let b = self.materialize_as_gpr(ops, lp, b);
