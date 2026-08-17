@@ -1457,6 +1457,10 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; mov W(r_out), W(input.r())
                 );
             }
+            // Narrowing a 128 bit value to a scalar keeps its low 8 bytes.
+            (Register::GPR(r_out), DataType::U64 | DataType::S64, from) if from.size() == 16 => {
+                self.move_to_reg(ops, lp, input, Register::GPR(r_out));
+            }
             _ => todo!("Unsupported convert operation: {:?} -> {:?} types {} -> {}", input, r_out, from_tp, to_tp),
         }
     }
