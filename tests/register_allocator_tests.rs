@@ -109,7 +109,7 @@ struct Spec {
 impl Spec {
     fn generate(seed: u64, n_carried: usize, prologue_len: usize, body_len: usize, loop_trips: u64) -> Spec {
         let mut rng = Rng(seed | 1);
-        let mut mk_steps = |len: usize, base: usize, rng: &mut Rng| -> Vec<Step> {
+        let mk_steps = |len: usize, base: usize, rng: &mut Rng| -> Vec<Step> {
             (0..len)
                 .map(|i| {
                     let n_available = base + i;
