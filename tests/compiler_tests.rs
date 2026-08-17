@@ -1488,6 +1488,66 @@ fn vector_swizzle_lane_widths() {
     assert_eq!(results[2], 0x0B0A0908_0B0A0908_0B0A0908_0B0A0908, "broadcast word 2");
 }
 
+/// Packed lane shifts. Each lane is shifted on its own, so bits leaving a lane are discarded
+/// rather than moving into the next one, and the lane class picks the fill on a right shift.
+#[test]
+fn vector_lane_shifts() {
+    let lanes: [u16; 8] = [0x0001, 0x8000, 0xFFFF, 0x1234, 0x7FFF, 0x0003, 0xABCD, 0x0000];
+    let a = lanes
+        .iter()
+        .enumerate()
+        .fold(0u128, |acc, (i, l)| acc | ((*l as u128) << (16 * i)));
+    let results: Vec<u128> = vec![0; 6];
+
+    let context = IRContext::new();
+    let func = IRFunction::new(context);
+    let mut block = func.new_block(vec![DataType::Ptr, DataType::Ptr]);
+    let src = block.input(0);
+    let dst = block.input(1);
+
+    let v = block.load_ptr(DataType::VU16, src, 0).val();
+    let shl = block.left_shift(DataType::VU16, v, const_u64(1));
+    block.write_ptr(DataType::VU16, dst, 0, shl.val());
+    let shr = block.right_shift(DataType::VU16, v, const_u64(15));
+    block.write_ptr(DataType::VU16, dst, size_of::<u128>(), shr.val());
+    let sar = block.right_shift(DataType::VS16, v, const_u64(15));
+    block.write_ptr(DataType::VS16, dst, 2 * size_of::<u128>(), sar.val());
+    // Zero is the identity, and has no encoding in the NEON right shifts.
+    let noop = block.right_shift(DataType::VU16, v, const_u64(0));
+    block.write_ptr(DataType::VU16, dst, 3 * size_of::<u128>(), noop.val());
+
+    let v32 = block.load_ptr(DataType::VU32, src, 0).val();
+    let shr32 = block.right_shift(DataType::VU32, v32, const_u64(8));
+    block.write_ptr(DataType::VU32, dst, 4 * size_of::<u128>(), shr32.val());
+    let v32s = block.load_ptr(DataType::VS32, src, 0).val();
+    let sar32 = block.right_shift(DataType::VS32, v32s, const_u64(31));
+    block.write_ptr(DataType::VS32, dst, 5 * size_of::<u128>(), sar32.val());
+    block.ret(None);
+
+    let compiled = compile(&func);
+    let f: extern "C" fn(usize, usize) = unsafe { mem::transmute(compiled.ptr_entrypoint()) };
+    println!("{}", disassemble_function(&compiled));
+
+    f(&a as *const u128 as usize, results.as_ptr() as usize);
+
+    let per16 = |g: &dyn Fn(u16) -> u16| (0..8).fold(0u128, |acc, i| acc | ((g(lanes[i]) as u128) << (16 * i)));
+    let lane = |bits: u32, i: u32| ((a >> (bits * i)) & ((1u128 << bits) - 1)) as u64;
+    let build = |bits: u32, g: &dyn Fn(u64) -> u64| {
+        (0..(128 / bits)).fold(0u128, |acc, i| acc | ((g(lane(bits, i)) as u128) << (bits * i)))
+    };
+    validate(
+        &results,
+        &[
+            per16(&|x| x << 1),
+            per16(&|x| x >> 15),
+            per16(&|x| ((x as i16) >> 15) as u16),
+            per16(&|x| x),
+            build(32, &|x| (x as u32 >> 8) as u64),
+            build(32, &|x| ((x as u32 as i32) >> 31) as u32 as u64),
+        ],
+    );
+}
+
 /// Packed lane add, saturating add, subtract, and the equality masks. Together these detect a
 /// carry out of each lane, which is how a wider add is built from narrow ones.
 #[test]

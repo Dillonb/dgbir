@@ -1174,6 +1174,61 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
         }
     }
 
+    fn vector_left_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+    ) {
+        let Some(amount) = amount.to_u64_const() else {
+            todo!("Packed lane LeftShift with a register amount: {} {:?} << {:?}", tp, n, amount);
+        };
+        let n = self.materialize_as_simd(ops, lp, n);
+        let amount = amount as u32;
+        match (tp.lane_bits, tp.class) {
+            (8, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; shl V(r_out).B16, V(n.r()).B16, amount),
+            (16, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; shl V(r_out).H8, V(n.r()).H8, amount),
+            (32, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; shl V(r_out).S4, V(n.r()).S4, amount),
+            (64, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; shl V(r_out).D2, V(n.r()).D2, amount),
+            _ => todo!("Unsupported packed lane LeftShift with type {}", tp),
+        }
+    }
+
+    fn vector_right_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+    ) {
+        let Some(amount) = amount.to_u64_const() else {
+            todo!("Packed lane RightShift with a register amount: {} {:?} >> {:?}", tp, n, amount);
+        };
+        let n = self.materialize_as_simd(ops, lp, n);
+        let amount = amount as u32;
+        if amount == 0 {
+            // Shift by 0 is not encodable on NEON, and doesn't really need to be, so special case it
+            dynasm!(ops ; mov V(r_out).B16, V(n.r()).B16);
+        } else {
+            match (tp.lane_bits, tp.class) {
+                (8, LaneClass::Unsigned) => dynasm!(ops ; ushr V(r_out).B16, V(n.r()).B16, amount),
+                (16, LaneClass::Unsigned) => dynasm!(ops ; ushr V(r_out).H8, V(n.r()).H8, amount),
+                (32, LaneClass::Unsigned) => dynasm!(ops ; ushr V(r_out).S4, V(n.r()).S4, amount),
+                (64, LaneClass::Unsigned) => dynasm!(ops ; ushr V(r_out).D2, V(n.r()).D2, amount),
+                (8, LaneClass::Signed) => dynasm!(ops ; sshr V(r_out).B16, V(n.r()).B16, amount),
+                (16, LaneClass::Signed) => dynasm!(ops ; sshr V(r_out).H8, V(n.r()).H8, amount),
+                (32, LaneClass::Signed) => dynasm!(ops ; sshr V(r_out).S4, V(n.r()).S4, amount),
+                (64, LaneClass::Signed) => dynasm!(ops ; sshr V(r_out).D2, V(n.r()).D2, amount),
+                _ => todo!("Unsupported packed lane RightShift with type {}", tp),
+            }
+        }
+    }
+
     fn vector_interleave(
         &self,
         ops: &mut Ops,

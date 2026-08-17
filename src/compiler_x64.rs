@@ -1010,6 +1010,52 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         }
     }
 
+    fn vector_left_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+    ) {
+        let Some(amount) = amount.to_u64_const() else {
+            todo!("Packed lane LeftShift with a register amount: {} {:?} << {:?}", tp, n, amount);
+        };
+        self.move_to_reg(ops, lp, n, Register::SIMD(r_out));
+        let amount = amount as i8;
+        match (tp.lane_bits, tp.class) {
+            (16, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; psllw Rx(r_out), amount),
+            (32, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; pslld Rx(r_out), amount),
+            (64, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; psllq Rx(r_out), amount),
+            _ => todo!("Unsupported packed lane LeftShift with type {}", tp),
+        }
+    }
+
+    fn vector_right_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+    ) {
+        let Some(amount) = amount.to_u64_const() else {
+            todo!("Packed lane RightShift with a register amount: {} {:?} >> {:?}", tp, n, amount);
+        };
+        self.move_to_reg(ops, lp, n, Register::SIMD(r_out));
+        let amount = amount as i8;
+        match (tp.lane_bits, tp.class) {
+            (16, LaneClass::Unsigned) => dynasm!(ops ; psrlw Rx(r_out), amount),
+            (32, LaneClass::Unsigned) => dynasm!(ops ; psrld Rx(r_out), amount),
+            (64, LaneClass::Unsigned) => dynasm!(ops ; psrlq Rx(r_out), amount),
+            (16, LaneClass::Signed) => dynasm!(ops ; psraw Rx(r_out), amount),
+            (32, LaneClass::Signed) => dynasm!(ops ; psrad Rx(r_out), amount),
+            _ => todo!("Unsupported packed lane RightShift with type {}", tp),
+        }
+    }
+
     fn vector_interleave(
         &self,
         ops: &mut Ops,

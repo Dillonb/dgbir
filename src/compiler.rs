@@ -257,8 +257,9 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let n = compiler.to_imm_or_reg(&inputs[0]);
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
-                    output_regs[0].iter().for_each(|r_out| {
-                        compiler.left_shift(ops, lp, *r_out, n, amount, tp);
+                    output_regs[0].iter().for_each(|r_out| match tp {
+                        DataType::Vector(v) => compiler.vector_left_shift(ops, lp, v, r_out.expect_simd(), n, amount),
+                        _ => compiler.left_shift(ops, lp, *r_out, n, amount, tp),
                     });
                 }
                 InstructionType::RightShift => {
@@ -267,8 +268,9 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     let n = compiler.to_imm_or_reg(&inputs[0]);
                     let amount = compiler.to_imm_or_reg(&inputs[1]);
                     let tp = outputs[0].tp;
-                    output_regs[0].iter().for_each(|r_out| {
-                        compiler.right_shift(ops, lp, *r_out, n, amount, tp);
+                    output_regs[0].iter().for_each(|r_out| match tp {
+                        DataType::Vector(v) => compiler.vector_right_shift(ops, lp, v, r_out.expect_simd(), n, amount),
+                        _ => compiler.right_shift(ops, lp, *r_out, n, amount, tp),
                     });
                 }
                 InstructionType::VectorLeftShiftBytes => {
@@ -874,6 +876,26 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         n: ConstOrReg,
         amount: ConstOrReg,
         tp: DataType,
+    );
+    /// Compile an IR vector left shift instruction. Shift each lane individually.
+    fn vector_left_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        n: ConstOrReg,
+        amount: ConstOrReg,
+    );
+    /// Compile an IR vector right shift instruction. Shift each lane individually.
+    fn vector_right_shift(
+        &self,
+        ops: &mut Ops,
+        lp: &mut LiteralPool,
+        tp: VectorType,
+        r_out: RegisterIndex,
+        n: ConstOrReg,
+        amount: ConstOrReg,
     );
     /// Compile an IR vector left shift bytes instruction
     fn vector_left_shift_bytes(
