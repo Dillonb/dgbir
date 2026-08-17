@@ -77,6 +77,7 @@ fn constant_to_u64(c: &Constant) -> u64 {
         Constant::VectorHalf(_) => unimplemented!("VectorHalf is not supported"),
         Constant::PackType(_) => unimplemented!("PackType is not supported"),
         Constant::AddType(_) => unimplemented!("AddType is not supported"),
+        Constant::SubtractType(_) => unimplemented!("SubtractType is not supported"),
     }
 }
 

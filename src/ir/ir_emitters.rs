@@ -205,7 +205,40 @@ impl IRBlockHandle {
     }
 
     pub fn subtract(&mut self, result_tp: DataType, minuend: InputSlot, subtrahend: InputSlot) -> InstructionOutput {
-        self.append(InstructionType::Subtract, vec![minuend, subtrahend], vec![OutputSlot { tp: result_tp }])
+        self.subtract_with_type(result_tp, SubtractType::Wrapping, minuend, subtrahend)
+    }
+
+    /// Clamps to the lane's range instead of wrapping. Vector types only.
+    pub fn saturating_subtract(
+        &mut self,
+        result_tp: DataType,
+        minuend: InputSlot,
+        subtrahend: InputSlot,
+    ) -> InstructionOutput {
+        assert!(
+            matches!(result_tp, DataType::Vector(_)),
+            "Saturating subtract is only supported on vector types, got {}",
+            result_tp
+        );
+        self.subtract_with_type(result_tp, SubtractType::Saturating, minuend, subtrahend)
+    }
+
+    fn subtract_with_type(
+        &mut self,
+        result_tp: DataType,
+        subtract_type: SubtractType,
+        minuend: InputSlot,
+        subtrahend: InputSlot,
+    ) -> InstructionOutput {
+        self.append(
+            InstructionType::Subtract,
+            vec![
+                minuend,
+                subtrahend,
+                Constant::SubtractType(subtract_type).into_inputslot(),
+            ],
+            vec![OutputSlot { tp: result_tp }],
+        )
     }
 
     pub fn multiply(

@@ -5,7 +5,7 @@ use crate::{
     compiler::{lane_swizzle_byte_mask, Compiler, ConstOrReg, GenericAssembler, LiteralPool, MaterializedGpr},
     ir::{
         AddType, BlockReference, CompareType, Constant, DataType, IRFunctionInternal, LaneClass, MultiplyType,
-        PackType, VectorHalf, VectorType,
+        PackType, SubtractType, VectorHalf, VectorType,
     },
     reg_pool::{register_type, RegPool},
     register_allocator::{alloc_for, Register, RegisterAllocations, RegisterIndex},
@@ -1462,15 +1462,36 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
         r_out: RegisterIndex,
         minuend: ConstOrReg,
         subtrahend: ConstOrReg,
+        subtract_type: SubtractType,
     ) {
         self.move_to_reg(ops, lp, minuend, Register::SIMD(r_out));
         let subtrahend = self.materialize_as_simd(ops, lp, subtrahend);
-        match (tp.lane_bits, tp.class) {
-            (8, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; psubb Rx(r_out), Rx(subtrahend.r())),
-            (16, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; psubw Rx(r_out), Rx(subtrahend.r())),
-            (32, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; psubd Rx(r_out), Rx(subtrahend.r())),
-            (64, LaneClass::Signed | LaneClass::Unsigned) => dynasm!(ops ; psubq Rx(r_out), Rx(subtrahend.r())),
-            _ => todo!("Unsupported Subtract operation with type {}", tp),
+        match (subtract_type, tp.lane_bits, tp.class) {
+            (SubtractType::Wrapping, 8, LaneClass::Signed | LaneClass::Unsigned) => {
+                dynasm!(ops ; psubb Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Wrapping, 16, LaneClass::Signed | LaneClass::Unsigned) => {
+                dynasm!(ops ; psubw Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Wrapping, 32, LaneClass::Signed | LaneClass::Unsigned) => {
+                dynasm!(ops ; psubd Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Wrapping, 64, LaneClass::Signed | LaneClass::Unsigned) => {
+                dynasm!(ops ; psubq Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Saturating, 8, LaneClass::Signed) => {
+                dynasm!(ops ; psubsb Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Saturating, 8, LaneClass::Unsigned) => {
+                dynasm!(ops ; psubusb Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Saturating, 16, LaneClass::Signed) => {
+                dynasm!(ops ; psubsw Rx(r_out), Rx(subtrahend.r()))
+            }
+            (SubtractType::Saturating, 16, LaneClass::Unsigned) => {
+                dynasm!(ops ; psubusw Rx(r_out), Rx(subtrahend.r()))
+            }
+            _ => todo!("Unsupported Subtract operation: {:?} with type {}", subtract_type, tp),
         }
     }
 

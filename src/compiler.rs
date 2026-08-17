@@ -23,7 +23,7 @@ use crate::register_allocator::RegisterIndex;
 use crate::{
     ir::{
         AddType, BlockReference, CompareType, Constant, DataType, IndexedInstruction, InputSlot, Instruction,
-        InstructionType, MultiplyType, PackType, VectorHalf, VectorType,
+        InstructionType, MultiplyType, PackType, SubtractType, VectorHalf, VectorType,
     },
     register_allocator::{Register, RegisterAllocations, Value},
 };
@@ -399,15 +399,22 @@ fn compile_instruction<'a, R: Relocation, Ops: GenericAssembler<R>, TC: Compiler
                     });
                 }
                 InstructionType::Subtract => {
-                    assert_eq!(inputs.len(), 2);
+                    assert_eq!(inputs.len(), 3);
                     assert_eq!(outputs.len(), 1);
                     let minuend = compiler.to_imm_or_reg(&inputs[0]);
                     let subtrahend = compiler.to_imm_or_reg(&inputs[1]);
+                    let subtract_type = inputs[2].expect_constant_subtract_type();
                     let tp = outputs[0].tp;
                     output_regs[0].iter().for_each(|r_out| match tp {
-                        DataType::Vector(v) => {
-                            compiler.vector_subtract(ops, lp, v, r_out.expect_simd(), minuend, subtrahend)
-                        }
+                        DataType::Vector(v) => compiler.vector_subtract(
+                            ops,
+                            lp,
+                            v,
+                            r_out.expect_simd(),
+                            minuend,
+                            subtrahend,
+                            subtract_type,
+                        ),
                         _ => compiler.subtract(ops, lp, tp, *r_out, minuend, subtrahend),
                     });
                 }
@@ -567,6 +574,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::VectorHalf(_) => todo!(),
                 Constant::PackType(_) => todo!(),
                 Constant::AddType(_) => todo!(),
+                Constant::SubtractType(_) => todo!(),
             },
             // _ => todo!("Unsupported input slot type: {:?}", s),
         }
@@ -996,6 +1004,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
         r_out: RegisterIndex,
         minuend: ConstOrReg,
         subtrahend: ConstOrReg,
+        subtract_type: SubtractType,
     );
     /// Compile an IR multiply instruction
     fn multiply(

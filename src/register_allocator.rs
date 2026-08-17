@@ -5,7 +5,7 @@ use crate::{
     compiler::ConstOrReg,
     ir::{
         AddType, CompareType, Constant, DataType, IRFunctionInternal, InputSlot, MultiplyType, PackType, RoundingMode,
-        VectorHalf,
+        SubtractType, VectorHalf,
     },
 };
 
@@ -306,6 +306,15 @@ impl InputSlot {
             InputSlot::Constant(Constant::AddType(a)) => *a,
             _ => {
                 panic!("Expected an AddType constant, found {:?}", self);
+            }
+        }
+    }
+
+    pub fn expect_constant_subtract_type(&self) -> SubtractType {
+        match self {
+            InputSlot::Constant(Constant::SubtractType(s)) => *s,
+            _ => {
+                panic!("Expected a SubtractType constant, found {:?}", self);
             }
         }
     }

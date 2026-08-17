@@ -196,6 +196,7 @@ pub enum Constant {
     VectorHalf(VectorHalf),
     PackType(PackType),
     AddType(AddType),
+    SubtractType(SubtractType),
 }
 
 impl Constant {
@@ -244,6 +245,14 @@ pub enum PackType {
 /// How [`InstructionType::Add`] handles results outside the type's range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AddType {
+    Wrapping,
+    /// Clamp to the type's minimum or maximum.
+    Saturating,
+}
+
+/// How [`InstructionType::Subtract`] handles results outside the type's range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SubtractType {
     Wrapping,
     /// Clamp to the type's minimum or maximum.
     Saturating,

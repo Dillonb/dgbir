@@ -1562,7 +1562,7 @@ fn vector_lane_arithmetic() {
     };
     let a = pack(&a_lanes);
     let b = pack(&b_lanes);
-    let results: Vec<u128> = vec![0; 6];
+    let results: Vec<u128> = vec![0; 8];
 
     let context = IRContext::new();
     let func = IRFunction::new(context);
@@ -1581,6 +1581,10 @@ fn vector_lane_arithmetic() {
     block.write_ptr(DataType::VS16, dst, 2 * size_of::<u128>(), ssat.val());
     let diff = block.subtract(DataType::VU16, va, vb);
     block.write_ptr(DataType::VU16, dst, 3 * size_of::<u128>(), diff.val());
+    let usub = block.saturating_subtract(DataType::VU16, va, vb);
+    block.write_ptr(DataType::VU16, dst, 6 * size_of::<u128>(), usub.val());
+    let ssub = block.saturating_subtract(DataType::VS16, va, vb);
+    block.write_ptr(DataType::VS16, dst, 7 * size_of::<u128>(), ssub.val());
 
     // Unsigned saturation only kicks in when the wrapping sum carried out, so these two masks
     // are the carry detector.
@@ -1610,6 +1614,8 @@ fn vector_lane_arithmetic() {
             expect(&|x, y| x.wrapping_sub(y)),
             expect(&|x, y| if carried(x, y) { 0 } else { 0xFFFF }),
             expect(&|x, y| if carried(x, y) { 0xFFFF } else { 0 }),
+            expect(&|x, y| x.saturating_sub(y)),
+            expect(&|x, y| (x as i16).saturating_sub(y as i16) as u16),
         ],
     );
 }
