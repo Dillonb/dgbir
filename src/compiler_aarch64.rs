@@ -381,6 +381,12 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; mov V(r_to).B16, V(r_from).B16
                 )
             }
+            (ConstOrReg::U128(value), Register::SIMD(r_to)) => {
+                let literal = Self::add_literal(ops, lp, Constant::U128(value));
+                dynasm!(ops
+                    ; ldr Q(r_to), =>literal
+                )
+            }
             (ConstOrReg::F32(value), Register::SIMD(r_to)) => {
                 if f32_fits_fmov_immediate(*value) {
                     dynasm!(ops

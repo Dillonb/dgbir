@@ -554,6 +554,10 @@ pub fn const_u64(value: u64) -> InputSlot {
     InputSlot::Constant(Constant::U64(value))
 }
 
+pub fn const_u128(value: u128) -> InputSlot {
+    InputSlot::Constant(Constant::U128(value))
+}
+
 pub fn const_s64(value: i64) -> InputSlot {
     InputSlot::Constant(Constant::S64(value))
 }

@@ -42,6 +42,7 @@ pub enum ConstOrReg {
     U32(u32),
     S32(i32),
     U64(u64),
+    U128(u128),
     F32(OrderedFloat<f32>),
     GPR(RegisterIndex),
     SIMD(RegisterIndex),
@@ -87,6 +88,7 @@ impl ConstOrReg {
             ConstOrReg::S32(_) => None,
             ConstOrReg::U64(_) => None,
             ConstOrReg::S64(_) => None,
+            ConstOrReg::U128(_) => None,
             ConstOrReg::F32(_) => None,
         }
     }
@@ -99,6 +101,8 @@ impl ConstOrReg {
             ConstOrReg::S32(c) => Some(*c as u64),
             ConstOrReg::U64(c) => Some(*c),
             ConstOrReg::S64(c) => Some(*c as u64),
+            // Does not fit, and silently truncating would be worse than refusing.
+            ConstOrReg::U128(_) => None,
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
             ConstOrReg::SIMD(_) => None,
@@ -113,6 +117,7 @@ impl ConstOrReg {
             ConstOrReg::S32(_) => true,
             ConstOrReg::U64(_) => true,
             ConstOrReg::S64(_) => true,
+            ConstOrReg::U128(_) => true,
             ConstOrReg::F32(_) => true,
             ConstOrReg::GPR(_) => false,
             ConstOrReg::SIMD(_) => false,
@@ -127,6 +132,7 @@ impl ConstOrReg {
             ConstOrReg::S32(c) => (*c).try_into().ok(),
             ConstOrReg::U64(c) => (*c).try_into().ok(),
             ConstOrReg::S64(c) => Some(*c),
+            ConstOrReg::U128(_) => None,
             ConstOrReg::F32(_) => None,
             ConstOrReg::GPR(_) => None,
             ConstOrReg::SIMD(_) => None,
@@ -156,6 +162,9 @@ impl ConstOrReg {
 
             (ConstOrReg::S64(_), Register::GPR(_)) => true,
             (ConstOrReg::S64(_), Register::SIMD(_)) => false,
+
+            (ConstOrReg::U128(_), Register::GPR(_)) => false,
+            (ConstOrReg::U128(_), Register::SIMD(_)) => true,
 
             (ConstOrReg::F32(_), Register::GPR(_)) => false,
             (ConstOrReg::F32(_), Register::SIMD(_)) => true,
@@ -546,7 +555,7 @@ pub trait Compiler<'a, R: Relocation, Ops: GenericAssembler<R>> {
                 Constant::S32(c) => ConstOrReg::S32(c),
                 Constant::U64(c) => ConstOrReg::U64(c),
                 Constant::S64(c) => ConstOrReg::S64(c),
-                Constant::U128(_) => todo!("128 bit constants are only used for backend literals"),
+                Constant::U128(c) => ConstOrReg::U128(c),
                 Constant::F32(c) => ConstOrReg::F32(c),
                 Constant::F64(_) => todo!(),
                 Constant::Ptr(c) => ConstOrReg::U64(c as u64),
