@@ -1578,6 +1578,13 @@ impl<'a, Ops: GenericAssembler<Aarch64Relocation>> Compiler<'a, Aarch64Relocatio
                     ; eor X(r_out), X(a.r()), X(b.r())
                 );
             }
+            (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
+                let a = self.materialize_as_simd(ops, lp, a);
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; eor V(r_out).B16, V(a.r()).B16, V(b.r()).B16
+                );
+            }
             _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp),
         }
     }

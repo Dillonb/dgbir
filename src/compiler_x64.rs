@@ -1396,6 +1396,13 @@ impl<'a, Ops: GenericAssembler<X64Relocation>> Compiler<'a, X64Relocation, Ops> 
                     ; xor Rq(r_out), Rq(b.r())
                 );
             }
+            (tp, Register::SIMD(r_out)) if tp.size() == 16 => {
+                self.move_to_reg(ops, lp, a, Register::SIMD(r_out));
+                let b = self.materialize_as_simd(ops, lp, b);
+                dynasm!(ops
+                    ; pxor Rx(r_out), Rx(b.r())
+                );
+            }
             _ => todo!("Unsupported XOR operation: {:?} ^ {:?} with type {:?}", a, b, tp),
         }
     }
